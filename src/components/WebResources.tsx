@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Trash2, Edit3, Save, X, Search, Tag, ExternalLink, Link2 } from "lucide-react";
+import { Plus, Trash2, Edit3, Save, X, Search, Tag, ExternalLink, Link2, ChevronDown, ChevronRight } from "lucide-react";
 import { useT } from "../i18n";
 import "../lib/api";
 
@@ -17,6 +17,30 @@ interface TagInfo {
   count: number;
 }
 
+const TAG_COLORS = [
+  { bar: "#c75b4a", name: "#d4846e", bg: "rgba(199, 91, 74, 0.08)" },
+  { bar: "#c4a43e", name: "#d4b85a", bg: "rgba(196, 164, 62, 0.08)" },
+  { bar: "#5b7fa5", name: "#7a9db8", bg: "rgba(91, 127, 165, 0.08)" },
+  { bar: "#6b8e5a", name: "#8aa878", bg: "rgba(107, 142, 90, 0.08)" },
+];
+
+function getTagColor(tag: string) {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+    hash |= 0;
+  }
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function extractDomain(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 export default function WebResources() {
   const { t } = useT();
   const [resources, setResources] = useState<Resource[]>([]);
@@ -28,7 +52,6 @@ export default function WebResources() {
   const [showModal, setShowModal] = useState(false);
   const [modalUrl, setModalUrl] = useState("");
   const [modalTitle, setModalTitle] = useState("");
-  const [modalNotes, setModalNotes] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalTagInput, setModalTagInput] = useState("");
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
@@ -36,10 +59,12 @@ export default function WebResources() {
   // Inline edit state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
   const [editTagInput, setEditTagInput] = useState("");
   const [editDropdownOpen, setEditDropdownOpen] = useState(false);
+
+  // Card collapse state
+  const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
 
   const loadResources = useCallback(async () => {
     let results: Resource[];
@@ -72,7 +97,7 @@ export default function WebResources() {
     if (!modalUrl.trim()) return;
     const trimmedUrl = modalUrl.trim().startsWith("http") ? modalUrl.trim() : `https://${modalUrl.trim()}`;
     const title = modalTitle.trim() || (await window.prism.fetchPageTitle(trimmedUrl));
-    await window.prism.addResource(trimmedUrl, title, modalNotes, modalTags);
+    await window.prism.addResource(trimmedUrl, title, "", modalTags);
     closeModal();
     loadResources();
     loadTags();
@@ -82,7 +107,6 @@ export default function WebResources() {
     setShowModal(false);
     setModalUrl("");
     setModalTitle("");
-    setModalNotes("");
     setModalTags([]);
     setModalTagInput("");
   };
@@ -96,14 +120,13 @@ export default function WebResources() {
   const startEdit = (r: Resource) => {
     setEditingId(r.id);
     setEditTitle(r.title);
-    setEditNotes(r.notes);
     setEditTags(r.tags);
     setEditTagInput("");
   };
 
   const handleSaveEdit = async () => {
     if (editingId == null) return;
-    await window.prism.updateResource(editingId, editTitle, editNotes, editTags);
+    await window.prism.updateResource(editingId, editTitle, "", editTags);
     setEditingId(null);
     loadResources();
     loadTags();
@@ -147,12 +170,188 @@ export default function WebResources() {
     }
   };
 
-  const extractDomain = (url: string) => {
-    try {
-      return new URL(url).hostname.replace(/^www\./, "");
-    } catch {
-      return url;
+  // Group resources by tag for card view, sorted by tag count desc
+  const tagGroups = useMemo(() => {
+    if (activeTag) return { groups: [], untagged: [] as Resource[] };
+    const grouped = new Map<string, Resource[]>();
+    const untagged: Resource[] = [];
+
+    for (const r of resources) {
+      if (r.tags.length === 0) {
+        untagged.push(r);
+      } else {
+        for (const tag of r.tags) {
+          if (!grouped.has(tag)) grouped.set(tag, []);
+          grouped.get(tag)!.push(r);
+        }
+      }
     }
+
+    const groups = Array.from(grouped.entries())
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([tag, items]) => ({ tag, resources: items, color: getTagColor(tag) }));
+
+    return { groups, untagged };
+  }, [resources, activeTag]);
+
+  const toggleCollapse = (tag: string) => {
+    setCollapsedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
+  // Shared resource row
+  const ResourceRow = ({ r }: { r: Resource }) => {
+    const color = getTagColor(r.tags[0] || "");
+    return (
+      <div
+        className={`group flex items-center gap-3 px-3 py-1.5 rounded transition-colors ${
+          editingId === r.id ? "bg-gray-800/30" : "hover:bg-gray-700/20"
+        }`}
+      >
+        {editingId === r.id ? (
+          <div className="flex-1 flex flex-col gap-2 py-1">
+            <div className="flex items-center gap-2">
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder={t["resources.title"]}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {editTags.map((tag) => (
+                    <span key={tag} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded" style={{ color: getTagColor(tag).name, backgroundColor: getTagColor(tag).bg }}>
+                      {tag}
+                      <button
+                        onClick={() => setEditTags(editTags.filter((t) => t !== tag))}
+                        className="hover:text-red-400"
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    value={editTagInput}
+                    onChange={(e) => { setEditTagInput(e.target.value); setEditDropdownOpen(true); }}
+                    onKeyDown={handleEditKeyDown}
+                    onFocus={() => setEditDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setEditDropdownOpen(false), 200)}
+                    placeholder={t["resources.tags"]}
+                    className="w-48 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-[var(--accent)]"
+                  />
+                  {editDropdownOpen && filteredTags.length > 0 && (
+                    <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]">
+                      {filteredTags.map((tag) => (
+                        <button
+                          key={tag.name}
+                          onMouseDown={() => handleEditAddTag(tag.name)}
+                          className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 flex items-center justify-between"
+                        >
+                          <span>{tag.name}</span>
+                          <span className="text-gray-600">{tag.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button onClick={handleSaveEdit} className="p-1 text-green-400 hover:bg-gray-700 rounded">
+                <Save size={14} />
+              </button>
+              <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:bg-gray-700 rounded">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <button
+                onClick={() => window.prism.openUrl(r.url)}
+                className="text-sm font-medium text-gray-200 truncate hover:text-[var(--accent-text)] transition-colors max-w-[360px] text-left"
+                title={r.url}
+              >
+                {r.title || r.url}
+              </button>
+              <button
+                onClick={() => window.prism.openUrl(r.url)}
+                className="text-xs text-gray-600 hover:text-gray-400 truncate flex items-center gap-1"
+              >
+                <Link2 size={10} />
+                {extractDomain(r.url)}
+              </button>
+              {r.tags.map((tag) => {
+                const c = getTagColor(tag);
+                return (
+                  <span
+                    key={tag}
+                    onClick={(e) => { e.stopPropagation(); setActiveTag(tag); }}
+                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer whitespace-nowrap transition-colors hover:opacity-80"
+                    style={{ color: c.name, backgroundColor: c.bg }}
+                  >
+                    {tag}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <button onClick={() => startEdit(r)} className="p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded">
+                <Edit3 size={13} />
+              </button>
+              <button onClick={() => handleDelete(r.id)} className="p-1 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded">
+                <Trash2 size={13} />
+              </button>
+              <button onClick={() => window.prism.openUrl(r.url)} className="p-1 text-gray-500 hover:text-[var(--accent-text)] hover:bg-gray-700 rounded" title={r.url}>
+                <ExternalLink size={13} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Card component for tag group
+  const TagCard = ({ tag, items, color }: { tag: string; items: Resource[]; color: typeof TAG_COLORS[0] }) => {
+    const collapsed = collapsedTags.has(tag);
+    return (
+      <div className="mb-3 border border-gray-700/50 rounded-xl bg-gray-900/20 overflow-hidden">
+        <div
+          className="flex items-center gap-2 px-3 h-8 cursor-pointer"
+          style={{ backgroundColor: color.bg }}
+          onClick={() => toggleCollapse(tag)}
+        >
+          <div className="w-1 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: color.bar }} />
+          <button className="text-gray-500 hover:text-gray-300 transition-colors">
+            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </button>
+          <span className="text-xs font-medium truncate" style={{ color: color.name }}>{tag}</span>
+          <span className="text-xs text-gray-500">{items.length}</span>
+          <div className="flex-1" />
+          <button
+            onClick={(e) => { e.stopPropagation(); setActiveTag(tag); }}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+          >
+            <ExternalLink size={12} />
+          </button>
+        </div>
+        {!collapsed && (
+          <div className="px-2 py-1.5">
+            {items.map((r) => (
+              <ResourceRow key={r.id} r={r} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -189,157 +388,73 @@ export default function WebResources() {
           >
             {t["resources.allTags"]}
           </button>
-          {allTags.map((tag) => (
-            <button
-              key={tag.name}
-              onClick={() => setActiveTag(activeTag === tag.name ? null : tag.name)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                activeTag === tag.name
-                  ? "bg-[var(--accent-muted)] text-[var(--accent-text)] border border-[var(--accent-border)]"
-                  : "bg-gray-800/50 text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 border border-transparent"
-              }`}
-            >
-              {tag.name}
-              <span className="ml-1 opacity-50">{tag.count}</span>
-            </button>
-          ))}
+          {allTags.map((tag) => {
+            const c = getTagColor(tag.name);
+            const isActive = activeTag === tag.name;
+            return (
+              <button
+                key={tag.name}
+                onClick={() => setActiveTag(isActive ? null : tag.name)}
+                className="px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap border"
+                style={{
+                  color: isActive ? c.name : undefined,
+                  backgroundColor: isActive ? c.bg : undefined,
+                  borderColor: isActive ? c.bar : "transparent",
+                }}
+              >
+                {tag.name}
+                <span className="ml-1 opacity-50">{tag.count}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Resource list - compact rows */}
+      {/* Content area */}
       <div className="flex-1 overflow-y-auto">
         {resources.length === 0 && (
           <div className="text-center text-gray-500 mt-20 text-sm">
             {searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
           </div>
         )}
-        {resources.map((r) => (
-          <div
-            key={r.id}
-            className={`group flex items-center gap-4 px-6 py-2.5 border-b border-gray-800/30 hover:bg-gray-900/30 transition-colors ${
-              editingId === r.id ? "bg-gray-900/50" : ""
-            }`}
-          >
-            {editingId === r.id ? (
-              /* Inline edit mode */
-              <div className="flex-1 flex flex-col gap-2 py-1">
-                <div className="flex items-center gap-2">
-                  <input
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder={t["resources.title"]}
-                    className="w-52 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-[var(--accent)]"
-                  />
-                  <input
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    placeholder={t["resources.editNotes"]}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-[var(--accent)]"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <div className="flex flex-wrap gap-1 mb-1">
-                      {editTags.map((tag) => (
-                        <span key={tag} className="inline-flex items-center gap-1 text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-2 py-0.5 rounded">
-                          {tag}
-                          <button
-                            onClick={() => setEditTags(editTags.filter((t) => t !== tag))}
-                            className="hover:text-red-400"
-                          >
-                            <X size={10} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex gap-1">
-                      <input
-                        value={editTagInput}
-                        onChange={(e) => { setEditTagInput(e.target.value); setEditDropdownOpen(true); }}
-                        onKeyDown={handleEditKeyDown}
-                        onFocus={() => setEditDropdownOpen(true)}
-                        onBlur={() => setTimeout(() => setEditDropdownOpen(false), 200)}
-                        placeholder={t["resources.tags"]}
-                        className="w-48 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-[var(--accent)]"
-                      />
-                      {editDropdownOpen && filteredTags.length > 0 && (
-                        <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]">
-                          {filteredTags.map((tag) => (
-                            <button
-                              key={tag.name}
-                              onMouseDown={() => handleEditAddTag(tag.name)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 flex items-center justify-between"
-                            >
-                              <span>{tag.name}</span>
-                              <span className="text-gray-600">{tag.count}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <button onClick={handleSaveEdit} className="p-1 text-green-400 hover:bg-gray-700 rounded">
-                    <Save size={14} />
+
+        {/* Card view (All) */}
+        {!activeTag && resources.length > 0 && (
+          <div className="p-3">
+            {tagGroups.groups.map(({ tag, resources: items, color }) => (
+              <TagCard key={tag} tag={tag} items={items} color={color} />
+            ))}
+            {tagGroups.untagged.length > 0 && (
+              <div className="mb-3 border border-gray-700/30 rounded-xl bg-gray-900/10 overflow-hidden">
+                <div
+                  className="flex items-center gap-2 px-3 h-8 bg-gray-800/30 cursor-pointer"
+                  onClick={() => toggleCollapse("__untagged__")}
+                >
+                  <div className="w-1 h-4 rounded-full bg-gray-700 flex-shrink-0" />
+                  <button className="text-gray-500 hover:text-gray-300 transition-colors">
+                    {collapsedTags.has("__untagged__") ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                   </button>
-                  <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:bg-gray-700 rounded">
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Normal display mode */
-              <>
-                <div className="flex-1 min-w-0 flex items-center gap-3">
-                  <button
-                    onClick={() => window.prism.openUrl(r.url)}
-                    className="text-sm font-medium text-gray-200 truncate hover:text-[var(--accent-text)] transition-colors max-w-[360px] text-left"
-                    title={r.url}
-                  >
-                    {r.title || r.url}
-                  </button>
-                  <button
-                    onClick={() => window.prism.openUrl(r.url)}
-                    className="text-xs text-gray-600 hover:text-gray-400 truncate flex items-center gap-1 hidden sm:flex"
-                  >
-                    <Link2 size={10} />
-                    {extractDomain(r.url)}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0 max-w-[200px] overflow-hidden">
-                  {r.tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      onClick={() => setActiveTag(tag)}
-                      className="text-xs text-[var(--accent-text)]/70 bg-[var(--accent-muted)] px-1.5 py-0.5 rounded cursor-pointer hover:bg-[var(--accent-muted)] truncate max-w-[80px]"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {r.tags.length > 3 && (
-                    <span className="text-xs text-gray-600">+{r.tags.length - 3}</span>
-                  )}
-                </div>
-                {r.notes && (
-                  <span className="text-xs text-gray-600 truncate max-w-[160px] hidden lg:block" title={r.notes}>
-                    {r.notes}
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    {t["collections.ungrouped"] ?? "未分组"}
                   </span>
-                )}
-                <span className="text-xs text-gray-600 w-16 text-right flex-shrink-0 hidden sm:block">
-                  {new Date(r.created_at).toLocaleDateString()}
-                </span>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                  <button onClick={() => startEdit(r)} className="p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded">
-                    <Edit3 size={13} />
-                  </button>
-                  <button onClick={() => handleDelete(r.id)} className="p-1 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded">
-                    <Trash2 size={13} />
-                  </button>
-                  <button onClick={() => window.prism.openUrl(r.url)} className="p-1 text-gray-500 hover:text-[var(--accent-text)] hover:bg-gray-700 rounded" title={r.url}>
-                    <ExternalLink size={13} />
-                  </button>
+                  <span className="text-xs text-gray-600">{tagGroups.untagged.length}</span>
                 </div>
-              </>
+                {!collapsedTags.has("__untagged__") && (
+                  <div className="px-2 py-1.5">
+                    {tagGroups.untagged.map((r) => (
+                      <ResourceRow key={r.id} r={r} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
+          </div>
+        )}
+
+        {/* Flat list (tag filtered) */}
+        {activeTag && resources.map((r) => (
+          <div key={r.id} className="border-b border-gray-800/30 px-3">
+            <ResourceRow r={r} />
           </div>
         ))}
       </div>
@@ -357,7 +472,6 @@ export default function WebResources() {
             </div>
 
             <div className="space-y-4">
-              {/* URL */}
               <div>
                 <input
                   type="text"
@@ -371,42 +485,34 @@ export default function WebResources() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                 />
               </div>
-
-              {/* Title + Notes */}
-              <div className="flex gap-3">
+              <div>
                 <input
                   type="text"
                   value={modalTitle}
                   onChange={(e) => setModalTitle(e.target.value)}
                   placeholder={t["resources.title"]}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
-                />
-              </div>
-              <div>
-                <textarea
-                  value={modalNotes}
-                  onChange={(e) => setModalNotes(e.target.value)}
-                  placeholder={t["resources.notes"]}
-                  rows={4}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors resize-none"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                 />
               </div>
 
               {/* Tags */}
               <div>
                 <div className="flex flex-wrap gap-1.5 mb-2 min-h-[24px]">
-                  {modalTags.map((tag) => (
-                    <span key={tag} className="inline-flex items-center gap-1 text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-2.5 py-1 rounded-full">
-                      <Tag size={10} />
-                      {tag}
-                      <button
-                        onClick={() => setModalTags(modalTags.filter((t) => t !== tag))}
-                        className="hover:text-red-400 ml-0.5"
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
+                  {modalTags.map((tag) => {
+                    const c = getTagColor(tag);
+                    return (
+                      <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
+                        <Tag size={10} />
+                        {tag}
+                        <button
+                          onClick={() => setModalTags(modalTags.filter((t) => t !== tag))}
+                          className="hover:text-red-400 ml-0.5"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
                 <div className="relative">
                   <input
@@ -419,7 +525,6 @@ export default function WebResources() {
                     placeholder={t["resources.tags"]}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <p className="text-xs text-gray-600 mt-1">{t["resources.tagsHint"]}</p>
                   {tagDropdownOpen && filteredTags.length > 0 && (
                     <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 w-full">
                       {filteredTags.map((tag) => (

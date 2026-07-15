@@ -4,6 +4,7 @@ import {
   FolderOpen, CheckSquare,
   Trash2,
 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
 import "../lib/api";
 import CollectionsSidebar, { type CollectionData, type NoteGroup } from "./CollectionsSidebar";
@@ -117,7 +118,6 @@ export default function ObsidianVault() {
   const loadCollections = useCallback(async (vaultPath: string) => {
     const data = await window.prism.loadCollections(vaultPath) as CollectionsFile | null;
     setCollections(data?.collections ?? []);
-    setSelectedCollectionId(null);
   }, []);
 
   // ---- Vault loading ----
@@ -147,12 +147,19 @@ export default function ObsidianVault() {
     setSelectedPaths(new Set());
     try {
       await window.prism.setSetting("last_vault_path", vault.path);
-      await Promise.all([
+      const [, collData, results] = await Promise.all([
         window.prism.setVaultPath(vault.path),
-        loadCollections(vault.path),
+        window.prism.loadCollections(vault.path) as Promise<CollectionsFile | null>,
+        window.prism.getNotes(),
       ]);
-      const results = await window.prism.getNotes();
+      const colls = collData?.collections ?? [];
+      setCollections(colls);
       setNotes(results);
+      // Restore last selected collection for this vault
+      const lastCollId = await window.prism.getSetting("last_collection_id");
+      if (lastCollId && colls.some((c) => c.id === lastCollId)) {
+        setSelectedCollectionId(lastCollId);
+      }
     } finally {
       setScanning(false);
     }
@@ -228,11 +235,14 @@ export default function ObsidianVault() {
     const coll = collections.find((c) => c.id === id);
     setConfirm({
       message: t["collections.deleteConfirm"],
-      onConfirm: () => {
+      onConfirm: async () => {
         const updated = collections.filter((c) => c.id !== id);
         setCollections(updated);
         saveCollections(updated);
-        if (selectedCollectionId === id) setSelectedCollectionId(null);
+        if (selectedCollectionId === id) {
+          setSelectedCollectionId(null);
+          await window.prism.setSetting("last_collection_id", "");
+        }
         setConfirm(null);
         showToast(t["collections.removed"].replace("{name}", coll?.name ?? ""));
       },
@@ -539,6 +549,15 @@ export default function ObsidianVault() {
 
   const totalCollectionNotes = ungroupedNotes.length + groupedViews.reduce((s, g) => s + g.notes.length, 0);
 
+  // Virtual scroll for notes list
+  const notesScrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: notes.length,
+    getScrollElement: () => notesScrollRef.current,
+    estimateSize: () => 32,
+    overscan: 5,
+  });
+
   // ---- Render ----
 
   if (!selectedVault) {
@@ -568,6 +587,7 @@ export default function ObsidianVault() {
           setSelectedPaths(new Set());
           setCollapsedGroups(new Set());
           setUngroupedCollapsed(false);
+          window.prism.setSetting("last_collection_id", id ?? "");
         }}
         onCreate={() => setShowCreateModal(true)}
         onRename={(id) => {
@@ -653,7 +673,7 @@ export default function ObsidianVault() {
 
           {/* All notes flat list */}
           {!selectedCollectionId && (
-            <div className="flex-1 overflow-y-auto py-1">
+            <div className="flex-1 overflow-y-auto py-1" ref={notesScrollRef}>
               {notes.length === 0 && !scanning && (
                 <div className="text-center text-gray-500 mt-20 text-sm">
                   {searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"]}
@@ -664,57 +684,74 @@ export default function ObsidianVault() {
                   {t["obsidian.scanning"]}
                 </div>
               )}
-              {!scanning && notes.map((note) => {
-                const relPath = selectedVault ? toRelativePath(note.path, selectedVault.path) : "";
-                const isSelected = selectedPaths.has(note.path);
-                return (
-                  <div
-                    key={note.id}
-                    draggable
-                    onDragStart={(e) => {
-                      const paths = selectedPaths.size > 0 && selectedPaths.has(note.path)
-                        ? Array.from(selectedPaths)
-                        : [relPath];
-                      e.dataTransfer.setData("text/x-note-paths", JSON.stringify(paths));
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onContextMenu={(e) => handleNoteContextMenu(e, note)}
-                    onClick={() => {
-                      if (selectMode) toggleSelectPath(note.path);
-                      else window.prism.openInObsidian(note.path);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 mx-2 rounded transition-colors cursor-pointer group ${
-                      isSelected ? "bg-[var(--accent-muted)]" : "hover:bg-gray-800/30"
-                    }`}
-                    title={note.path}
-                  >
-                    {selectMode && (
+              {!scanning && (
+                <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const note = notes[virtualRow.index];
+                    const relPath = selectedVault ? toRelativePath(note.path, selectedVault.path) : "";
+                    const isSelected = selectedPaths.has(note.path);
+                    return (
                       <div
-                        className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? "bg-[var(--accent)] border-[var(--accent)]"
-                            : "border-gray-600"
-                        }`}
+                        key={note.id}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
                       >
-                        {isSelected && <CheckSquare size={12} className="text-white" />}
-                      </div>
-                    )}
-                    <FileText size={14} className="text-gray-500 flex-shrink-0" />
-                    <span className={`text-sm truncate flex-1 ${isSelected ? "text-[var(--accent-text)]" : "text-gray-300"}`}>
-                      {note.title}
-                    </span>
-                    {note.tags && !selectMode && (
-                      <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
-                        {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
-                          <span key={tag} className="text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-1.5 py-0.5 rounded whitespace-nowrap">
-                            {tag}
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            const paths = selectedPaths.size > 0 && selectedPaths.has(note.path)
+                              ? Array.from(selectedPaths)
+                              : [relPath];
+                            e.dataTransfer.setData("text/x-note-paths", JSON.stringify(paths));
+                            e.dataTransfer.effectAllowed = "copy";
+                          }}
+                          onContextMenu={(e) => handleNoteContextMenu(e, note)}
+                          onClick={() => {
+                            if (selectMode) toggleSelectPath(note.path);
+                            else window.prism.openInObsidian(note.path);
+                          }}
+                          className={`flex items-center gap-2 px-3 py-1.5 mx-2 rounded transition-colors cursor-pointer group ${
+                            isSelected ? "bg-[var(--accent-muted)]" : "hover:bg-gray-800/30"
+                          }`}
+                          title={note.path}
+                        >
+                          {selectMode && (
+                            <div
+                              className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                isSelected
+                                  ? "bg-[var(--accent)] border-[var(--accent)]"
+                                  : "border-gray-600"
+                              }`}
+                            >
+                              {isSelected && <CheckSquare size={12} className="text-white" />}
+                            </div>
+                          )}
+                          <FileText size={14} className="text-gray-500 flex-shrink-0" />
+                          <span className={`text-sm truncate flex-1 ${isSelected ? "text-[var(--accent-text)]" : "text-gray-300"}`}>
+                            {note.title}
                           </span>
-                        ))}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+                          {note.tags && !selectMode && (
+                            <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
+                              {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
+                                <span key={tag} className="text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-1.5 py-0.5 rounded whitespace-nowrap">
+                                  {tag}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

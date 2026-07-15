@@ -9,7 +9,8 @@ import {
   updateResource,
   deleteResource,
   searchResources,
-  setVaultNotes,
+  syncVaultNotes,
+  getNoteMtimes,
   getNotes,
   searchNotes,
   getSetting,
@@ -56,77 +57,106 @@ async function fetchPageTitle(url: string): Promise<string> {
 
 // ---- Scan Obsidian vault ----
 
-function scanVault(vaultPath: string): { path: string; title: string; content: string; tags: string; modified_at: string }[] {
-  const notes: { path: string; title: string; content: string; tags: string; modified_at: string }[] = [];
+function extractTags(content: string): Set<string> {
+  const tagSet = new Set<string>();
 
+  // 1. Parse YAML frontmatter tags
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    // tags: [a, b, c]
+    const inlineList = fm.match(/^tags:\s*\[(.+?)\]\s*$/m);
+    if (inlineList) {
+      inlineList[1].split(",").forEach((t) => {
+        const tag = t.trim().replace(/^["']|["']$/g, "");
+        if (tag) tagSet.add(tag);
+      });
+    }
+    // tags:\n  - a\n  - b
+    const listMatch = fm.match(/^tags:\s*\n((?:\s+-\s+.+\n?)+)/m);
+    if (listMatch) {
+      const items = listMatch[1].match(/-\s*(.+)/g);
+      if (items) {
+        items.forEach((t) => {
+          const tag = t.replace(/^-\s*/, "").trim().replace(/^["']|["']$/g, "");
+          if (tag) tagSet.add(tag);
+        });
+      }
+    }
+  }
+
+  // 2. Inline #tags from body (strip code blocks first)
+  const bodyStart = fmMatch ? fmMatch[0].length : 0;
+  let body = content.slice(bodyStart);
+  body = body.replace(/```[\s\S]*?```/g, "");
+  body = body.replace(/`[^`]+`/g, "");
+  const bodyTags = body.match(/(?:^|\s)#([\w一-鿿\p{L}-]+)/gu) || [];
+  bodyTags.forEach((t) => {
+    const tag = t.trim().replace(/^#/, "");
+    if (tag && /[\p{L}]/u.test(tag) && !/^\d+$/.test(tag)) tagSet.add(tag);
+  });
+
+  return tagSet;
+}
+
+function scanVaultIncremental(vaultPath: string): {
+  upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[];
+  deletePaths: string[];
+  totalCount: number;
+} {
+  // 1. Walk directory — collect paths + mtimes only (no content read yet)
+  const diskFiles = new Map<string, string>(); // path → mtime ISO
   function walk(dir: string): void {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!entry.name.startsWith(".")) walk(fullPath);
       } else if (entry.name.endsWith(".md")) {
         try {
-          const content = fs.readFileSync(fullPath, "utf-8");
           const stat = fs.statSync(fullPath);
-          const title = entry.name.replace(/\.md$/, "");
-          const tagSet = new Set<string>();
-
-          // 1. Parse YAML frontmatter tags
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-          if (fmMatch) {
-            const fm = fmMatch[1];
-            // tags: [a, b, c]
-            const inlineList = fm.match(/^tags:\s*\[(.+?)\]\s*$/m);
-            if (inlineList) {
-              inlineList[1].split(",").forEach((t) => {
-                const tag = t.trim().replace(/^["']|["']$/g, "");
-                if (tag) tagSet.add(tag);
-              });
-            }
-            // tags:\n  - a\n  - b
-            const listMatch = fm.match(/^tags:\s*\n((?:\s+-\s+.+\n?)+)/m);
-            if (listMatch) {
-              const items = listMatch[1].match(/-\s*(.+)/g);
-              if (items) {
-                items.forEach((t) => {
-                  const tag = t.replace(/^-\s*/, "").trim().replace(/^["']|["']$/g, "");
-                  if (tag) tagSet.add(tag);
-                });
-              }
-            }
-          }
-
-          // 2. Inline #tags from body (strip code blocks first)
-          const bodyStart = fmMatch ? fmMatch[0].length : 0;
-          let body = content.slice(bodyStart);
-          // Remove fenced code blocks
-          body = body.replace(/```[\s\S]*?```/g, "");
-          // Remove inline code
-          body = body.replace(/`[^`]+`/g, "");
-          const bodyTags = body.match(/(?:^|\s)#([\w一-鿿\p{L}-]+)/gu) || [];
-          bodyTags.forEach((t) => {
-            const tag = t.trim().replace(/^#/, "");
-            // Must contain at least one letter/CJK char, not purely digits
-            if (tag && /[\p{L}]/u.test(tag) && !/^\d+$/.test(tag)) tagSet.add(tag);
-          });
-
-          notes.push({
-            path: fullPath,
-            title,
-            content,
-            tags: Array.from(tagSet).join(" "),
-            modified_at: stat.mtime.toISOString(),
-          });
+          diskFiles.set(fullPath, stat.mtime.toISOString());
         } catch {
-          // skip unreadable files
+          // skip unreadable
         }
       }
     }
   }
-
   walk(vaultPath);
-  return notes;
+
+  // 2. Get DB state for diff
+  const dbNotes = getNoteMtimes();
+  const dbMap = new Map(dbNotes.map((n) => [n.path, n.modified_at]));
+
+  // 3. Read content only for new or changed files
+  const upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[] = [];
+  for (const [filePath, mtime] of diskFiles) {
+    if (dbMap.get(filePath) !== mtime) {
+      try {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const title = path.basename(filePath).replace(/\.md$/, "");
+        const tags = Array.from(extractTags(content)).join(" ");
+        upsert.push({ path: filePath, title, content, tags, modified_at: mtime });
+      } catch {
+        // skip unreadable
+      }
+    }
+  }
+
+  // 4. Files in DB but gone from disk
+  const deletePaths: string[] = [];
+  for (const [filePath] of dbMap) {
+    if (!diskFiles.has(filePath)) {
+      deletePaths.push(filePath);
+    }
+  }
+
+  return { upsert, deletePaths, totalCount: diskFiles.size };
 }
 
 // ---- IPC Handlers ----
@@ -151,9 +181,9 @@ function registerIpcHandlers(): void {
 
   // Obsidian
   ipcMain.handle("obsidian:set-path", (_e, vaultPath: string) => {
-    const notes = scanVault(vaultPath);
-    setVaultNotes(notes);
-    return notes.length;
+    const { upsert, deletePaths, totalCount } = scanVaultIncremental(vaultPath);
+    syncVaultNotes(upsert, deletePaths);
+    return totalCount;
   });
 
   ipcMain.handle("obsidian:list", () => getNotes());

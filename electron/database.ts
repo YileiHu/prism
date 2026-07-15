@@ -176,18 +176,29 @@ export interface ObsidianNote {
   modified_at: string;
 }
 
-export function setVaultNotes(notes: { path: string; title: string; content: string; tags: string; modified_at: string }[]): void {
-  const clearAll = db.prepare("DELETE FROM obsidian_notes");
-  const insert = db.prepare("INSERT INTO obsidian_notes (path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?)");
+export function getNoteMtimes(): { path: string; modified_at: string }[] {
+  return db.prepare("SELECT path, modified_at FROM obsidian_notes").all() as { path: string; modified_at: string }[];
+}
 
-  const transaction = db.transaction(() => {
-    clearAll.run();
-    for (const note of notes) {
-      insert.run(note.path, note.title, note.content, note.tags, note.modified_at);
+export function syncVaultNotes(
+  upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[],
+  deletePaths: string[],
+): void {
+  const upsertStmt = db.prepare(
+    "INSERT OR REPLACE INTO obsidian_notes (path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  const deleteStmt = db.prepare("DELETE FROM obsidian_notes WHERE path = ?");
+
+  const txn = db.transaction(() => {
+    for (const note of upsert) {
+      upsertStmt.run(note.path, note.title, note.content, note.tags, note.modified_at);
+    }
+    for (const p of deletePaths) {
+      deleteStmt.run(p);
     }
   });
 
-  transaction();
+  txn();
 }
 
 export function getNotes(): ObsidianNote[] {

@@ -3,7 +3,7 @@ import type { Translation } from "./zh";
 const en: Translation = {
   "app.title": "PRISM",
   "nav.resources": "Web Resources",
-  "nav.obsidian": "Obsidian Vault",
+  "nav.obsidian": "Knowledge Base",
   "nav.settings": "Settings",
   "lang.switch": "中文",
 

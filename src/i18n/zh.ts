@@ -2,7 +2,7 @@ const zh = {
   // App header
   "app.title": "PRISM",
   "nav.resources": "网页资源",
-  "nav.obsidian": "Obsidian 知识库",
+  "nav.obsidian": "知识库",
   "nav.settings": "设置",
   "lang.switch": "English",
 

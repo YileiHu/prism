@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <!-- Top face: lightest, catches most light -->
+    <linearGradient id="topFace" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#faf8fc"/>
+      <stop offset="100%" stop-color="#ede8f4"/>
+    </linearGradient>
+
+    <!-- Left face: mid tone -->
+    <linearGradient id="leftFace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ece6f2"/>
+      <stop offset="100%" stop-color="#ded6e8"/>
+    </linearGradient>
+
+    <!-- Right face: darkest, in shadow -->
+    <linearGradient id="rightFace" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e4ddf0"/>
+      <stop offset="100%" stop-color="#d4cce4"/>
+    </linearGradient>
+
+    <!-- Neumorphic drop shadow -->
+    <filter id="neumorph" x="-30%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="-4" dy="-4" stdDeviation="8" flood-color="white" flood-opacity="0.6"/>
+      <feDropShadow dx="8" dy="8" stdDeviation="10" flood-color="#b8a8c8" flood-opacity="0.5"/>
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#c8bcd8" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- ===== ORTHOGRAPHIC CUBE =====
+    Junction J = (256, 278). Edge vectors:
+      vT = (0, -143) → T(256, 135)
+      vL = (-118, 52) → L(138, 330)
+      vR = (118, 52)  → R(374, 330)
+    Remaining vertices (parallelogram rule):
+      TL = L + vT = (138, 187)
+      TR = R + vT = (374, 187)
+      B  = L + vR = (256, 382)
+
+    Face A (top-left):  J → T → TL → L
+    Face B (top-right): J → T → TR → R
+    Face C (front):     J → L →  B → R
+  -->
+
+  <g filter="url(#neumorph)">
+    <!-- Top-left face -->
+    <path d="M256 278 L256 135 L138 187 L138 330 Z"
+          fill="url(#topFace)"/>
+
+    <!-- Top-right face -->
+    <path d="M256 278 L256 135 L374 187 L374 330 Z"
+          fill="url(#rightFace)"/>
+
+    <!-- Front face -->
+    <path d="M256 278 L138 330 L256 382 L374 330 Z"
+          fill="url(#leftFace)"/>
+  </g>
+</svg>

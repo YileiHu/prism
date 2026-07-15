@@ -10,12 +10,39 @@
     "electron:build": "vite build && electron-builder",
     "lint": "tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-icons": "electron scripts/generate-icons.mjs"
   },
-  "keywords": [],
+  "keywords": [
+    "knowledge-management",
+    "obsidian",
+    "notes"
+  ],
   "author": "",
   "license": "MIT",
+  "build": {
+    "appId": "com.prism.knowledge",
+    "productName": "Prism",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "icon": "public/icon.png",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "icon": "public/icon.png"
+    },
+    "linux": {
+      "icon": "public/icon.png"
+    }
+  },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.6",
     "better-sqlite3": "^12.11.1",
     "lucide-react": "^1.24.0",
     "react": "^19.2.7",

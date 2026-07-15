@@ -47,9 +47,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden">
-        {tab === "resources" && <WebResources />}
-        {tab === "obsidian" && <ObsidianVault />}
-        {tab === "settings" && <Settings />}
+        <div style={{ display: tab === "resources" ? undefined : "none", height: "100%" }}><WebResources /></div>
+        <div style={{ display: tab === "obsidian" ? undefined : "none", height: "100%" }}><ObsidianVault /></div>
+        <div style={{ display: tab === "settings" ? undefined : "none", height: "100%" }}><Settings /></div>
       </main>
     </div>
   );
