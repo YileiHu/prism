@@ -18,9 +18,6 @@ const api = {
   searchNotes: (query: string) => ipcRenderer.invoke("obsidian:search", query),
   openInObsidian: (filePath: string) => ipcRenderer.invoke("obsidian:open", filePath),
 
-  // Unified search
-  unifiedSearch: (query: string) => ipcRenderer.invoke("search:unified", query),
-
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke("settings:set", key, value),

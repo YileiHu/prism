@@ -4,7 +4,6 @@ const en: Translation = {
   "app.title": "PRISM",
   "nav.resources": "Web Resources",
   "nav.obsidian": "Obsidian Vault",
-  "nav.search": "Unified Search",
   "nav.settings": "Settings",
   "lang.switch": "中文",
 
@@ -37,13 +36,6 @@ const en: Translation = {
   "obsidian.view.list": "List",
   "obsidian.view.tree": "Tree",
   "obsidian.chooseVault": "Choose Vault",
-
-  "search.placeholder": "Search across resources and notes...",
-  "search.button": "Search",
-  "search.empty": "Enter a search term to find resources and notes.",
-  "search.noResults": `No results found for "{query}".`,
-  "search.resourceLabel": "Web Resource",
-  "search.noteLabel": "Obsidian Note",
 
   "settings.title": "Settings",
   "settings.catVaults": "Vaults",

@@ -12,7 +12,6 @@ import {
   setVaultNotes,
   getNotes,
   searchNotes,
-  unifiedSearch,
   getSetting,
   setSetting,
   getAllTags,
@@ -180,9 +179,6 @@ function registerIpcHandlers(): void {
       shell.openExternal(url);
     }
   });
-
-  // Unified search
-  ipcMain.handle("search:unified", (_e, query: string) => unifiedSearch(query));
 
   // Settings
   ipcMain.handle("settings:get", (_e, key: string) => getSetting(key));

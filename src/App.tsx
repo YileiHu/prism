@@ -1,12 +1,11 @@
 import { useState } from "react";
 import WebResources from "./components/WebResources";
 import ObsidianVault from "./components/ObsidianVault";
-import UnifiedSearch from "./components/UnifiedSearch";
 import Settings from "./components/Settings";
-import { Globe, FolderSearch, BookOpen, Languages, Settings2 } from "lucide-react";
+import { Globe, FolderSearch, Languages, Settings2 } from "lucide-react";
 import { useT } from "./i18n";
 
-type Tab = "resources" | "obsidian" | "search" | "settings";
+type Tab = "resources" | "obsidian" | "settings";
 
 export default function App() {
   const { t, toggleLang } = useT();
@@ -15,7 +14,6 @@ export default function App() {
   const tabs: { key: Tab; label: string; icon: typeof Globe }[] = [
     { key: "resources", label: t["nav.resources"], icon: Globe },
     { key: "obsidian", label: t["nav.obsidian"], icon: FolderSearch },
-    { key: "search", label: t["nav.search"], icon: BookOpen },
     { key: "settings", label: t["nav.settings"], icon: Settings2 },
   ];
 
@@ -51,7 +49,6 @@ export default function App() {
       <main className="flex-1 overflow-hidden">
         {tab === "resources" && <WebResources />}
         {tab === "obsidian" && <ObsidianVault />}
-        {tab === "search" && <UnifiedSearch />}
         {tab === "settings" && <Settings />}
       </main>
     </div>

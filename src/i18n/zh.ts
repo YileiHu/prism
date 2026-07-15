@@ -3,7 +3,6 @@ const zh = {
   "app.title": "PRISM",
   "nav.resources": "网页资源",
   "nav.obsidian": "Obsidian 知识库",
-  "nav.search": "统一搜索",
   "nav.settings": "设置",
   "lang.switch": "English",
 
@@ -38,14 +37,6 @@ const zh = {
   "obsidian.view.list": "列表",
   "obsidian.view.tree": "树形",
   "obsidian.chooseVault": "选择知识库",
-
-  // Unified Search
-  "search.placeholder": "搜索资源和笔记...",
-  "search.button": "搜索",
-  "search.empty": "输入关键词搜索资源和笔记。",
-  "search.noResults": '未找到与 "{query}" 相关的结果。',
-  "search.resourceLabel": "网页资源",
-  "search.noteLabel": "Obsidian 笔记",
 
   // Settings
   "settings.title": "设置",

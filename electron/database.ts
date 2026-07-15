@@ -202,31 +202,6 @@ export function searchNotes(query: string): ObsidianNote[] {
   `).all(query) as ObsidianNote[];
 }
 
-// ---- Unified search ----
-
-export interface SearchResult {
-  type: "resource" | "note";
-  id: number;
-  title: string;
-  snippet: string;
-}
-
-export function unifiedSearch(query: string): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  const resources = searchResources(query);
-  for (const r of resources) {
-    results.push({ type: "resource", id: r.id, title: r.title || r.url, snippet: r.notes || r.url });
-  }
-
-  const notes = searchNotes(query);
-  for (const n of notes) {
-    results.push({ type: "note", id: n.id, title: n.title, snippet: n.content.slice(0, 200) });
-  }
-
-  return results;
-}
-
 // ---- Settings ----
 
 export function getSetting(key: string): string | null {
