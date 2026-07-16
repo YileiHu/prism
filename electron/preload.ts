@@ -15,8 +15,11 @@ const api = {
   // Obsidian
   setVaultPath: (vaultPath: string) => ipcRenderer.invoke("obsidian:set-path", vaultPath),
   getNotes: () => ipcRenderer.invoke("obsidian:list"),
+  getNoteList: () => ipcRenderer.invoke("obsidian:list-brief"),
   searchNotes: (query: string) => ipcRenderer.invoke("obsidian:search", query),
   openInObsidian: (filePath: string) => ipcRenderer.invoke("obsidian:open", filePath),
+  createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("obsidian:create-note", vaultPath, title),
+  renameNote: (oldPath: string, newTitle: string) => ipcRenderer.invoke("obsidian:rename-note", oldPath, newTitle),
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),

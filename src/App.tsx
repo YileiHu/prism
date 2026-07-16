@@ -9,11 +9,11 @@ type Tab = "resources" | "obsidian" | "settings";
 
 export default function App() {
   const { t, toggleLang } = useT();
-  const [tab, setTab] = useState<Tab>("resources");
+  const [tab, setTab] = useState<Tab>("obsidian");
 
   const tabs: { key: Tab; label: string; icon: typeof Globe }[] = [
-    { key: "resources", label: t["nav.resources"], icon: Globe },
     { key: "obsidian", label: t["nav.obsidian"], icon: FolderSearch },
+    { key: "resources", label: t["nav.resources"], icon: Globe },
     { key: "settings", label: t["nav.settings"], icon: Settings2 },
   ];
 
@@ -47,9 +47,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden">
-        <div style={{ display: tab === "resources" ? undefined : "none", height: "100%" }}><WebResources /></div>
-        <div style={{ display: tab === "obsidian" ? undefined : "none", height: "100%" }}><ObsidianVault /></div>
-        <div style={{ display: tab === "settings" ? undefined : "none", height: "100%" }}><Settings /></div>
+        {tab === "resources" && <div style={{ height: "100%" }}><WebResources /></div>}
+        {tab === "obsidian" && <div style={{ height: "100%" }}><ObsidianVault /></div>}
+        {tab === "settings" && <div style={{ height: "100%" }}><Settings /></div>}
       </main>
     </div>
   );

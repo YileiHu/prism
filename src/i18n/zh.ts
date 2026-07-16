@@ -90,8 +90,13 @@ const zh = {
   // Context menu
   "menu.openInObsidian": "在 Obsidian 中打开",
   "menu.showInExplorer": "在文件资源管理器中显示",
+  "menu.rename": "重命名",
   "menu.addToCollection": "添加到收藏集",
   "menu.moveToTrash": "移动到回收站",
+
+  // Rename
+  "obsidian.renameTitle": "新名称...",
+  "obsidian.renamed": "已重命名为 {name}",
 
   // Batch
   "batch.selected": "已选择 {count} 项",
@@ -99,6 +104,20 @@ const zh = {
   "batch.delete": "移动到回收站",
   "batch.selectMode": "选择",
   "batch.cancelSelect": "取消",
+
+  // New Note
+  "obsidian.newNote": "新建笔记",
+  "obsidian.newNoteTitle": "笔记名称...",
+  "obsidian.newNoteCreated": "已创建 {name}",
+  "obsidian.newNoteCollection": "收藏集（可选）",
+  "obsidian.newNoteGroup": "分组（可选）",
+  "obsidian.newNoteNoCollection": "不添加到收藏集",
+  "obsidian.newNoteNoGroup": "不分组",
+
+  // Default Notes Directory
+  "settings.defaultNotesDir": "默认笔记目录",
+  "settings.defaultNotesDirDesc": "新建笔记时存放位置（相对于知识库根目录），例如：inbox",
+  "settings.defaultNotesDirPlaceholder": "例如：inbox",
 
   // Confirm
   "confirm.deleteFile": "确定要将 {name} 移动到回收站吗？",

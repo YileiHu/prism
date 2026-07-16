@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type JSX } from "rea
 import {
   Search, FileText, ExternalLink,
   FolderOpen, CheckSquare,
-  Trash2,
+  Trash2, Plus, Pencil, X,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
@@ -10,6 +10,7 @@ import "../lib/api";
 import CollectionsSidebar, { type CollectionData, type NoteGroup } from "./CollectionsSidebar";
 import CollectionDetail from "./CollectionDetail";
 import CreateCollectionModal from "./CreateCollectionModal";
+import CreateNoteModal from "./CreateNoteModal";
 import BatchActionBar from "./BatchActionBar";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 
@@ -17,7 +18,7 @@ interface ObsidianNote {
   id: number;
   path: string;
   title: string;
-  content: string;
+  content?: string;
   tags: string;
   modified_at: string;
 }
@@ -66,7 +67,12 @@ export default function ObsidianVault() {
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showNewNoteModal, setShowNewNoteModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CollectionData | null>(null);
+
+  // Rename note state
+  const [renameNoteTarget, setRenameNoteTarget] = useState<ObsidianNote | null>(null);
+  const [renameNoteTitle, setRenameNoteTitle] = useState("");
 
   // Select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -147,14 +153,12 @@ export default function ObsidianVault() {
     setSelectedPaths(new Set());
     try {
       await window.prism.setSetting("last_vault_path", vault.path);
-      const [, collData, results] = await Promise.all([
+      const [, collData] = await Promise.all([
         window.prism.setVaultPath(vault.path),
         window.prism.loadCollections(vault.path) as Promise<CollectionsFile | null>,
-        window.prism.getNotes(),
       ]);
       const colls = collData?.collections ?? [];
       setCollections(colls);
-      setNotes(results);
       // Restore last selected collection for this vault
       const lastCollId = await window.prism.getSetting("last_collection_id");
       if (lastCollId && colls.some((c) => c.id === lastCollId)) {
@@ -188,7 +192,7 @@ export default function ObsidianVault() {
     if (searchQuery.trim()) {
       setNotes(await window.prism.searchNotes(searchQuery));
     } else {
-      setNotes(await window.prism.getNotes());
+      setNotes(await window.prism.getNoteList());
     }
   }, [searchQuery]);
 
@@ -210,6 +214,69 @@ export default function ObsidianVault() {
     } finally {
       setScanning(false);
     }
+  };
+
+  const handleCreateNote = (note: { id: number; path: string; title: string }, collectionId?: string, groupId?: string) => {
+    setShowNewNoteModal(false);
+    showToast(t["obsidian.newNoteCreated"].replace("{name}", note.title));
+    const relPath = toRelativePath(note.path, selectedVault!.path);
+    if (collectionId) {
+      if (groupId) {
+        handleMoveNoteDirect(collectionId, relPath, null, groupId);
+      } else {
+        handleDropNoteDirect(collectionId, [relPath]);
+      }
+    }
+    loadNotes();
+  };
+
+  const handleDropNoteDirect = (collectionId: string, notePaths: string[]) => {
+    const updated = collections.map((c) => {
+      if (c.id !== collectionId) return c;
+      const newPaths = [...c.notePaths];
+      let added = 0;
+      for (const np of notePaths) {
+        if (!newPaths.includes(np)) { newPaths.push(np); added++; }
+      }
+      if (added > 0) showToast(t["collections.added"].replace("{name}", c.name));
+      return { ...c, notePaths: newPaths };
+    });
+    setCollections(updated);
+    saveCollections(updated);
+  };
+
+  const handleMoveNoteDirect = (collectionId: string, relPath: string, _fromGroupId: string | null, toGroupId: string) => {
+    const updated = collections.map((c) => {
+      if (c.id !== collectionId) return c;
+      const groups = (c.groups ?? []).map((g) => {
+        if (g.id !== toGroupId) return g;
+        if (g.notePaths.includes(relPath)) return g;
+        return { ...g, notePaths: [...g.notePaths, relPath] };
+      });
+      return { ...c, groups };
+    });
+    setCollections(updated);
+    saveCollections(updated);
+  };
+
+  const handleRenameNote = async () => {
+    if (!renameNoteTitle.trim() || !renameNoteTarget || !selectedVault) return;
+    const oldRelPath = toRelativePath(renameNoteTarget.path, selectedVault.path);
+    const result = await window.prism.renameNote(renameNoteTarget.path, renameNoteTitle.trim());
+    const newRelPath = toRelativePath(result.path, selectedVault.path);
+    const updated = collections.map((c) => ({
+      ...c,
+      notePaths: c.notePaths.map((p) => p === oldRelPath ? newRelPath : p),
+      groups: (c.groups ?? []).map((g) => ({
+        ...g,
+        notePaths: g.notePaths.map((p) => p === oldRelPath ? newRelPath : p),
+      })),
+    }));
+    setCollections(updated);
+    saveCollections(updated);
+    setRenameNoteTarget(null);
+    showToast(t["obsidian.renamed"].replace("{name}", renameNoteTitle.trim()));
+    loadNotes();
   };
 
   // ---- Collection operations ----
@@ -452,6 +519,11 @@ export default function ObsidianVault() {
     setCtxMenu({ note, x: e.clientX, y: e.clientY });
   };
 
+  const handleCollectionNoteContextMenu = (e: React.MouseEvent, note: { path: string; title: string }) => {
+    e.preventDefault();
+    setCtxMenu({ note: note as ObsidianNote, x: e.clientX, y: e.clientY });
+  };
+
   const getContextMenuItems = (note: ObsidianNote): MenuItem[] => {
     const relPath = selectedVault ? toRelativePath(note.path, selectedVault.path) : "";
 
@@ -465,6 +537,11 @@ export default function ObsidianVault() {
         label: t["menu.showInExplorer"],
         icon: <FolderOpen size={14} />,
         onClick: () => window.prism.showItemInFolder(note.path),
+      },
+      {
+        label: t["menu.rename"],
+        icon: <Pencil size={14} />,
+        onClick: () => { setRenameNoteTarget(note); setRenameNoteTitle(note.title); },
       },
       { label: "", divider: true },
       {
@@ -617,6 +694,14 @@ export default function ObsidianVault() {
               />
             </div>
             <button
+              onClick={() => setShowNewNoteModal(true)}
+              disabled={!selectedVault}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={13} />
+              {t["obsidian.newNote"]}
+            </button>
+            <button
               onClick={toggleSelectMode}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-gray-700 transition-colors flex-shrink-0 ${
                 selectMode
@@ -639,6 +724,14 @@ export default function ObsidianVault() {
                 <h2 className="text-base font-semibold text-gray-200">{selectedCollection.name}</h2>
                 <span className="text-xs text-gray-500">{totalCollectionNotes} notes</span>
                 <div className="flex-1" />
+                <button
+                  onClick={() => setShowNewNoteModal(true)}
+                  disabled={!selectedVault}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Plus size={13} />
+                  {t["obsidian.newNote"]}
+                </button>
                 <button
                   onClick={handleToggleAll}
                   className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
@@ -667,6 +760,7 @@ export default function ObsidianVault() {
                 onMoveNote={handleMoveNote}
                 onRemoveNote={handleRemoveNote}
                 onReorderNotes={handleReorderNotesInGroup}
+                onNoteContextMenu={handleCollectionNoteContextMenu}
               />
             </div>
           )}
@@ -782,6 +876,58 @@ export default function ObsidianVault() {
           onSave={handleRenameCollection}
           onClose={() => setRenameTarget(null)}
         />
+      )}
+      {showNewNoteModal && selectedVault && (
+        <CreateNoteModal
+          vaultPath={selectedVault.path}
+          collections={collections}
+          onCreated={handleCreateNote}
+          onClose={() => setShowNewNoteModal(false)}
+        />
+      )}
+
+      {/* Rename note modal */}
+      {renameNoteTarget && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
+          <div className="fixed inset-0 bg-black/60" onClick={() => setRenameNoteTarget(null)} />
+          <div className="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-[400px] p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Pencil size={18} className="text-[var(--accent-text)]" />
+                <h2 className="text-base font-semibold text-gray-200">{t["menu.rename"]}</h2>
+              </div>
+              <button onClick={() => setRenameNoteTarget(null)} className="p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded">
+                <X size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={renameNoteTitle}
+              onChange={(e) => setRenameNoteTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRenameNote();
+              }}
+              placeholder={t["obsidian.renameTitle"]}
+              autoFocus
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+            <div className="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-800">
+              <button
+                onClick={() => setRenameNoteTarget(null)}
+                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                {t["resources.cancel"]}
+              </button>
+              <button
+                onClick={handleRenameNote}
+                disabled={!renameNoteTitle.trim()}
+                className="px-5 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 rounded-lg text-sm font-medium transition-colors"
+              >
+                {t["resources.save"]}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Context menu */}

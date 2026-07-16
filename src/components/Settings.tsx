@@ -24,6 +24,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [browserPath, setBrowserPath] = useState("");
   const [obsidianPath, setObsidianPath] = useState("");
+  const [defaultNotesDir, setDefaultNotesDir] = useState("");
 
   useEffect(() => {
     loadSettings();
@@ -38,6 +39,8 @@ export default function Settings() {
     if (bp) setBrowserPath(bp);
     const op = await window.prism.getSetting("obsidian_path");
     if (op) setObsidianPath(op);
+    const dnd = await window.prism.getSetting("default_notes_dir");
+    if (dnd) setDefaultNotesDir(dnd);
   };
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
@@ -143,6 +146,21 @@ export default function Settings() {
                   </button>
                 </div>
               ))}
+            </div>
+
+            <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 mb-5">
+              <div className="flex items-center gap-2 mb-3">
+                <FolderOpen size={14} className="text-amber-500" />
+                <span className="text-sm font-medium text-gray-300">{t["settings.defaultNotesDir"]}</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">{t["settings.defaultNotesDirDesc"]}</p>
+              <input
+                value={defaultNotesDir}
+                onChange={(e) => setDefaultNotesDir(e.target.value)}
+                onBlur={() => saveSetting("default_notes_dir", defaultNotesDir)}
+                placeholder={t["settings.defaultNotesDirPlaceholder"]}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              />
             </div>
 
             <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 space-y-3">

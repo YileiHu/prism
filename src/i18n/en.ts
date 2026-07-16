@@ -88,8 +88,13 @@ const en: Translation = {
   // Context menu
   "menu.openInObsidian": "Open in Obsidian",
   "menu.showInExplorer": "Show in File Explorer",
+  "menu.rename": "Rename",
   "menu.addToCollection": "Add to Collection",
   "menu.moveToTrash": "Move to Trash",
+
+  // Rename
+  "obsidian.renameTitle": "New name...",
+  "obsidian.renamed": "Renamed to {name}",
 
   // Batch
   "batch.selected": "{count} selected",
@@ -97,6 +102,20 @@ const en: Translation = {
   "batch.delete": "Move to Trash",
   "batch.selectMode": "Select",
   "batch.cancelSelect": "Cancel",
+
+  // New Note
+  "obsidian.newNote": "New Note",
+  "obsidian.newNoteTitle": "Note title...",
+  "obsidian.newNoteCreated": "Created {name}",
+  "obsidian.newNoteCollection": "Collection (optional)",
+  "obsidian.newNoteGroup": "Group (optional)",
+  "obsidian.newNoteNoCollection": "No collection",
+  "obsidian.newNoteNoGroup": "No group",
+
+  // Default Notes Directory
+  "settings.defaultNotesDir": "Default Notes Directory",
+  "settings.defaultNotesDirDesc": "Where to place new notes (relative to vault root), e.g., inbox",
+  "settings.defaultNotesDirPlaceholder": "e.g., inbox",
 
   // Confirm
   "confirm.deleteFile": "Move {name} to trash?",

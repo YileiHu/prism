@@ -205,12 +205,44 @@ export function getNotes(): ObsidianNote[] {
   return db.prepare("SELECT * FROM obsidian_notes ORDER BY modified_at DESC").all() as ObsidianNote[];
 }
 
+export interface ObsidianNoteBrief {
+  id: number;
+  path: string;
+  title: string;
+  tags: string;
+  modified_at: string;
+}
+
+export function getNoteList(): ObsidianNoteBrief[] {
+  return db.prepare("SELECT id, path, title, tags, modified_at FROM obsidian_notes ORDER BY modified_at DESC").all() as ObsidianNoteBrief[];
+}
+
 export function searchNotes(query: string): ObsidianNote[] {
   return db.prepare(`
     SELECT * FROM obsidian_notes
     WHERE id IN (SELECT rowid FROM obsidian_fts WHERE obsidian_fts MATCH ?)
     ORDER BY modified_at DESC
   `).all(query) as ObsidianNote[];
+}
+
+export function insertNote(note: {
+  path: string;
+  title: string;
+  content: string;
+  tags: string;
+  modified_at: string;
+}): ObsidianNote {
+  const stmt = db.prepare(
+    "INSERT INTO obsidian_notes (path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  const result = stmt.run(note.path, note.title, note.content, note.tags, note.modified_at);
+  const id = result.lastInsertRowid as number;
+  return db.prepare("SELECT * FROM obsidian_notes WHERE id = ?").get(id) as ObsidianNote;
+}
+
+export function renameNoteInDb(oldPath: string, newPath: string, newTitle: string): ObsidianNote {
+  db.prepare("UPDATE obsidian_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath);
+  return db.prepare("SELECT * FROM obsidian_notes WHERE path = ?").get(newPath) as ObsidianNote;
 }
 
 // ---- Settings ----

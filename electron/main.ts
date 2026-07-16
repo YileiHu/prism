@@ -10,8 +10,11 @@ import {
   deleteResource,
   searchResources,
   syncVaultNotes,
+  insertNote,
+  renameNoteInDb,
   getNoteMtimes,
   getNotes,
+  getNoteList,
   searchNotes,
   getSetting,
   setSetting,
@@ -99,31 +102,22 @@ function extractTags(content: string): Set<string> {
   return tagSet;
 }
 
-function scanVaultIncremental(vaultPath: string): {
+async function scanVaultIncremental(vaultPath: string): Promise<{
   upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[];
   deletePaths: string[];
   totalCount: number;
-} {
+}> {
   // 1. Walk directory — collect paths + mtimes only (no content read yet)
-  const diskFiles = new Map<string, string>(); // path → mtime ISO
+  const diskFiles = new Map<string, string>();
   function walk(dir: string): void {
     let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!entry.name.startsWith(".")) walk(fullPath);
       } else if (entry.name.endsWith(".md")) {
-        try {
-          const stat = fs.statSync(fullPath);
-          diskFiles.set(fullPath, stat.mtime.toISOString());
-        } catch {
-          // skip unreadable
-        }
+        try { diskFiles.set(fullPath, fs.statSync(fullPath).mtime.toISOString()); } catch { /* skip */ }
       }
     }
   }
@@ -133,27 +127,36 @@ function scanVaultIncremental(vaultPath: string): {
   const dbNotes = getNoteMtimes();
   const dbMap = new Map(dbNotes.map((n) => [n.path, n.modified_at]));
 
-  // 3. Read content only for new or changed files
-  const upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[] = [];
+  // 3. Collect files that need processing (no content read yet)
+  const toProcess: { filePath: string; mtime: string }[] = [];
   for (const [filePath, mtime] of diskFiles) {
     if (dbMap.get(filePath) !== mtime) {
+      toProcess.push({ filePath, mtime });
+    }
+  }
+
+  // 4. Read content in batches, yielding between batches
+  const BATCH_SIZE = 30;
+  const upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[] = [];
+  for (let i = 0; i < toProcess.length; i += BATCH_SIZE) {
+    const batch = toProcess.slice(i, i + BATCH_SIZE);
+    for (const { filePath, mtime } of batch) {
       try {
         const content = fs.readFileSync(filePath, "utf-8");
         const title = path.basename(filePath).replace(/\.md$/, "");
         const tags = Array.from(extractTags(content)).join(" ");
         upsert.push({ path: filePath, title, content, tags, modified_at: mtime });
-      } catch {
-        // skip unreadable
-      }
+      } catch { /* skip unreadable */ }
+    }
+    if (i + BATCH_SIZE < toProcess.length) {
+      await new Promise((r) => setImmediate(r));
     }
   }
 
-  // 4. Files in DB but gone from disk
+  // 5. Files in DB but gone from disk
   const deletePaths: string[] = [];
   for (const [filePath] of dbMap) {
-    if (!diskFiles.has(filePath)) {
-      deletePaths.push(filePath);
-    }
+    if (!diskFiles.has(filePath)) deletePaths.push(filePath);
   }
 
   return { upsert, deletePaths, totalCount: diskFiles.size };
@@ -180,15 +183,53 @@ function registerIpcHandlers(): void {
   ipcMain.handle("fetch:title", async (_e, url: string) => fetchPageTitle(url));
 
   // Obsidian
-  ipcMain.handle("obsidian:set-path", (_e, vaultPath: string) => {
-    const { upsert, deletePaths, totalCount } = scanVaultIncremental(vaultPath);
+  ipcMain.handle("obsidian:set-path", async (_e, vaultPath: string) => {
+    const { upsert, deletePaths, totalCount } = await scanVaultIncremental(vaultPath);
     syncVaultNotes(upsert, deletePaths);
     return totalCount;
   });
 
   ipcMain.handle("obsidian:list", () => getNotes());
+  ipcMain.handle("obsidian:list-brief", () => getNoteList());
 
   ipcMain.handle("obsidian:search", (_e, query: string) => searchNotes(query));
+
+  ipcMain.handle("obsidian:create-note", (_e, vaultPath: string, title: string) => {
+    const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
+    const defaultDir = getSetting("default_notes_dir") || "";
+    const targetDir = defaultDir ? path.join(vaultPath, defaultDir) : vaultPath;
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    let fileName = `${safeName}.md`;
+    let filePath = path.join(targetDir, fileName);
+    let counter = 1;
+    while (fs.existsSync(filePath)) {
+      fileName = `${safeName} ${counter}.md`;
+      filePath = path.join(targetDir, fileName);
+      counter++;
+    }
+    const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
+    const content = `# ${finalTitle}\n\n`;
+    const now = new Date().toISOString();
+    fs.writeFileSync(filePath, content, "utf-8");
+    const tags = Array.from(extractTags(content)).join(" ");
+    return insertNote({ path: filePath, title: finalTitle, content, tags, modified_at: now });
+  });
+
+  ipcMain.handle("obsidian:rename-note", (_e, oldPath: string, newTitle: string) => {
+    const safeName = newTitle.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
+    const dir = path.dirname(oldPath);
+    let newPath = path.join(dir, `${safeName}.md`);
+    let counter = 1;
+    while (fs.existsSync(newPath) && newPath !== oldPath) {
+      newPath = path.join(dir, `${safeName} ${counter}.md`);
+      counter++;
+    }
+    const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
+    fs.renameSync(oldPath, newPath);
+    return renameNoteInDb(oldPath, newPath, finalTitle);
+  });
 
   ipcMain.handle("obsidian:open", (_e, filePath: string) => {
     const uri = `obsidian://open?path=${encodeURIComponent(filePath)}&paneType=tab`;

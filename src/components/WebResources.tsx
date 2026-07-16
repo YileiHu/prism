@@ -90,7 +90,6 @@ export default function WebResources() {
 
   useEffect(() => {
     loadTags();
-    loadResources();
   }, []);
 
   const handleSaveNew = async () => {
