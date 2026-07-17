@@ -5,8 +5,8 @@ const api = {
   addResource: (url: string, title: string, notes: string, tags: string[]) =>
     ipcRenderer.invoke("resources:add", url, title, notes, tags),
   getResources: () => ipcRenderer.invoke("resources:list"),
-  updateResource: (id: number, title: string, notes: string, tags: string[]) =>
-    ipcRenderer.invoke("resources:update", id, title, notes, tags),
+  updateResource: (id: number, url: string, title: string, notes: string, tags: string[]) =>
+    ipcRenderer.invoke("resources:update", id, url, title, notes, tags),
   deleteResource: (id: number) => ipcRenderer.invoke("resources:delete", id),
   searchResources: (query: string) => ipcRenderer.invoke("resources:search", query),
   fetchPageTitle: (url: string) => ipcRenderer.invoke("fetch:title", url),
@@ -40,6 +40,17 @@ const api = {
   showItemInFolder: (filePath: string) => ipcRenderer.invoke("shell:show-item-in-folder", filePath),
   trashFile: (filePath: string) => ipcRenderer.invoke("shell:trash-file", filePath),
   trashFiles: (filePaths: string[]) => ipcRenderer.invoke("shell:trash-files", filePaths),
+
+  // Window controls
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  onMaximizeChange: (callback: (maximized: boolean) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized);
+    ipcRenderer.on("window:maximize-change", handler);
+    return () => { ipcRenderer.removeListener("window:maximize-change", handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld("prism", api);

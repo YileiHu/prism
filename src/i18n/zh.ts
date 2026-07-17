@@ -4,12 +4,11 @@ const zh = {
   "nav.resources": "网页资源",
   "nav.obsidian": "知识库",
   "nav.settings": "设置",
-  "lang.switch": "English",
-
   // Web Resources
   "resources.addUrl": "输入网址保存...",
   "resources.add": "添加资源",
   "resources.addTitle": "新建资源",
+  "resources.editTitle": "编辑资源",
   "resources.title": "标题（可选，留空则自动获取）...",
   "resources.notes": "备注（可选）...",
   "resources.tags": "输入标签，回车添加...",
@@ -62,6 +61,8 @@ const zh = {
   "settings.obsidianTest": "测试 Obsidian",
   "settings.appearance": "主题配色",
   "settings.appearanceDesc": "选择你喜欢的主题配色方案。",
+  "settings.language": "界面语言",
+  "settings.languageDesc": "更改界面显示语言，即刻生效。",
   "settings.currentTheme": "当前主题",
 
   // Collections
@@ -69,6 +70,7 @@ const zh = {
   "collections.namePlaceholder": "收藏集名称...",
   "collections.rename": "重命名",
   "collections.delete": "删除收藏集",
+  "collections.deleteGroup": "删除分组",
   "collections.deleteConfirm": "删除收藏集不会删除其中的笔记文件。确定删除吗？",
   "collections.emptyHint": "点击下方 + 按钮创建第一个收藏集",
   "collections.none": "暂无收藏集",
@@ -93,6 +95,8 @@ const zh = {
   "menu.rename": "重命名",
   "menu.addToCollection": "添加到收藏集",
   "menu.moveToTrash": "移动到回收站",
+  "menu.openInBrowser": "在浏览器中打开",
+  "menu.edit": "编辑",
 
   // Rename
   "obsidian.renameTitle": "新名称...",

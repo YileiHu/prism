@@ -19,8 +19,20 @@ interface Props {
 
 export default function ContextMenu({ items, position, onClose }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [submenuOpen, setSubmenuOpen] = useState<number | null>(null);
   const [adjustedPos, setAdjustedPos] = useState(position);
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    closeTimer.current = setTimeout(() => setSubmenuOpen(null), 150);
+  };
 
   useEffect(() => {
     if (menuRef.current) {
@@ -47,29 +59,32 @@ export default function ContextMenu({ items, position, onClose }: Props) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-[180px]"
+      className="fixed z-[100] bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 min-w-[180px]"
       style={{ left: adjustedPos.x, top: adjustedPos.y }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, i) => {
         // Pure divider — no button
         if (item.divider && !item.label && !item.onClick && !item.icon && !item.children) {
-          return <div key={i} className="border-t border-gray-700 my-1" />;
+          return <div key={i} className="border-t border-gray-700 mx-2 my-1" />;
         }
         return (
         <div key={i}>
-          {item.divider && <div className="border-t border-gray-700 my-1" />}
+          {item.divider && <div className="border-t border-gray-700 mx-2 my-1" />}
           <div
             className="relative"
-            onMouseEnter={() => setSubmenuOpen(item.children ? i : null)}
-            onMouseLeave={() => setSubmenuOpen(null)}
+            onMouseEnter={() => {
+              clearCloseTimer();
+              setSubmenuOpen(item.children ? i : null);
+            }}
+            onMouseLeave={scheduleClose}
           >
             <button
               onClick={() => {
                 item.onClick?.();
                 if (!item.children) onClose();
               }}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md ${
                 item.danger
                   ? "text-red-400 hover:bg-red-400/10"
                   : "text-gray-300 hover:bg-gray-700"
@@ -81,16 +96,20 @@ export default function ContextMenu({ items, position, onClose }: Props) {
               {item.children && <ChevronRight size={12} className="text-gray-500" />}
             </button>
             {item.children && submenuOpen === i && (
-              <div className="absolute left-full top-0 ml-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-[160px]">
+              <div
+                className="absolute left-full top-0 ml-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 min-w-[160px]"
+                onMouseEnter={clearCloseTimer}
+                onMouseLeave={scheduleClose}
+              >
                 {item.children.map((child, ci) => (
                   <div key={ci}>
-                    {child.divider && <div className="border-t border-gray-700 my-1" />}
+                    {child.divider && <div className="border-t border-gray-700 mx-2 my-1" />}
                     <button
                       onClick={() => {
                         child.onClick?.();
                         onClose();
                       }}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md ${
                         child.danger
                           ? "text-red-400 hover:bg-red-400/10"
                           : "text-gray-300 hover:bg-gray-700"

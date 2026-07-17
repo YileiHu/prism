@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, FolderOpen, ExternalLink, Monitor, Palette, Database, Wrench } from "lucide-react";
-import { useT } from "../i18n";
+import { Plus, Trash2, FolderOpen, ExternalLink, Monitor, Palette, Database, Wrench, ChevronDown } from "lucide-react";
+import { useT, langOptions } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { themes } from "../theme/themes";
+import Button from "./Button";
+import Sidebar from "./Sidebar";
+import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
 import "../lib/api";
 
 interface VaultEntry {
@@ -12,10 +15,8 @@ interface VaultEntry {
 
 type SettingsCategory = "vaults" | "external" | "appearance";
 
-const SIDEBAR_WIDTH = "w-48";
-
 export default function Settings() {
-  const { t } = useT();
+  const { t, lang, setLang } = useT();
   const { theme: currentTheme, setTheme, themeId } = useTheme();
   const [category, setCategory] = useState<SettingsCategory>("vaults");
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
@@ -25,6 +26,7 @@ export default function Settings() {
   const [browserPath, setBrowserPath] = useState("");
   const [obsidianPath, setObsidianPath] = useState("");
   const [defaultNotesDir, setDefaultNotesDir] = useState("");
+  const [langOpen, setLangOpen] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -91,11 +93,8 @@ export default function Settings() {
   return (
     <div className="h-full flex">
       {/* Sidebar */}
-      <aside className={`${SIDEBAR_WIDTH} flex-shrink-0 border-r border-gray-800 flex flex-col py-4`}>
-        <div className="px-4 mb-3">
-          <h2 className="text-sm font-semibold text-gray-300">{t["settings.title"]}</h2>
-        </div>
-        <nav className="flex-1 space-y-0.5 px-2">
+      <Sidebar>
+        <nav className="space-y-0.5">
           {categories.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -112,11 +111,11 @@ export default function Settings() {
           ))}
         </nav>
         {saved && (
-          <div className="px-4 pt-2 border-t border-gray-800/50 mt-2">
+          <div className="px-4 pt-2 mt-2 border-t border-gray-800/50">
             <span className="text-xs text-green-400">Settings saved</span>
           </div>
         )}
-      </aside>
+      </Sidebar>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-8">
@@ -138,12 +137,14 @@ export default function Settings() {
                     <div className="text-sm text-gray-200 font-medium truncate">{v.name}</div>
                     <div className="text-xs text-gray-500 truncate">{v.path}</div>
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => handleRemoveVault(i)}
-                    className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded flex-shrink-0 transition-colors"
+                    className="hover:text-red-400"
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -179,18 +180,19 @@ export default function Settings() {
                     placeholder={t["settings.vaultPath"]}
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <button onClick={handleSelectDir} className="p-2 text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                  <Button variant="ghost" size="icon-md" onClick={handleSelectDir}>
                     <FolderOpen size={16} />
-                  </button>
+                  </Button>
                 </div>
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handleAddVault}
                   disabled={!newName.trim() || !newPath.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 rounded-lg text-sm font-medium text-white transition-colors"
                 >
                   <Plus size={16} />
                   {t["settings.addVault"]}
-                </button>
+                </Button>
               </div>
             </div>
           </section>
@@ -215,13 +217,13 @@ export default function Settings() {
                     placeholder={t["settings.browserPathPlaceholder"]}
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <button onClick={() => handleSelectFile(setBrowserPath, "browser_path")} className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                  <Button size="xs" onClick={() => handleSelectFile(setBrowserPath, "browser_path")} className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-normal">
                     {t["settings.selectFile"]}
-                  </button>
-                  <button onClick={handleTestBrowser} className="flex items-center gap-1 px-3 py-2 text-xs text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20 rounded-lg transition-colors">
+                  </Button>
+                  <Button variant="secondary" size="xs" onClick={handleTestBrowser} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20">
                     <ExternalLink size={12} />
                     {t["settings.browserTest"]}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -238,13 +240,13 @@ export default function Settings() {
                     placeholder={t["settings.obsidianPathPlaceholder"]}
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <button onClick={() => handleSelectFile(setObsidianPath, "obsidian_path")} className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                  <Button size="xs" onClick={() => handleSelectFile(setObsidianPath, "obsidian_path")} className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-normal">
                     {t["settings.selectFile"]}
-                  </button>
-                  <button onClick={handleTestObsidian} className="flex items-center gap-1 px-3 py-2 text-xs text-[var(--accent-text)] hover:opacity-80 bg-[var(--accent-muted)] rounded-lg transition-colors">
+                  </Button>
+                  <Button variant="secondary" size="xs" onClick={handleTestObsidian} className="text-[var(--accent-text)] bg-[var(--accent-muted)] hover:opacity-80">
                     <ExternalLink size={12} />
                     {t["settings.obsidianTest"]}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -255,6 +257,35 @@ export default function Settings() {
           <section>
             <h3 className="text-base font-semibold text-gray-200 mb-1">{t["settings.appearance"]}</h3>
             <p className="text-xs text-gray-500 mb-5">{t["settings.appearanceDesc"]}</p>
+
+            <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800/50 mb-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Palette size={14} className="text-[var(--accent-text)]" />
+                <span className="text-sm font-medium text-gray-300">{t["settings.language"]}</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">{t["settings.languageDesc"]}</p>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setLangOpen(!langOpen)}
+                  className="w-full flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-200 transition-colors hover:border-gray-600"
+                >
+                  <span>{langOptions.find((o) => o.value === lang)?.label}</span>
+                  <ChevronDown size={14} className="text-gray-500 flex-shrink-0" />
+                </button>
+                <DropdownMenu open={langOpen} onClose={() => setLangOpen(false)} className="left-0 top-full mt-1 w-full">
+                  {langOptions.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onClick={() => { setLang(opt.value); setLangOpen(false); }}
+                      active={lang === opt.value}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenu>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               {themes.map((th) => (

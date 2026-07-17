@@ -1,6 +1,8 @@
 import { ChevronDown } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useT } from "../i18n";
+import Button from "./Button";
+import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
 
 interface Props {
   selectedCount: number;
@@ -12,17 +14,6 @@ interface Props {
 export default function BatchActionBar({ selectedCount, collections, onAddToCollection, onDelete }: Props) {
   const { t } = useT();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   if (selectedCount === 0) return null;
 
@@ -33,36 +24,32 @@ export default function BatchActionBar({ selectedCount, collections, onAddToColl
       </span>
 
       {/* Add to collection dropdown */}
-      <div className="relative" ref={dropdownRef}>
-        <button
+      <div className="relative">
+        <Button
+          variant="primary"
+          size="xs"
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-lg text-sm text-white transition-colors"
         >
           {t["batch.addToCollection"]}
           <ChevronDown size={14} />
-        </button>
-        {dropdownOpen && (
-          <div className="absolute bottom-full mb-1 left-0 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-[180px]">
-            {collections.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => { onAddToCollection(c.id); setDropdownOpen(false); }}
-                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-        )}
+        </Button>
+        <DropdownMenu open={dropdownOpen} onClose={() => setDropdownOpen(false)} className="bottom-full mb-1 left-0 min-w-[180px]">
+          {collections.map((c) => (
+            <DropdownMenuItem key={c.id} onClick={() => { onAddToCollection(c.id); setDropdownOpen(false); }}>
+              {c.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenu>
       </div>
 
       {/* Delete */}
-      <button
+      <Button
+        variant="danger-subtle"
+        size="xs"
         onClick={onDelete}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-400/10 hover:bg-red-400/20 text-red-400 rounded-lg text-sm transition-colors"
       >
         {t["batch.delete"]}
-      </button>
+      </Button>
     </div>
   );
 }

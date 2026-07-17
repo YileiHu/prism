@@ -5,11 +5,11 @@ const en: Translation = {
   "nav.resources": "Web Resources",
   "nav.obsidian": "Knowledge Base",
   "nav.settings": "Settings",
-  "lang.switch": "中文",
 
   "resources.addUrl": "Enter URL to save...",
   "resources.add": "Add Resource",
   "resources.addTitle": "New Resource",
+  "resources.editTitle": "Edit Resource",
   "resources.title": "Title (optional, auto-fetched if empty)...",
   "resources.notes": "Notes (optional)...",
   "resources.tags": "Type a tag and press Enter...",
@@ -60,6 +60,8 @@ const en: Translation = {
   "settings.obsidianTest": "Test Obsidian",
   "settings.appearance": "Theme",
   "settings.appearanceDesc": "Choose a color theme for the interface.",
+  "settings.language": "Language",
+  "settings.languageDesc": "Change the interface language. Takes effect immediately.",
   "settings.currentTheme": "Current theme",
 
   // Collections
@@ -67,6 +69,7 @@ const en: Translation = {
   "collections.namePlaceholder": "Collection name...",
   "collections.rename": "Rename",
   "collections.delete": "Delete Collection",
+  "collections.deleteGroup": "Delete Group",
   "collections.deleteConfirm": "Deleting a collection will not delete the note files. Are you sure?",
   "collections.emptyHint": "Click the + button below to create your first collection",
   "collections.none": "No collections",
@@ -91,6 +94,8 @@ const en: Translation = {
   "menu.rename": "Rename",
   "menu.addToCollection": "Add to Collection",
   "menu.moveToTrash": "Move to Trash",
+  "menu.openInBrowser": "Open in Browser",
+  "menu.edit": "Edit",
 
   // Rename
   "obsidian.renameTitle": "New name...",

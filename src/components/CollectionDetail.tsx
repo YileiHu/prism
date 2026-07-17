@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
-import { GripVertical, X, AlertTriangle, ChevronDown, ChevronRight, MoreVertical, Plus } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, MoreVertical, Plus } from "lucide-react";
 import { useT } from "../i18n";
+import Button from "./Button";
+import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
 import {
   DndContext,
   DragOverlay,
@@ -126,15 +128,12 @@ function SortableGroupCard({
         isOverlay ? "shadow-xl border-[var(--accent)]" : "border-gray-700/50"
       }`}
     >
-      <div className="flex items-center gap-2 px-3 h-8" style={{ backgroundColor: `${color.bar}18` }}>
-        <button
-          className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={13} />
-        </button>
-        <div className="w-1 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: color.bar }} />
+      <div
+        className="flex items-center gap-2 px-3 h-8"
+        style={{ backgroundColor: `${color.bar}18` }}
+        {...attributes}
+        {...listeners}
+      >
         <button onClick={onToggle} className="text-gray-500 hover:text-gray-300 transition-colors">
           {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -160,36 +159,27 @@ function SortableGroupCard({
         <span className="text-xs text-gray-500 ml-1">{group.notes.length}</span>
         <div className="flex-1" />
         <div className="relative">
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-            className="p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded transition-colors"
+            className="p-0"
           >
             <MoreVertical size={13} />
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-[100px]">
-                <button
-                  onClick={() => { setEditing(true); setEditName(group.name); setMenuOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
-                >
-                  {t["collections.rename"]}
-                </button>
-                <button
-                  onClick={() => { onDelete(); setMenuOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10"
-                >
-                  {t["collections.delete"]}
-                </button>
-              </div>
-            </>
-          )}
+          </Button>
+          <DropdownMenu open={menuOpen} onClose={() => setMenuOpen(false)} className="right-0 top-full mt-1 min-w-[100px]">
+            <DropdownMenuItem onClick={() => { setEditing(true); setEditName(group.name); setMenuOpen(false); }}>
+              {t["collections.rename"]}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { onDelete(); setMenuOpen(false); }} danger>
+              {t["collections.deleteGroup"]}
+            </DropdownMenuItem>
+          </DropdownMenu>
         </div>
       </div>
 
       {!collapsed && (
-        <div className="px-2 py-1.5">
+        <div className="p-2">
           {group.notes.length === 0 ? (
             <p className="text-xs text-gray-600 text-center py-3">
               {t["collections.dropNotesHere"] ?? "拖入笔记到此处"}
@@ -252,19 +242,14 @@ function SortableNoteRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded transition-colors cursor-pointer ${
+      {...attributes}
+      {...listeners}
+      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
         note.missing ? "opacity-50" : "hover:bg-gray-700/30"
       }`}
       onClick={() => { if (!note.missing) window.prism.openInObsidian(note.path); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onNoteContextMenu(e, note); }}
     >
-      <button
-        className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical size={13} />
-      </button>
       <span className={`flex-1 text-sm truncate ${note.missing ? "text-gray-600 line-through" : "text-gray-200"}`}>
         {note.title}
         {note.missing && (
@@ -274,12 +259,6 @@ function SortableNoteRow({
           </span>
         )}
       </span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemoveNote(note.relativePath, groupId); }}
-        className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 rounded transition-all flex-shrink-0"
-      >
-        <X size={13} />
-      </button>
     </div>
   );
 }
@@ -289,7 +268,6 @@ function SortableNoteRow({
 function DragOverlayNote({ note }: { note: NoteInfo }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-gray-800 border border-[var(--accent)] shadow-xl opacity-90">
-      <GripVertical size={13} className="text-gray-500" />
       <span className="text-sm text-gray-200">{note.title}</span>
     </div>
   );
@@ -301,8 +279,6 @@ function DragOverlayGroup({ group, color }: { group: GroupView; color: { bar: st
   return (
     <div className="rounded-xl bg-gray-800 border border-[var(--accent)] shadow-xl opacity-90 overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-8" style={{ backgroundColor: `${color.bar}18` }}>
-        <GripVertical size={13} className="text-gray-500" />
-        <div className="w-1 h-4 rounded-full" style={{ backgroundColor: color.bar }} />
         <span className="text-xs font-medium" style={{ color: color.name }}>{group.name}</span>
         <span className="text-xs text-gray-500">{group.notes.length}</span>
       </div>
@@ -474,7 +450,6 @@ export default function CollectionDetail({
           className="mb-3 border border-gray-700/30 rounded-xl bg-gray-900/10 overflow-hidden"
         >
           <div className="flex items-center gap-2 px-3 h-8 bg-gray-800/30">
-            <div className="w-1 h-4 rounded-full bg-gray-700 flex-shrink-0" />
             <button onClick={onToggleUngrouped} className="text-gray-500 hover:text-gray-300 transition-colors">
               {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
             </button>
@@ -484,7 +459,7 @@ export default function CollectionDetail({
             <span className="text-xs text-gray-600">{ungroupedNotes.length}</span>
           </div>
           {!ungroupedCollapsed && (
-            <div className="px-2 py-1.5">
+            <div className="p-2">
               {ungroupedNotes.length === 0 ? (
                 <p className="text-xs text-gray-600 text-center py-3">
                   {t["collections.dropNotesHere"] ?? "拖入笔记到此处"}
@@ -520,16 +495,17 @@ export default function CollectionDetail({
               autoFocus
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)]"
             />
-            <button
+            <Button
+              variant="primary"
+              size="xs"
               onClick={handleAddGroup}
               disabled={!newGroupName.trim()}
-              className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 rounded-lg text-sm text-white transition-colors"
             >
               {t["resources.save"]}
-            </button>
-            <button onClick={() => setAddingGroup(false)} className="px-2 py-1.5 text-sm text-gray-400 hover:text-gray-200">
+            </Button>
+            <Button variant="secondary" size="xs" onClick={() => setAddingGroup(false)}>
               {t["resources.cancel"]}
-            </button>
+            </Button>
           </div>
         ) : (
           <button

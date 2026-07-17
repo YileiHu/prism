@@ -24,13 +24,17 @@ import {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
+  const isWindows = process.platform === "win32";
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     title: "Prism",
-    backgroundColor: "#030712",
+    ...(isWindows
+      ? { frame: false, backgroundColor: "#030712" }
+      : { backgroundColor: "#030712" }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -49,7 +53,7 @@ function createWindow(): void {
 
 async function fetchPageTitle(url: string): Promise<string> {
   try {
-    const response = await net.fetch(url);
+    const response = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
     const html = await response.text();
     const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     return match ? match[1].trim() : url;
@@ -107,21 +111,40 @@ async function scanVaultIncremental(vaultPath: string): Promise<{
   deletePaths: string[];
   totalCount: number;
 }> {
-  // 1. Walk directory — collect paths + mtimes only (no content read yet)
-  const diskFiles = new Map<string, string>();
-  function walk(dir: string): void {
+  // 1. Walk directory with async I/O — collect paths + mtimes
+  async function walk(dir: string): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return result; }
+
+    const subdirs: string[] = [];
+    const statPromises: Promise<void>[] = [];
+
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".")) walk(fullPath);
+        if (!entry.name.startsWith(".")) subdirs.push(fullPath);
       } else if (entry.name.endsWith(".md")) {
-        try { diskFiles.set(fullPath, fs.statSync(fullPath).mtime.toISOString()); } catch { /* skip */ }
+        statPromises.push(
+          fs.promises.stat(fullPath).then(
+            (stat) => { result.set(fullPath, stat.mtime.toISOString()); },
+            () => {},
+          ),
+        );
       }
     }
+
+    await Promise.all(statPromises);
+
+    for (const subdir of subdirs) {
+      const subResult = await walk(subdir);
+      for (const [k, v] of subResult) result.set(k, v);
+    }
+
+    return result;
   }
-  walk(vaultPath);
+
+  const diskFiles = await walk(vaultPath);
 
   // 2. Get DB state for diff
   const dbNotes = getNoteMtimes();
@@ -135,21 +158,25 @@ async function scanVaultIncremental(vaultPath: string): Promise<{
     }
   }
 
-  // 4. Read content in batches, yielding between batches
+  // 4. Read content in parallel batches
   const BATCH_SIZE = 30;
   const upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[] = [];
   for (let i = 0; i < toProcess.length; i += BATCH_SIZE) {
     const batch = toProcess.slice(i, i + BATCH_SIZE);
-    for (const { filePath, mtime } of batch) {
-      try {
-        const content = fs.readFileSync(filePath, "utf-8");
-        const title = path.basename(filePath).replace(/\.md$/, "");
-        const tags = Array.from(extractTags(content)).join(" ");
-        upsert.push({ path: filePath, title, content, tags, modified_at: mtime });
-      } catch { /* skip unreadable */ }
-    }
-    if (i + BATCH_SIZE < toProcess.length) {
-      await new Promise((r) => setImmediate(r));
+    const batchResults = await Promise.all(
+      batch.map(async ({ filePath, mtime }) => {
+        try {
+          const content = await fs.promises.readFile(filePath, "utf-8");
+          const title = path.basename(filePath).replace(/\.md$/, "");
+          const tags = Array.from(extractTags(content)).join(" ");
+          return { path: filePath, title, content, tags, modified_at: mtime };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const item of batchResults) {
+      if (item) upsert.push(item);
     }
   }
 
@@ -172,8 +199,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("resources:list", () => getResources());
 
-  ipcMain.handle("resources:update", (_e, id: number, title: string, notes: string, tags: string[]) => {
-    return updateResource(id, title, notes, tags);
+  ipcMain.handle("resources:update", (_e, id: number, url: string, title: string, notes: string, tags: string[]) => {
+    return updateResource(id, url, title, notes, tags);
   });
 
   ipcMain.handle("resources:delete", (_e, id: number) => deleteResource(id));
@@ -305,6 +332,21 @@ function registerIpcHandlers(): void {
     }
     return { results, allSuccess: results.every((r) => r.success) };
   });
+
+  // Window controls
+  ipcMain.handle("window:minimize", () => mainWindow?.minimize());
+  ipcMain.handle("window:maximize", () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+  });
+  ipcMain.handle("window:close", () => mainWindow?.close());
+  ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+
+  mainWindow?.on("maximize", () => mainWindow?.webContents.send("window:maximize-change", true));
+  mainWindow?.on("unmaximize", () => mainWindow?.webContents.send("window:maximize-change", false));
 
   // Dialog
   ipcMain.handle("dialog:select-directory", async () => {

@@ -1,6 +1,10 @@
-import { useState, useCallback, useMemo } from "react";
-import { Plus, GripVertical, MoreVertical, FileText, FolderOpen, RefreshCw, Home } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, FolderOpen, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
+import Button from "./Button";
+import Sidebar from "./Sidebar";
+import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 import {
   DndContext,
   DragOverlay,
@@ -71,8 +75,12 @@ function SortableCollectionItem({
   onDropNote: (collectionId: string, notePaths: string[]) => void;
 }) {
   const { t } = useT();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
+
+  const menuItems: MenuItem[] = [
+    { label: t["collections.rename"], onClick: onRename },
+    { label: t["collections.delete"], onClick: onDelete, danger: true },
+  ];
 
   const {
     attributes,
@@ -95,9 +103,11 @@ function SortableCollectionItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative flex items-center gap-1.5 mx-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+      {...attributes}
+      {...listeners}
+      className={`group relative flex items-center gap-1.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
         isSelected
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
+          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
           : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
       }`}
       onClick={onSelect}
@@ -117,45 +127,14 @@ function SortableCollectionItem({
           } catch { /* ignore */ }
         }
       }}
+      onContextMenu={(e) => { e.preventDefault(); setCtxPos({ x: e.clientX, y: e.clientY }); }}
     >
-      <button
-        className="opacity-30 flex-shrink-0 cursor-grab active:cursor-grabbing hover:opacity-70"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical size={14} />
-      </button>
-      <FileText size={14} className="flex-shrink-0" />
       <span className="flex-1 text-sm truncate">{coll.name}</span>
       <span className="text-xs text-gray-600 flex-shrink-0">{totalNotes}</span>
 
-      <div className="relative flex-shrink-0">
-        <button
-          onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-          className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded transition-all"
-        >
-          <MoreVertical size={14} />
-        </button>
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); closeMenu(); }} />
-            <div className="absolute right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 min-w-[120px]">
-              <button
-                onClick={(e) => { e.stopPropagation(); onRename(); closeMenu(); }}
-                className="w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
-              >
-                {t["collections.rename"]}
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); closeMenu(); }}
-                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10"
-              >
-                {t["collections.delete"]}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      {ctxPos && (
+        <ContextMenu items={menuItems} position={ctxPos} onClose={() => setCtxPos(null)} />
+      )}
     </div>
   );
 }
@@ -164,8 +143,6 @@ function DragOverlayCollection({ coll }: { coll: CollectionData }) {
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-[var(--accent)] shadow-xl opacity-90">
-      <GripVertical size={14} className="text-gray-500" />
-      <FileText size={14} className="text-gray-400" />
       <span className="flex-1 text-sm text-gray-200">{coll.name}</span>
       <span className="text-xs text-gray-500">{totalNotes}</span>
     </div>
@@ -222,94 +199,92 @@ export default function CollectionsSidebar({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <aside className="min-w-48 w-52 flex-shrink-0 border-r border-gray-800 flex flex-col select-none">
-        {/* Collection list */}
-        <SortableContext items={collIds} strategy={verticalListSortingStrategy}>
-          <div className="flex-1 overflow-y-auto py-1 pt-2">
-            {collections.length === 0 && (
-              <p className="px-3 py-8 text-center text-xs text-gray-500 leading-relaxed">
-                {t["collections.emptyHint"] ?? "点击下方 + 按钮创建第一个收藏集"}
-              </p>
-            )}
+      <Sidebar
+        footer={
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="icon-md"
+                onClick={() => setVaultDropdownOpen(!vaultDropdownOpen)}
+                className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                title={selectedVault?.name ?? t["obsidian.chooseVault"]}
+              >
+                <FolderOpen size={16} />
+              </Button>
+              <DropdownMenu open={vaultDropdownOpen} onClose={() => setVaultDropdownOpen(false)} className="bottom-full mb-1 left-0 w-64">
+                {vaults.map((v, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { onSelectVault(v); setVaultDropdownOpen(false); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors rounded-md ${
+                      selectedVault?.path === v.path ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-gray-300 hover:bg-gray-700/50"
+                    }`}
+                  >
+                    <FolderOpen size={14} className={selectedVault?.path === v.path ? "text-[var(--accent-text)]" : "text-amber-500"} />
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{v.name}</div>
+                      <div className="text-gray-500 truncate text-[10px]">{v.path}</div>
+                    </div>
+                  </button>
+                ))}
+              </DropdownMenu>
+            </div>
 
-            {collections.map((coll) => (
-              <SortableCollectionItem
-                key={coll.id}
-                coll={coll}
-                isSelected={selectedId === coll.id}
-                onSelect={() => onSelect(coll.id)}
-                onRename={() => onRename(coll.id)}
-                onDelete={() => onDelete(coll.id)}
-                onDropNote={onDropNote}
-              />
-            ))}
-          </div>
-        </SortableContext>
-
-        {/* Bottom toolbar */}
-        <div className="border-t border-gray-800 px-2 py-2 flex items-center justify-center gap-1">
-          <div className="relative">
-            <button
-              onClick={() => setVaultDropdownOpen(!vaultDropdownOpen)}
-              className="p-2 text-amber-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
-              title={selectedVault?.name ?? t["obsidian.chooseVault"]}
+            <Button
+              variant="ghost"
+              size="icon-md"
+              onClick={onRefresh}
+              disabled={scanning}
+              title={t["obsidian.refresh"]}
             >
-              <FolderOpen size={16} />
-            </button>
-            {vaultDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setVaultDropdownOpen(false)} />
-                <div className="absolute bottom-full mb-1 left-0 z-20 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
-                  {vaults.map((v, i) => (
-                    <button
-                      key={i}
-                      onClick={() => { onSelectVault(v); setVaultDropdownOpen(false); }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-700/50 transition-colors ${
-                        selectedVault?.path === v.path ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-gray-300"
-                      }`}
-                    >
-                      <FolderOpen size={14} className={selectedVault?.path === v.path ? "text-[var(--accent-text)]" : "text-amber-500"} />
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{v.name}</div>
-                        <div className="text-gray-500 truncate text-[10px]">{v.path}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+              <RefreshCw size={16} className={scanning ? "animate-spin" : ""} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-md"
+              onClick={onCreate}
+              title={t["collections.new"]}
+            >
+              <Plus size={16} />
+            </Button>
+
           </div>
-
-          <button
-            onClick={onRefresh}
-            disabled={scanning}
-            className="p-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 rounded-lg transition-colors disabled:opacity-50"
-            title={t["obsidian.refresh"]}
-          >
-            <RefreshCw size={16} className={scanning ? "animate-spin" : ""} />
-          </button>
-
-          <button
-            onClick={onCreate}
-            className="p-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 rounded-lg transition-colors"
-            title={t["collections.new"]}
-          >
-            <Plus size={16} />
-          </button>
-
-          <button
-            onClick={() => onSelect(null)}
-            className={`p-2 rounded-lg transition-colors ${
-              selectedId === null
-                ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
-                : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
-            }`}
-            title={`${t["collections.allNotes"]} (${allNotesCount})`}
-          >
-            <Home size={16} />
-          </button>
+        }
+      >
+        <div
+          onClick={() => onSelect(null)}
+          className={`w-full flex items-center gap-1.5 px-3 py-2 text-sm transition-colors rounded-lg cursor-pointer mb-1 pb-2 border-b border-gray-800/50 ${
+            selectedId === null
+              ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
+              : "text-gray-300 hover:text-gray-200 hover:bg-gray-800/50 font-medium"
+          }`}
+        >
+          <span className="flex-1 text-sm truncate text-left">{t["collections.allNotes"]}</span>
+          <span className="text-xs text-gray-600 flex-shrink-0">{allNotesCount}</span>
         </div>
-      </aside>
+
+        <SortableContext items={collIds} strategy={verticalListSortingStrategy}>
+          {collections.length === 0 && (
+            <p className="px-3 py-8 text-center text-xs text-gray-500 leading-relaxed">
+              {t["collections.emptyHint"] ?? "点击下方 + 按钮创建第一个收藏集"}
+            </p>
+          )}
+
+          {collections.map((coll) => (
+            <SortableCollectionItem
+              key={coll.id}
+              coll={coll}
+              isSelected={selectedId === coll.id}
+              onSelect={() => onSelect(coll.id)}
+              onRename={() => onRename(coll.id)}
+              onDelete={() => onDelete(coll.id)}
+              onDropNote={onDropNote}
+            />
+          ))}
+        </SortableContext>
+      </Sidebar>
 
       <DragOverlay dropAnimation={null}>
         {activeDrag && <DragOverlayCollection coll={activeDrag} />}

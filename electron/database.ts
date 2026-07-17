@@ -42,6 +42,7 @@ export function initDatabase(): void {
       tags TEXT NOT NULL DEFAULT '',
       modified_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_obsidian_modified ON obsidian_notes(modified_at DESC);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS obsidian_fts USING fts5(title, content, tags, content='obsidian_notes', content_rowid='id');
   `);
@@ -89,45 +90,56 @@ export interface Resource {
 }
 
 export function addResource(url: string, title: string, notes: string, tags: string[]): Resource {
-  const stmt = db.prepare("INSERT INTO resources (url, title, notes) VALUES (?, ?, ?)");
-  const result = stmt.run(url, title, notes);
-  const id = result.lastInsertRowid as number;
-
-  for (const tagName of tags) {
-    const tagStmt = db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)");
-    tagStmt.run(tagName.trim());
-    const tag = db.prepare("SELECT id FROM tags WHERE name = ?").get(tagName.trim()) as { id: number };
-    db.prepare("INSERT INTO resource_tags (resource_id, tag_id) VALUES (?, ?)").run(id, tag.id);
-  }
+  const insertResource = db.prepare("INSERT INTO resources (url, title, notes) VALUES (?, ?, ?)");
+  const id = db.transaction(() => {
+    const resourceId = insertResource.run(url, title, notes).lastInsertRowid as number;
+    linkTags(resourceId, tags);
+    return resourceId;
+  })();
 
   return getResource(id)!;
 }
 
-export function getResources(): Resource[] {
-  const rows = db.prepare(`
-    SELECT r.* FROM resources r ORDER BY r.created_at DESC
-  `).all() as any[];
-
-  return rows.map(enrichResource);
-}
-
-export function getResource(id: number): Resource | null {
-  const row = db.prepare("SELECT * FROM resources WHERE id = ?").get(id) as any;
-  if (!row) return null;
-  return enrichResource(row);
-}
-
-export function updateResource(id: number, title: string, notes: string, tags: string[]): Resource | null {
-  db.prepare("UPDATE resources SET title = ?, notes = ? WHERE id = ?").run(title, notes, id);
-  db.prepare("DELETE FROM resource_tags WHERE resource_id = ?").run(id);
-
+function linkTags(resourceId: number, tags: string[]): void {
+  const insertTag = db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)");
+  const getTag = db.prepare("SELECT id FROM tags WHERE name = ?");
+  const link = db.prepare("INSERT INTO resource_tags (resource_id, tag_id) VALUES (?, ?)");
   for (const tagName of tags) {
     const trimmed = tagName.trim();
     if (!trimmed) continue;
-    db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").run(trimmed);
-    const tag = db.prepare("SELECT id FROM tags WHERE name = ?").get(trimmed) as { id: number };
-    db.prepare("INSERT INTO resource_tags (resource_id, tag_id) VALUES (?, ?)").run(id, tag.id);
+    insertTag.run(trimmed);
+    const tag = getTag.get(trimmed) as { id: number };
+    link.run(resourceId, tag.id);
   }
+}
+
+// \x1f (unit separator) can't appear in tag names typed by users, unlike commas
+const RESOURCE_SELECT = `
+  SELECT r.*, (
+    SELECT group_concat(t.name, char(31)) FROM tags t
+    JOIN resource_tags rt ON t.id = rt.tag_id
+    WHERE rt.resource_id = r.id
+  ) AS tag_names
+  FROM resources r
+`;
+
+export function getResources(): Resource[] {
+  const rows = db.prepare(`${RESOURCE_SELECT} ORDER BY r.created_at DESC`).all() as any[];
+  return rows.map(rowToResource);
+}
+
+export function getResource(id: number): Resource | null {
+  const row = db.prepare(`${RESOURCE_SELECT} WHERE r.id = ?`).get(id) as any;
+  if (!row) return null;
+  return rowToResource(row);
+}
+
+export function updateResource(id: number, url: string, title: string, notes: string, tags: string[]): Resource | null {
+  db.transaction(() => {
+    db.prepare("UPDATE resources SET url = ?, title = ?, notes = ? WHERE id = ?").run(url, title, notes, id);
+    db.prepare("DELETE FROM resource_tags WHERE resource_id = ?").run(id);
+    linkTags(id, tags);
+  })();
 
   return getResource(id);
 }
@@ -138,30 +150,24 @@ export function deleteResource(id: number): boolean {
 }
 
 export function searchResources(query: string): Resource[] {
-  const rows = db.prepare(`
-    SELECT r.* FROM resources r
-    JOIN resources_fts fts ON r.id = fts.rowid
-    WHERE resources_fts MATCH ?
-    ORDER BY rank
-  `).all(query) as any[];
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
 
-  return rows.map(enrichResource);
+  const clauses = terms.map(() => "r.title LIKE ?").join(" AND ");
+  const params = terms.map((t) => `%${t}%`);
+
+  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.created_at DESC`).all(...params) as any[];
+  return rows.map(rowToResource);
 }
 
-function enrichResource(row: any): Resource {
-  const tags = db.prepare(`
-    SELECT t.name FROM tags t
-    JOIN resource_tags rt ON t.id = rt.tag_id
-    WHERE rt.resource_id = ?
-  `).all(row.id) as { name: string }[];
-
+function rowToResource(row: any): Resource {
   return {
     id: row.id,
     url: row.url,
     title: row.title,
     notes: row.notes,
     created_at: row.created_at,
-    tags: tags.map((t) => t.name),
+    tags: row.tag_names ? row.tag_names.split("\x1f") : [],
   };
 }
 
@@ -217,12 +223,18 @@ export function getNoteList(): ObsidianNoteBrief[] {
   return db.prepare("SELECT id, path, title, tags, modified_at FROM obsidian_notes ORDER BY modified_at DESC").all() as ObsidianNoteBrief[];
 }
 
-export function searchNotes(query: string): ObsidianNote[] {
+export function searchNotes(query: string): ObsidianNoteBrief[] {
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const clauses = terms.map(() => "title LIKE ?").join(" AND ");
+  const params = terms.map((t) => `%${t}%`);
+
   return db.prepare(`
-    SELECT * FROM obsidian_notes
-    WHERE id IN (SELECT rowid FROM obsidian_fts WHERE obsidian_fts MATCH ?)
+    SELECT id, path, title, tags, modified_at FROM obsidian_notes
+    WHERE ${clauses}
     ORDER BY modified_at DESC
-  `).all(query) as ObsidianNote[];
+  `).all(...params) as ObsidianNoteBrief[];
 }
 
 export function insertNote(note: {
