@@ -13,7 +13,6 @@ import {
   insertNote,
   renameNoteInDb,
   getNoteMtimes,
-  getNotes,
   getNoteList,
   searchNotes,
   getSetting,
@@ -216,7 +215,6 @@ function registerIpcHandlers(): void {
     return totalCount;
   });
 
-  ipcMain.handle("obsidian:list", () => getNotes());
   ipcMain.handle("obsidian:list-brief", () => getNoteList());
 
   ipcMain.handle("obsidian:search", (_e, query: string) => searchNotes(query));

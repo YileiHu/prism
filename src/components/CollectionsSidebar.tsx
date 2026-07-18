@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
-import { Plus, FolderOpen, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
 import Button from "./Button";
 import Sidebar from "./Sidebar";
-import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
-import ContextMenu, { type MenuItem } from "./ContextMenu";
+import { type MenuItem } from "./ContextMenu";
+import { useContextMenu } from "../lib/useContextMenu";
 import {
   DndContext,
   DragOverlay,
@@ -21,11 +21,6 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-interface VaultEntry {
-  name: string;
-  path: string;
-}
 
 export interface NoteGroup {
   id: string;
@@ -44,16 +39,12 @@ interface Props {
   collections: CollectionData[];
   selectedId: string | null;
   allNotesCount: number;
-  vaults: VaultEntry[];
-  selectedVault: VaultEntry | null;
-  scanning: boolean;
   onSelect: (id: string | null) => void;
   onCreate: () => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onDropNote: (collectionId: string, notePaths: string[]) => void;
-  onSelectVault: (vault: VaultEntry) => void;
   onRefresh: () => void;
 }
 
@@ -75,7 +66,7 @@ function SortableCollectionItem({
   onDropNote: (collectionId: string, notePaths: string[]) => void;
 }) {
   const { t } = useT();
-  const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const { onContextMenu } = useContextMenu();
 
   const menuItems: MenuItem[] = [
     { label: t["collections.rename"], onClick: onRename },
@@ -127,14 +118,10 @@ function SortableCollectionItem({
           } catch { /* ignore */ }
         }
       }}
-      onContextMenu={(e) => { e.preventDefault(); setCtxPos({ x: e.clientX, y: e.clientY }); }}
+      onContextMenu={(e) => onContextMenu(e, menuItems)}
     >
       <span className="flex-1 text-sm truncate">{coll.name}</span>
       <span className="text-xs text-gray-600 flex-shrink-0">{totalNotes}</span>
-
-      {ctxPos && (
-        <ContextMenu items={menuItems} position={ctxPos} onClose={() => setCtxPos(null)} />
-      )}
     </div>
   );
 }
@@ -153,20 +140,15 @@ export default function CollectionsSidebar({
   collections,
   selectedId,
   allNotesCount,
-  vaults,
-  selectedVault,
-  scanning,
   onSelect,
   onCreate,
   onRename,
   onDelete,
   onReorder,
   onDropNote,
-  onSelectVault,
   onRefresh,
 }: Props) {
   const { t } = useT();
-  const [vaultDropdownOpen, setVaultDropdownOpen] = useState(false);
   const [activeDrag, setActiveDrag] = useState<CollectionData | null>(null);
 
   const sensors = useSensors(
@@ -201,46 +183,15 @@ export default function CollectionsSidebar({
     >
       <Sidebar
         footer={
-          <div className="flex items-center gap-1">
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon-md"
-                onClick={() => setVaultDropdownOpen(!vaultDropdownOpen)}
-                className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-                title={selectedVault?.name ?? t["obsidian.chooseVault"]}
-              >
-                <FolderOpen size={16} />
-              </Button>
-              <DropdownMenu open={vaultDropdownOpen} onClose={() => setVaultDropdownOpen(false)} className="bottom-full mb-1 left-0 w-64">
-                {vaults.map((v, i) => (
-                  <button
-                    key={i}
-                    onClick={() => { onSelectVault(v); setVaultDropdownOpen(false); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors rounded-md ${
-                      selectedVault?.path === v.path ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-gray-300 hover:bg-gray-700/50"
-                    }`}
-                  >
-                    <FolderOpen size={14} className={selectedVault?.path === v.path ? "text-[var(--accent-text)]" : "text-amber-500"} />
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{v.name}</div>
-                      <div className="text-gray-500 truncate text-[10px]">{v.path}</div>
-                    </div>
-                  </button>
-                ))}
-              </DropdownMenu>
-            </div>
-
+          <div className="flex items-center justify-center gap-1">
             <Button
               variant="ghost"
               size="icon-md"
               onClick={onRefresh}
-              disabled={scanning}
               title={t["obsidian.refresh"]}
             >
-              <RefreshCw size={16} className={scanning ? "animate-spin" : ""} />
+              <RefreshCw size={16} />
             </Button>
-
             <Button
               variant="ghost"
               size="icon-md"
@@ -249,7 +200,6 @@ export default function CollectionsSidebar({
             >
               <Plus size={16} />
             </Button>
-
           </div>
         }
       >

@@ -36,7 +36,7 @@ export function DropdownMenuItem({ onClick, danger, active, className = "", chil
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors ${
+      className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm rounded-md transition-colors ${
         active
           ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
           : danger

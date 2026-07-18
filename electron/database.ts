@@ -15,7 +15,6 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       url TEXT NOT NULL UNIQUE,
       title TEXT NOT NULL DEFAULT '',
-      notes TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -32,8 +31,6 @@ export function initDatabase(): void {
       FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
     );
 
-    CREATE VIRTUAL TABLE IF NOT EXISTS resources_fts USING fts5(title, notes, url, content='resources', content_rowid='id');
-
     CREATE TABLE IF NOT EXISTS obsidian_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT NOT NULL UNIQUE,
@@ -44,33 +41,6 @@ export function initDatabase(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_obsidian_modified ON obsidian_notes(modified_at DESC);
 
-    CREATE VIRTUAL TABLE IF NOT EXISTS obsidian_fts USING fts5(title, content, tags, content='obsidian_notes', content_rowid='id');
-  `);
-
-  // Triggers to keep FTS in sync
-  db.exec(`
-    CREATE TRIGGER IF NOT EXISTS resources_ai AFTER INSERT ON resources BEGIN
-      INSERT INTO resources_fts(rowid, title, notes, url) VALUES (new.id, new.title, new.notes, new.url);
-    END;
-    CREATE TRIGGER IF NOT EXISTS resources_ad AFTER DELETE ON resources BEGIN
-      INSERT INTO resources_fts(resources_fts, rowid, title, notes, url) VALUES('delete', old.id, old.title, old.notes, old.url);
-    END;
-    CREATE TRIGGER IF NOT EXISTS resources_au AFTER UPDATE ON resources BEGIN
-      INSERT INTO resources_fts(resources_fts, rowid, title, notes, url) VALUES('delete', old.id, old.title, old.notes, old.url);
-      INSERT INTO resources_fts(rowid, title, notes, url) VALUES (new.id, new.title, new.notes, new.url);
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS obsidian_ai AFTER INSERT ON obsidian_notes BEGIN
-      INSERT INTO obsidian_fts(rowid, title, content, tags) VALUES (new.id, new.title, new.content, new.tags);
-    END;
-    CREATE TRIGGER IF NOT EXISTS obsidian_ad AFTER DELETE ON obsidian_notes BEGIN
-      INSERT INTO obsidian_fts(obsidian_fts, rowid, title, content, tags) VALUES('delete', old.id, old.title, old.content, old.tags);
-    END;
-    CREATE TRIGGER IF NOT EXISTS obsidian_au AFTER UPDATE ON obsidian_notes BEGIN
-      INSERT INTO obsidian_fts(obsidian_fts, rowid, title, content, tags) VALUES('delete', old.id, old.title, old.content, old.tags);
-      INSERT INTO obsidian_fts(rowid, title, content, tags) VALUES (new.id, new.title, new.content, new.tags);
-    END;
-
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
@@ -80,19 +50,26 @@ export function initDatabase(): void {
 
 // ---- Resource operations ----
 
+interface ResourceRow {
+  id: number;
+  url: string;
+  title: string;
+  created_at: string;
+  tag_names: string | null;
+}
+
 export interface Resource {
   id: number;
   url: string;
   title: string;
-  notes: string;
   created_at: string;
   tags: string[];
 }
 
 export function addResource(url: string, title: string, notes: string, tags: string[]): Resource {
-  const insertResource = db.prepare("INSERT INTO resources (url, title, notes) VALUES (?, ?, ?)");
+  const insertResource = db.prepare("INSERT INTO resources (url, title) VALUES (?, ?)");
   const id = db.transaction(() => {
-    const resourceId = insertResource.run(url, title, notes).lastInsertRowid as number;
+    const resourceId = insertResource.run(url, title).lastInsertRowid as number;
     linkTags(resourceId, tags);
     return resourceId;
   })();
@@ -124,19 +101,19 @@ const RESOURCE_SELECT = `
 `;
 
 export function getResources(): Resource[] {
-  const rows = db.prepare(`${RESOURCE_SELECT} ORDER BY r.created_at DESC`).all() as any[];
+  const rows = db.prepare(`${RESOURCE_SELECT} ORDER BY r.created_at DESC`).all() as ResourceRow[];
   return rows.map(rowToResource);
 }
 
 export function getResource(id: number): Resource | null {
-  const row = db.prepare(`${RESOURCE_SELECT} WHERE r.id = ?`).get(id) as any;
+  const row = db.prepare(`${RESOURCE_SELECT} WHERE r.id = ?`).get(id) as ResourceRow | undefined;
   if (!row) return null;
   return rowToResource(row);
 }
 
 export function updateResource(id: number, url: string, title: string, notes: string, tags: string[]): Resource | null {
   db.transaction(() => {
-    db.prepare("UPDATE resources SET url = ?, title = ?, notes = ? WHERE id = ?").run(url, title, notes, id);
+    db.prepare("UPDATE resources SET url = ?, title = ? WHERE id = ?").run(url, title, id);
     db.prepare("DELETE FROM resource_tags WHERE resource_id = ?").run(id);
     linkTags(id, tags);
   })();
@@ -156,16 +133,15 @@ export function searchResources(query: string): Resource[] {
   const clauses = terms.map(() => "r.title LIKE ?").join(" AND ");
   const params = terms.map((t) => `%${t}%`);
 
-  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.created_at DESC`).all(...params) as any[];
+  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.created_at DESC`).all(...params) as ResourceRow[];
   return rows.map(rowToResource);
 }
 
-function rowToResource(row: any): Resource {
+function rowToResource(row: ResourceRow): Resource {
   return {
     id: row.id,
     url: row.url,
     title: row.title,
-    notes: row.notes,
     created_at: row.created_at,
     tags: row.tag_names ? row.tag_names.split("\x1f") : [],
   };
@@ -205,10 +181,6 @@ export function syncVaultNotes(
   });
 
   txn();
-}
-
-export function getNotes(): ObsidianNote[] {
-  return db.prepare("SELECT * FROM obsidian_notes ORDER BY modified_at DESC").all() as ObsidianNote[];
 }
 
 export interface ObsidianNoteBrief {

@@ -14,7 +14,6 @@ const api = {
 
   // Obsidian
   setVaultPath: (vaultPath: string) => ipcRenderer.invoke("obsidian:set-path", vaultPath),
-  getNotes: () => ipcRenderer.invoke("obsidian:list"),
   getNoteList: () => ipcRenderer.invoke("obsidian:list-brief"),
   searchNotes: (query: string) => ipcRenderer.invoke("obsidian:search", query),
   openInObsidian: (filePath: string) => ipcRenderer.invoke("obsidian:open", filePath),

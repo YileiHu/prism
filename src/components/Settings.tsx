@@ -6,12 +6,7 @@ import { themes } from "../theme/themes";
 import Button from "./Button";
 import Sidebar from "./Sidebar";
 import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
-import "../lib/api";
-
-interface VaultEntry {
-  name: string;
-  path: string;
-}
+import { type VaultEntry } from "../types";
 
 type SettingsCategory = "vaults" | "external" | "appearance";
 
@@ -50,6 +45,7 @@ export default function Settings() {
   const saveVaults = useCallback(async (updated: VaultEntry[]) => {
     await window.prism.setSetting("vault_paths", JSON.stringify(updated));
     setVaults(updated);
+    window.dispatchEvent(new CustomEvent("vaults-changed"));
     flashSaved();
   }, []);
 

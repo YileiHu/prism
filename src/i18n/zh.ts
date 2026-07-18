@@ -95,6 +95,7 @@ const zh = {
   "menu.rename": "重命名",
   "menu.addToCollection": "添加到收藏集",
   "menu.moveToTrash": "移动到回收站",
+  "menu.delete": "删除",
   "menu.openInBrowser": "在浏览器中打开",
   "menu.edit": "编辑",
 

@@ -1,18 +1,19 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Trash2, Edit3, X, Search, Tag, ExternalLink, Link2, ChevronDown, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Plus, Trash2, Edit3, Search, ExternalLink, Link2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
-import "../lib/api";
 import Button from "./Button";
 import Modal from "./Modal";
 import Sidebar from "./Sidebar";
-import ContextMenu, { type MenuItem } from "./ContextMenu";
+import { type MenuItem } from "./ContextMenu";
+import { useContextMenu } from "../lib/useContextMenu";
+import TagInput from "./TagInput";
+import { useSetToggle } from "../lib/useToggleSet";
 
 interface Resource {
   id: number;
   url: string;
   title: string;
-  notes: string;
   created_at: string;
   tags: string[];
 }
@@ -46,12 +47,6 @@ function extractDomain(url: string) {
   }
 }
 
-function filterTagSuggestions(allTags: TagInfo[], input: string): TagInfo[] {
-  const q = input.toLowerCase().trim();
-  if (!q) return allTags.slice(0, 8);
-  return allTags.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 6);
-}
-
 function ResourceRowView({
   r,
   onOpenTag,
@@ -66,19 +61,18 @@ function ResourceRowView({
   flat?: boolean;
 }) {
   const { t } = useT();
-  const [ctxPos, setCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const { onContextMenu } = useContextMenu();
 
   const menuItems: MenuItem[] = [
     { label: t["menu.openInBrowser"], icon: <ExternalLink size={14} />, onClick: () => window.prism.openUrl(r.url) },
     { label: t["menu.edit"], icon: <Edit3 size={14} />, onClick: onStartEdit },
-    { label: t["menu.moveToTrash"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
+    { label: t["menu.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
 
   return (
-    <>
       <div
         className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer hover:bg-gray-700/30 ${flat ? "" : "rounded-lg"}`}
-        onContextMenu={(e) => { e.preventDefault(); setCtxPos({ x: e.clientX, y: e.clientY }); }}
+        onContextMenu={(e) => onContextMenu(e, menuItems)}
       >
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span
@@ -110,10 +104,6 @@ function ResourceRowView({
           })}
         </div>
       </div>
-      {ctxPos && (
-        <ContextMenu items={menuItems} position={ctxPos} onClose={() => setCtxPos(null)} />
-      )}
-    </>
   );
 }
 
@@ -163,10 +153,12 @@ function TagCard({
   );
 }
 
-export default function WebResources() {
+export default function WebResources({ onReady }: { onReady?: () => void }) {
   const { t } = useT();
+  const readyFired = useRef(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -176,16 +168,12 @@ export default function WebResources() {
   const [modalUrl, setModalUrl] = useState("");
   const [modalTitle, setModalTitle] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
-  const [modalTagInput, setModalTagInput] = useState("");
-  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
 
   // Edit modal state
   const [editResource, setEditResource] = useState<Resource | null>(null);
   const [editUrl, setEditUrl] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
-  const [editTagInput, setEditTagInput] = useState("");
-  const [editTagDropdownOpen, setEditTagDropdownOpen] = useState(false);
 
   // Card collapse state
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
@@ -196,12 +184,17 @@ export default function WebResources() {
       results = await window.prism.searchResources(debouncedQuery);
     } else {
       results = await window.prism.getResources();
+      setTotalCount(results.length);
     }
     if (activeTag) {
       results = results.filter((r) => r.tags.includes(activeTag));
     }
     setResources(results);
-  }, [debouncedQuery, activeTag]);
+    if (!readyFired.current) {
+      readyFired.current = true;
+      onReady?.();
+    }
+  }, [debouncedQuery, activeTag, onReady]);
 
   const loadTags = useCallback(async () => {
     const tags = await window.prism.getAllTags();
@@ -215,6 +208,11 @@ export default function WebResources() {
   useEffect(() => {
     loadTags();
   }, []);
+
+  const handleRefresh = () => {
+    loadResources();
+    loadTags();
+  };
 
   const handleSaveNew = async () => {
     if (!modalUrl.trim()) return;
@@ -231,7 +229,6 @@ export default function WebResources() {
     setModalUrl("");
     setModalTitle("");
     setModalTags([]);
-    setModalTagInput("");
   };
 
   const handleDelete = async (id: number) => {
@@ -245,8 +242,6 @@ export default function WebResources() {
     setEditUrl(r.url);
     setEditTitle(r.title);
     setEditTags([...r.tags]);
-    setEditTagInput("");
-    setEditTagDropdownOpen(false);
   };
 
   const closeEditModal = () => {
@@ -254,7 +249,6 @@ export default function WebResources() {
     setEditUrl("");
     setEditTitle("");
     setEditTags([]);
-    setEditTagInput("");
   };
 
   const handleSaveEdit = async () => {
@@ -265,40 +259,6 @@ export default function WebResources() {
     loadTags();
   };
 
-  const filteredTags = useMemo(() => filterTagSuggestions(allTags, modalTagInput), [allTags, modalTagInput]);
-  const editFilteredTags = useMemo(() => filterTagSuggestions(allTags, editTagInput), [allTags, editTagInput]);
-
-  const handleModalAddTag = (tag: string) => {
-    const trimmed = tag.trim();
-    if (trimmed && !modalTags.includes(trimmed)) {
-      setModalTags([...modalTags, trimmed]);
-    }
-    setModalTagInput("");
-    setTagDropdownOpen(false);
-  };
-
-  const handleModalKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleModalAddTag(modalTagInput);
-    }
-  };
-
-  const handleEditTagAdd = (tag: string) => {
-    const trimmed = tag.trim();
-    if (trimmed && !editTags.includes(trimmed)) {
-      setEditTags([...editTags, trimmed]);
-    }
-    setEditTagInput("");
-    setEditTagDropdownOpen(false);
-  };
-
-  const handleEditTagKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleEditTagAdd(editTagInput);
-    }
-  };
 
   // Group resources by tag for card view, sorted by tag count desc
   const tagGroups = useMemo(() => {
@@ -324,14 +284,7 @@ export default function WebResources() {
     return { groups, untagged };
   }, [resources, activeTag]);
 
-  const toggleCollapse = (tag: string) => {
-    setCollapsedTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
-      return next;
-    });
-  };
+  const toggleCollapse = useSetToggle(setCollapsedTags);
 
   const renderRow = (r: Resource, flat?: boolean) => (
     <ResourceRowView
@@ -349,7 +302,10 @@ export default function WebResources() {
       {/* Tag sidebar */}
       <Sidebar
         footer={
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center gap-1">
+            <Button variant="ghost" size="icon-md" onClick={handleRefresh} title={t["obsidian.refresh"]}>
+              <RefreshCw size={16} />
+            </Button>
             <Button variant="ghost" size="icon-md" onClick={() => setShowModal(true)} title={t["resources.add"]}>
               <Plus size={16} />
             </Button>
@@ -365,7 +321,7 @@ export default function WebResources() {
             }`}
           >
             <span className="flex-1 text-left truncate">{t["resources.allTags"]}</span>
-            <span className="text-xs text-gray-500">{resources.length}</span>
+            <span className="text-xs text-gray-500">{totalCount}</span>
           </button>
           {allTags.map((tag) => {
             const c = getTagColor(tag.name);
@@ -487,7 +443,7 @@ export default function WebResources() {
               value={modalUrl}
               onChange={(e) => setModalUrl(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !modalTagInput) handleSaveNew();
+                if (e.key === "Enter") handleSaveNew();
               }}
               placeholder={t["resources.addUrl"]}
               autoFocus
@@ -505,54 +461,13 @@ export default function WebResources() {
           </div>
 
           {/* Tags */}
-          <div>
-            <div className="flex flex-wrap gap-1.5 mb-2 min-h-[24px]">
-              {modalTags.map((tag) => {
-                const c = getTagColor(tag);
-                return (
-                  <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
-                    <Tag size={10} />
-                    {tag}
-                    <button
-                      onClick={() => setModalTags(modalTags.filter((t2) => t2 !== tag))}
-                      className="hover:text-red-400 ml-0.5"
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="relative">
-              <input
-                type="text"
-                value={modalTagInput}
-                onChange={(e) => { setModalTagInput(e.target.value); setTagDropdownOpen(true); }}
-                onKeyDown={handleModalKeyDown}
-                onFocus={() => setTagDropdownOpen(true)}
-                onBlur={() => setTimeout(() => setTagDropdownOpen(false), 200)}
-                placeholder={t["resources.tags"]}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
-              />
-              {tagDropdownOpen && filteredTags.length > 0 && (
-                <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg p-1 w-full">
-                  {filteredTags.map((tag) => (
-                    <button
-                      key={tag.name}
-                      onMouseDown={() => handleModalAddTag(tag.name)}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center justify-between rounded-md"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Tag size={12} className="text-gray-500" />
-                        {tag.name}
-                      </span>
-                      <span className="text-xs text-gray-500">{tag.count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <TagInput
+            tags={modalTags}
+            onChange={setModalTags}
+            suggestions={allTags}
+            placeholder={t["resources.tags"]}
+            colorForTag={getTagColor}
+          />
         </div>
       </Modal>
 
@@ -587,7 +502,7 @@ export default function WebResources() {
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !editTagInput) handleSaveEdit();
+                if (e.key === "Enter") handleSaveEdit();
               }}
               placeholder={t["resources.title"]}
               autoFocus
@@ -596,54 +511,13 @@ export default function WebResources() {
           </div>
 
           {/* Tags */}
-          <div>
-            <div className="flex flex-wrap gap-1.5 mb-2 min-h-[24px]">
-              {editTags.map((tag) => {
-                const c = getTagColor(tag);
-                return (
-                  <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
-                    <Tag size={10} />
-                    {tag}
-                    <button
-                      onClick={() => setEditTags(editTags.filter((t2) => t2 !== tag))}
-                      className="hover:text-red-400 ml-0.5"
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="relative">
-              <input
-                type="text"
-                value={editTagInput}
-                onChange={(e) => { setEditTagInput(e.target.value); setEditTagDropdownOpen(true); }}
-                onKeyDown={handleEditTagKeyDown}
-                onFocus={() => setEditTagDropdownOpen(true)}
-                onBlur={() => setTimeout(() => setEditTagDropdownOpen(false), 200)}
-                placeholder={t["resources.tags"]}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
-              />
-              {editTagDropdownOpen && editFilteredTags.length > 0 && (
-                <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg p-1 w-full">
-                  {editFilteredTags.map((tag) => (
-                    <button
-                      key={tag.name}
-                      onMouseDown={() => handleEditTagAdd(tag.name)}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center justify-between rounded-md"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Tag size={12} className="text-gray-500" />
-                        {tag.name}
-                      </span>
-                      <span className="text-xs text-gray-500">{tag.count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <TagInput
+            tags={editTags}
+            onChange={setEditTags}
+            suggestions={allTags}
+            placeholder={t["resources.tags"]}
+            colorForTag={getTagColor}
+          />
         </div>
       </Modal>
     </div>

@@ -94,6 +94,7 @@ const en: Translation = {
   "menu.rename": "Rename",
   "menu.addToCollection": "Add to Collection",
   "menu.moveToTrash": "Move to Trash",
+  "menu.delete": "Delete",
   "menu.openInBrowser": "Open in Browser",
   "menu.edit": "Edit",
 
