@@ -83,7 +83,7 @@ body {
   background-attachment: fixed;
 }
 
-/* Selected-item indicator: small rounded pill on the left edge
+/* Selected-item indicator: rounded tick flush with the item's left edge
    (inset box-shadow follows border-radius and looks like a crescent — this doesn't) */
 .active-bar {
   position: relative;
@@ -91,10 +91,11 @@ body {
 .active-bar::before {
   content: "";
   position: absolute;
-  left: 4px;
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 14px;
+  height: 60%;
+  min-height: 14px;
   width: 3px;
   border-radius: 9999px;
   background-color: var(--accent);

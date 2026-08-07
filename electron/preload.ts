@@ -36,6 +36,22 @@ const api = {
   // Tags
   getAllTags: () => ipcRenderer.invoke("tags:list"),
 
+  // GTD
+  addGtdItem: (title: string) => ipcRenderer.invoke("gtd:add", title),
+  getGtdItems: (status: string) => ipcRenderer.invoke("gtd:list", status),
+  getGtdCounts: () => ipcRenderer.invoke("gtd:counts"),
+  setGtdItemStatus: (id: number, status: string) => ipcRenderer.invoke("gtd:set-status", id, status),
+  renameGtdItem: (id: number, title: string) => ipcRenderer.invoke("gtd:rename", id, title),
+  deleteGtdItem: (id: number) => ipcRenderer.invoke("gtd:delete", id),
+  setGtdItemNext: (id: number, isNext: boolean) => ipcRenderer.invoke("gtd:set-next", id, isNext),
+  getGtdActions: (projectId: number) => ipcRenderer.invoke("gtd:list-actions", projectId),
+  addGtdAction: (projectId: number, title: string) => ipcRenderer.invoke("gtd:add-action", projectId, title),
+  renameGtdAction: (id: number, title: string) => ipcRenderer.invoke("gtd:rename-action", id, title),
+  toggleGtdAction: (id: number) => ipcRenderer.invoke("gtd:toggle-action", id),
+  deleteGtdAction: (id: number) => ipcRenderer.invoke("gtd:delete-action", id),
+  setGtdActionNext: (projectId: number, actionId: number | null) => ipcRenderer.invoke("gtd:set-action-next", projectId, actionId),
+  getGtdNextList: () => ipcRenderer.invoke("gtd:next-list"),
+
   // Dialog
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
   selectFile: () => ipcRenderer.invoke("dialog:select-file"),

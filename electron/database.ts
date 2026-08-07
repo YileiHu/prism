@@ -10,6 +10,20 @@ export function initDatabase(): void {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
+  // One-time migration: drop the abandoned 2026-07 GTD experiment schema
+  // (stage/category/FTS design, no status column) so the new tables can be created cleanly.
+  const gtdCols = db.prepare("PRAGMA table_info(gtd_items)").all() as { name: string }[];
+  if (gtdCols.length > 0 && !gtdCols.some((c) => c.name === "status")) {
+    db.exec(`
+      DROP TRIGGER IF EXISTS gtd_items_ai;
+      DROP TRIGGER IF EXISTS gtd_items_ad;
+      DROP TRIGGER IF EXISTS gtd_items_au;
+      DROP TABLE IF EXISTS gtd_items_fts;
+      DROP TABLE gtd_items;
+      DROP TABLE IF EXISTS gtd_projects;
+    `);
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS resources (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +60,29 @@ export function initDatabase(): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS gtd_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'inbox',
+      is_next INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      done_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_gtd_items_status ON gtd_items(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS gtd_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      is_done INTEGER NOT NULL DEFAULT 0,
+      is_next INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      done_at TEXT,
+      FOREIGN KEY (project_id) REFERENCES gtd_items(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_gtd_actions_project ON gtd_actions(project_id, sort_order);
   `);
 
   // Migration: rows written before vault_path existed can't be attributed to a
@@ -300,4 +337,200 @@ export function getAllTags(): { name: string; count: number }[] {
     GROUP BY t.id
     ORDER BY count DESC
   `).all() as { name: string; count: number }[];
+}
+
+// ---- GTD operations ----
+
+export type GtdStatus = "inbox" | "someday" | "waiting" | "project" | "done";
+
+export interface GtdItem {
+  id: number;
+  title: string;
+  status: GtdStatus;
+  is_next: number;
+  created_at: string;
+  done_at: string | null;
+  action_count: number;
+  done_action_count: number;
+}
+
+export interface GtdAction {
+  id: number;
+  project_id: number;
+  title: string;
+  is_done: number;
+  is_next: number;
+  sort_order: number;
+  created_at: string;
+  done_at: string | null;
+}
+
+export interface GtdNextList {
+  waiting: GtdItem[];
+  projects: { project: GtdItem; action: GtdAction }[];
+}
+
+const GTD_STATUSES: GtdStatus[] = ["inbox", "someday", "waiting", "project", "done"];
+
+const GTD_ITEM_SELECT = `
+  SELECT i.*, (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = i.id) AS action_count,
+    (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = i.id AND a.is_done = 1) AS done_action_count
+  FROM gtd_items i
+`;
+
+export function addGtdItem(title: string): GtdItem {
+  const id = db.prepare("INSERT INTO gtd_items (title) VALUES (?)").run(title).lastInsertRowid as number;
+  return getGtdItem(id)!;
+}
+
+export function getGtdItem(id: number): GtdItem | null {
+  const row = db.prepare(`${GTD_ITEM_SELECT} WHERE i.id = ?`).get(id) as GtdItem | undefined;
+  return row ?? null;
+}
+
+export function getGtdItems(status: GtdStatus): GtdItem[] {
+  return db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = ? ORDER BY COALESCE(i.done_at, i.created_at) DESC`).all(status) as GtdItem[];
+}
+
+export function getGtdCounts(): Record<GtdStatus, number> {
+  const rows = db.prepare("SELECT status, COUNT(*) AS count FROM gtd_items GROUP BY status").all() as { status: GtdStatus; count: number }[];
+  const counts = Object.fromEntries(GTD_STATUSES.map((s) => [s, 0])) as Record<GtdStatus, number>;
+  for (const row of rows) counts[row.status] = row.count;
+  return counts;
+}
+
+export function setGtdItemStatus(id: number, status: GtdStatus): void {
+  if (!GTD_STATUSES.includes(status)) throw new Error(`Invalid GTD status: ${status}`);
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE gtd_items SET status = ?,
+        done_at = CASE WHEN ? = 'done' THEN datetime('now') ELSE NULL END,
+        is_next = CASE WHEN ? = 'waiting' THEN is_next ELSE 0 END
+      WHERE id = ?
+    `).run(status, status, status, id);
+    if (status === "done") {
+      db.prepare("UPDATE gtd_actions SET is_done = 1, is_next = 0, done_at = datetime('now') WHERE project_id = ? AND is_done = 0").run(id);
+    }
+  })();
+}
+
+export function renameGtdItem(id: number, title: string): void {
+  db.prepare("UPDATE gtd_items SET title = ? WHERE id = ?").run(title, id);
+}
+
+export function deleteGtdItem(id: number): boolean {
+  return db.prepare("DELETE FROM gtd_items WHERE id = ?").run(id).changes > 0;
+}
+
+export function setGtdItemNext(id: number, isNext: boolean): void {
+  db.prepare("UPDATE gtd_items SET is_next = ? WHERE id = ? AND status = 'waiting'").run(isNext ? 1 : 0, id);
+}
+
+export function getGtdActions(projectId: number): GtdAction[] {
+  return db.prepare("SELECT * FROM gtd_actions WHERE project_id = ? ORDER BY sort_order ASC, id ASC").all(projectId) as GtdAction[];
+}
+
+export function getGtdAction(id: number): GtdAction | null {
+  const row = db.prepare("SELECT * FROM gtd_actions WHERE id = ?").get(id) as GtdAction | undefined;
+  return row ?? null;
+}
+
+export function addGtdAction(projectId: number, title: string): GtdAction {
+  const id = db.prepare(`
+    INSERT INTO gtd_actions (project_id, title, sort_order)
+    VALUES (?, ?, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM gtd_actions WHERE project_id = ?))
+  `).run(projectId, title, projectId).lastInsertRowid as number;
+  return getGtdAction(id)!;
+}
+
+export function renameGtdAction(id: number, title: string): void {
+  db.prepare("UPDATE gtd_actions SET title = ? WHERE id = ?").run(title, id);
+}
+
+export function toggleGtdAction(id: number): void {
+  // SET expressions read the pre-update is_done, so all three stay consistent
+  db.prepare(`
+    UPDATE gtd_actions SET
+      is_done = 1 - is_done,
+      done_at = CASE WHEN is_done = 0 THEN datetime('now') ELSE NULL END,
+      is_next = CASE WHEN is_done = 0 THEN 0 ELSE is_next END
+    WHERE id = ?
+  `).run(id);
+}
+
+export function deleteGtdAction(id: number): void {
+  db.prepare("DELETE FROM gtd_actions WHERE id = ?").run(id);
+}
+
+export function setGtdActionNext(projectId: number, actionId: number | null): void {
+  db.transaction(() => {
+    db.prepare("UPDATE gtd_actions SET is_next = 0 WHERE project_id = ?").run(projectId);
+    if (actionId !== null) {
+      db.prepare("UPDATE gtd_actions SET is_next = 1 WHERE id = ? AND project_id = ? AND is_done = 0").run(actionId, projectId);
+    }
+  })();
+}
+
+interface GtdNextProjectRow {
+  id: number;
+  title: string;
+  status: GtdStatus;
+  is_next: number;
+  created_at: string;
+  done_at: string | null;
+  action_count: number;
+  done_action_count: number;
+  action_id: number;
+  action_title: string;
+  action_is_done: number;
+  action_is_next: number;
+  action_sort_order: number;
+  action_created_at: string;
+  action_done_at: string | null;
+}
+
+export function getGtdNextList(): GtdNextList {
+  const waiting = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = 'waiting' AND i.is_next = 1 ORDER BY i.created_at DESC`).all() as GtdItem[];
+  const rows = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id) AS action_count,
+      (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id AND a.is_done = 1) AS done_action_count,
+      a.id AS action_id, a.title AS action_title, a.is_done AS action_is_done, a.is_next AS action_is_next,
+      a.sort_order AS action_sort_order, a.created_at AS action_created_at, a.done_at AS action_done_at
+    FROM gtd_items p
+    JOIN (
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY project_id ORDER BY is_next DESC, sort_order ASC, id ASC
+      ) AS rn
+      FROM gtd_actions
+      WHERE is_done = 0
+    ) a ON a.project_id = p.id AND a.rn = 1
+    WHERE p.status = 'project'
+    ORDER BY p.created_at DESC
+  `).all() as GtdNextProjectRow[];
+  return {
+    waiting,
+    projects: rows.map((row) => ({
+      project: {
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        is_next: row.is_next,
+        created_at: row.created_at,
+        done_at: row.done_at,
+        action_count: row.action_count,
+        done_action_count: row.done_action_count,
+      },
+      action: {
+        id: row.action_id,
+        project_id: row.id,
+        title: row.action_title,
+        is_done: row.action_is_done,
+        is_next: row.action_is_next,
+        sort_order: row.action_sort_order,
+        created_at: row.action_created_at,
+        done_at: row.action_done_at,
+      },
+    })),
+  };
 }

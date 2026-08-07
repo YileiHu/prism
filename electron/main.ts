@@ -19,6 +19,21 @@ import {
   getSetting,
   setSetting,
   getAllTags,
+  addGtdItem,
+  getGtdItems,
+  getGtdCounts,
+  setGtdItemStatus,
+  renameGtdItem,
+  deleteGtdItem,
+  setGtdItemNext,
+  getGtdActions,
+  addGtdAction,
+  renameGtdAction,
+  toggleGtdAction,
+  deleteGtdAction,
+  setGtdActionNext,
+  getGtdNextList,
+  type GtdStatus,
 } from "./database";
 
 let mainWindow: BrowserWindow | null = null;
@@ -556,6 +571,22 @@ function registerIpcHandlers(): void {
 
   // Tags
   ipcMain.handle("tags:list", () => getAllTags());
+
+  // GTD
+  ipcMain.handle("gtd:add", (_e, title: string) => addGtdItem(title));
+  ipcMain.handle("gtd:list", (_e, status: GtdStatus) => getGtdItems(status));
+  ipcMain.handle("gtd:counts", () => getGtdCounts());
+  ipcMain.handle("gtd:set-status", (_e, id: number, status: GtdStatus) => setGtdItemStatus(id, status));
+  ipcMain.handle("gtd:rename", (_e, id: number, title: string) => renameGtdItem(id, title));
+  ipcMain.handle("gtd:delete", (_e, id: number) => deleteGtdItem(id));
+  ipcMain.handle("gtd:set-next", (_e, id: number, isNext: boolean) => setGtdItemNext(id, isNext));
+  ipcMain.handle("gtd:list-actions", (_e, projectId: number) => getGtdActions(projectId));
+  ipcMain.handle("gtd:add-action", (_e, projectId: number, title: string) => addGtdAction(projectId, title));
+  ipcMain.handle("gtd:rename-action", (_e, id: number, title: string) => renameGtdAction(id, title));
+  ipcMain.handle("gtd:toggle-action", (_e, id: number) => toggleGtdAction(id));
+  ipcMain.handle("gtd:delete-action", (_e, id: number) => deleteGtdAction(id));
+  ipcMain.handle("gtd:set-action-next", (_e, projectId: number, actionId: number | null) => setGtdActionNext(projectId, actionId));
+  ipcMain.handle("gtd:next-list", () => getGtdNextList());
 
   // Collections
   ipcMain.handle("collections:load", (_e, vaultPath: string) => {

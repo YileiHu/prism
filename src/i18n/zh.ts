@@ -2,6 +2,7 @@ const zh = {
   // App header
   "app.title": "PRISM",
   "nav.resources": "网页资源",
+  "nav.gtd": "事务",
   "nav.settings": "设置",
   // Web Resources
   "resources.addUrl": "输入网址保存...",
@@ -125,6 +126,45 @@ const zh = {
   // Confirm
   "confirm.deleteFile": "确定要将 {name} 移动到回收站吗？",
   "confirm.deleteFiles": "确定要将 {count} 个文件移动到回收站吗？",
+
+  // GTD
+  "gtd.inbox": "收集箱",
+  "gtd.next": "下一步",
+  "gtd.waiting": "等待清单",
+  "gtd.projects": "项目清单",
+  "gtd.someday": "未来清单",
+  "gtd.done": "已完成",
+  "gtd.quickAdd": "记录想法，回车保存...",
+  "gtd.emptyInbox": "收集箱是空的，随时记录想法。",
+  "gtd.emptyList": "暂无条目。",
+  "gtd.emptyNext": "暂无下一步行动，从等待清单或项目中挑选。",
+  "gtd.emptyActions": "暂无行动，添加第一条吧。",
+  "gtd.process": "整理",
+  "gtd.reprocess": "重新整理",
+  "gtd.markDone": "完成",
+  "gtd.setNext": "设为下一步",
+  "gtd.unsetNext": "取消下一步",
+  "gtd.process.q1": "这件事可以行动吗？",
+  "gtd.process.q1hint": "GTD 原则：目前没有明确行动的事，先放入未来清单孵化，定期回顾。",
+  "gtd.process.q1no": "不能，存入未来清单",
+  "gtd.process.q1yes": "可以行动",
+  "gtd.process.q2": "2 分钟内能做完吗？",
+  "gtd.process.q2hint": "两分钟原则：能立即完成的事马上去做，不必留在清单。",
+  "gtd.process.q2no": "不能",
+  "gtd.process.q2yes": "能，立即去做",
+  "gtd.process.q3": "需要几步行动才能完成？",
+  "gtd.process.hintSingle": "一步或一串连续行动即可完成（2 小时内），收入清单稍后执行",
+  "gtd.process.hintMulti": "需要多个异步或长期行动，建为项目后逐个细化",
+  "gtd.doNow": "现在就去完成它吧！",
+  "gtd.doNowHint": "做完后点击下方按钮确认；若中途关闭弹窗，条目仍保留在收集箱。",
+  "gtd.doNowConfirm": "我已完成",
+  "gtd.addAction": "添加行动，回车保存...",
+  "gtd.projectProgress": "{done}/{total}",
+  "gtd.pendingRefine": "待细化",
+  "gtd.projectCompletePrompt": "所有行动已完成，将项目标记为已完成吗？",
+  "gtd.completeProject": "完成项目",
+  "gtd.later": "稍后",
+  "gtd.deleteProjectConfirm": "删除项目将同时删除其所有行动。确定删除吗？",
 };
 
 export default zh;

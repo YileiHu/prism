@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import WebResources from "./components/WebResources";
 import ObsidianVault from "./components/ObsidianVault";
 import Settings from "./components/Settings";
-import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone } from "lucide-react";
+import GtdView from "./components/gtd/GtdView";
+import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks } from "lucide-react";
 
 import { useT } from "./i18n";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -12,7 +13,9 @@ import ChangelogModal from "./components/ChangelogModal";
 import { type VaultEntry } from "./types";
 import "./lib/api";
 
-type SpecialTab = "resources" | "settings";
+type SpecialTab = "resources" | "gtd" | "settings";
+
+const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["resources", "gtd", "settings"]);
 
 export default function App() {
   const { t } = useT();
@@ -52,7 +55,7 @@ export default function App() {
 
   // Track mounted vaults so switching tabs doesn't unmount
   useEffect(() => {
-    if (activeTab !== "resources" && activeTab !== "settings") {
+    if (!SPECIAL_TAB_KEYS.has(activeTab)) {
       setMountedVaults((prev) => {
         if (prev.has(activeTab)) return prev;
         return new Set([...prev, activeTab]);
@@ -109,7 +112,7 @@ export default function App() {
       setVaults(parsed);
 
       const current = activeTabRef.current;
-      if (current !== "resources" && current !== "settings") {
+      if (!SPECIAL_TAB_KEYS.has(current)) {
         const stillExists = parsed.some((v) => v.path === current);
         if (!stillExists) {
           const lastPath = await window.prism.getSetting("last_vault_path");
@@ -132,7 +135,7 @@ export default function App() {
 
   const handleTabClick = (tabId: string) => {
     setActiveTab(tabId);
-    if (tabId !== "resources" && tabId !== "settings") {
+    if (!SPECIAL_TAB_KEYS.has(tabId)) {
       window.prism.setSetting("last_vault_path", tabId);
     }
   };
@@ -144,6 +147,7 @@ export default function App() {
   }));
   const specialTabs: { key: SpecialTab; label: string; icon: typeof Globe }[] = [
     { key: "resources", label: t["nav.resources"], icon: Globe },
+    { key: "gtd", label: t["nav.gtd"], icon: ListChecks },
     { key: "settings", label: t["nav.settings"], icon: Settings2 },
   ];
   const allTabs = [...vaultTabs, ...specialTabs];
@@ -225,6 +229,9 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         <div style={paneStyle(activeTab === "resources")} className={activeTab === "resources" ? "pane-enter" : ""}>
           <WebResources onReady={handleContentReady} />
+        </div>
+        <div style={paneStyle(activeTab === "gtd")} className={activeTab === "gtd" ? "pane-enter" : ""}>
+          <GtdView />
         </div>
         <div style={paneStyle(activeTab === "settings")} className={activeTab === "settings" ? "pane-enter" : ""}>
           <Settings />

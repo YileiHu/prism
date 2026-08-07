@@ -3,6 +3,7 @@ import type { Translation } from "./zh";
 const en: Translation = {
   "app.title": "PRISM",
   "nav.resources": "Web Resources",
+  "nav.gtd": "Tasks",
   "nav.settings": "Settings",
 
   "resources.addUrl": "Enter URL to save...",
@@ -124,6 +125,45 @@ const en: Translation = {
   // Confirm
   "confirm.deleteFile": "Move {name} to trash?",
   "confirm.deleteFiles": "Move {count} files to trash?",
+
+  // GTD
+  "gtd.inbox": "Inbox",
+  "gtd.next": "Next Actions",
+  "gtd.waiting": "Waiting",
+  "gtd.projects": "Projects",
+  "gtd.someday": "Someday",
+  "gtd.done": "Done",
+  "gtd.quickAdd": "Capture a thought, Enter to save...",
+  "gtd.emptyInbox": "Inbox is empty. Capture anything on your mind.",
+  "gtd.emptyList": "Nothing here yet.",
+  "gtd.emptyNext": "No next actions. Pick from Waiting or your projects.",
+  "gtd.emptyActions": "No actions yet. Add the first one.",
+  "gtd.process": "Process",
+  "gtd.reprocess": "Reprocess",
+  "gtd.markDone": "Mark done",
+  "gtd.setNext": "Pick as next",
+  "gtd.unsetNext": "Unpick next",
+  "gtd.process.q1": "Is this actionable?",
+  "gtd.process.q1hint": "GTD: if there's no clear action right now, incubate it in Someday and review regularly.",
+  "gtd.process.q1no": "No → Someday",
+  "gtd.process.q1yes": "Actionable",
+  "gtd.process.q2": "Can it be done in 2 minutes?",
+  "gtd.process.q2hint": "The 2-minute rule: if you can do it right now, do it — don't keep it on a list.",
+  "gtd.process.q2no": "No",
+  "gtd.process.q2yes": "Yes, do it now",
+  "gtd.process.q3": "How many actions will it take?",
+  "gtd.process.hintSingle": "One step or a short chain of actions (under 2 hours) — park it here for later",
+  "gtd.process.hintMulti": "Several async or long-running actions — make it a project and refine into steps",
+  "gtd.doNow": "Go do it now!",
+  "gtd.doNowHint": "Confirm below when it's done. If you close this dialog, the item stays in the Inbox.",
+  "gtd.doNowConfirm": "I'm done",
+  "gtd.addAction": "Add an action, Enter to save...",
+  "gtd.projectProgress": "{done}/{total}",
+  "gtd.pendingRefine": "To refine",
+  "gtd.projectCompletePrompt": "All actions are done. Mark this project complete?",
+  "gtd.completeProject": "Complete project",
+  "gtd.later": "Later",
+  "gtd.deleteProjectConfirm": "Deleting a project also deletes all its actions. Continue?",
 };
 
 export default en;
