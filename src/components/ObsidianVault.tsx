@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Search, FileText, ExternalLink,
-  FolderOpen, CheckSquare, Maximize2,
+  FolderOpen, FolderX, CheckSquare, Maximize2,
   Trash2, Plus, Pencil, RefreshCw,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
@@ -15,6 +16,7 @@ import BatchActionBar from "./BatchActionBar";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
 import { useSetToggle } from "../lib/useToggleSet";
+import { useAnimatedMount } from "../lib/useAnimatedMount";
 import { useCollections, toRelativePath } from "./useCollections";
 import Button from "./Button";
 import Modal from "./Modal";
@@ -36,17 +38,19 @@ interface ConfirmDialog {
 
 interface Props {
   vaultPath: string;
-  vaultName?: string;
   onScanComplete?: () => void;
 }
 
-export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: Props) {
+export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
   const { t } = useT();
 
   const [notes, setNotes] = useState<ObsidianNote[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [scanning, setScanning] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [vaultError, setVaultError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -74,11 +78,17 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
 
   // Toast
   const [toast, setToast] = useState<string | null>(null);
+  const [toastSeq, setToastSeq] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadDone = useRef(false);
+  const lastToast = useRef("");
+  if (toast) lastToast.current = toast;
+  const { mounted: toastMounted, exiting: toastExiting } = useAnimatedMount(toast !== null, 150);
 
   const showToast = (msg: string) => {
     setToast(msg);
+    // Bump the key so repeating the same message replays the animation
+    setToastSeq((s) => s + 1);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   };
@@ -87,67 +97,74 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, []);
 
-  // ---- Vault loading (triggered by vaultPath prop) ----
+  // ---- Vault loading (triggered by vaultPath prop / retry) ----
 
   useEffect(() => {
     setScanning(true);
+    setInitialLoading(true);
+    setVaultError(false);
     setSelectMode(false);
     setSelectedPaths(new Set());
     (async () => {
       try {
         await window.prism.setVaultPath(vaultPath);
         const [cachedNotes, collData] = await Promise.all([
-          window.prism.getNoteList(),
+          window.prism.getNoteList(vaultPath),
           window.prism.loadCollections(vaultPath) as Promise<{ version: number; collections: CollectionData[] } | null>,
         ]);
-        setNotes(cachedNotes);
-        await loadCollections(vaultPath);
         const lastCollId = await window.prism.getSetting(`last_coll_${vaultPath}`);
-        if (lastCollId && (collData?.collections ?? []).some((c: CollectionData) => c.id === lastCollId)) {
+        // Apply all view state in one batch so the final layout renders in a
+        // single frame — no intermediate "All Notes"/empty-sidebar flash
+        const colls = collData?.collections ?? [];
+        setCollections(colls);
+        if (lastCollId && colls.some((c: CollectionData) => c.id === lastCollId)) {
           setSelectedCollectionId(lastCollId);
         }
+        setNotes(cachedNotes);
+      } catch {
+        // setVaultPath throws when the vault directory is missing/unreadable
+        setVaultError(true);
+        setNotes([]);
       } finally {
         setScanning(false);
+        setInitialLoading(false);
         if (!initialLoadDone.current) {
           initialLoadDone.current = true;
           onScanComplete?.();
         }
       }
     })();
-  }, [vaultPath]);
+  }, [vaultPath, reloadKey]);
 
   // ---- Notes loading ----
 
   const loadNotes = useCallback(async () => {
     if (debouncedQuery.trim()) {
-      setNotes(await window.prism.searchNotes(debouncedQuery));
+      setNotes(await window.prism.searchNotes(vaultPath, debouncedQuery));
     } else {
-      setNotes(await window.prism.getNoteList());
+      setNotes(await window.prism.getNoteList(vaultPath));
     }
-  }, [debouncedQuery]);
+  }, [debouncedQuery, vaultPath]);
 
   useEffect(() => {
     if (!scanning) loadNotes();
   }, [loadNotes, scanning]);
 
-  const handleRefresh = async () => {
-    setScanning(true);
-    try {
-      await window.prism.setVaultPath(vaultPath);
-      await loadNotes();
-      await loadCollections(vaultPath);
-    } finally {
-      setScanning(false);
-    }
-  };
+  // Silent refresh when the file watcher reports external changes to this vault
+  useEffect(() => {
+    return window.prism.onVaultUpdated((changedPath) => {
+      const norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+      if (norm(changedPath) === norm(vaultPath) && !scanning) loadNotes();
+    });
+  }, [vaultPath, loadNotes, scanning]);
 
   // ---- Collections (extracted hook) ----
 
   const {
     collections,
+    setCollections,
     selectedCollectionId,
     setSelectedCollectionId,
-    loadCollections,
     handleCreateCollection,
     handleRenameCollection,
     handleDeleteCollection,
@@ -157,6 +174,7 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
     handleMoveNoteDirect,
     handleMoveNote,
     handleRemoveNote,
+    handleMoveToCollection,
     handleReorderNotesInGroup,
     handleAddGroup,
     handleRenameGroup,
@@ -172,7 +190,7 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
     totalCollectionNotes,
     noteCollections,
     sortedNotes,
-  } = useCollections({ selectedVault: { name: vaultName ?? "", path: vaultPath }, notes, showToast, loadNotes });
+  } = useCollections({ vaultPath, notes, showToast, loadNotes });
 
   // ---- Create note callback ----
 
@@ -184,7 +202,7 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
       if (groupId) {
         handleMoveNoteDirect(collectionId, relPath, groupId);
       } else {
-        handleDropNoteDirect(collectionId, [relPath]);
+        handleDropNoteDirect(collectionId, [relPath], true);
       }
     }
     loadNotes();
@@ -195,12 +213,16 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
   const handleRenameNote = async () => {
     if (!renameNoteTitle.trim() || !renameNoteTarget) return;
     const oldRelPath = toRelativePath(renameNoteTarget.path, vaultPath);
-    const result = await window.prism.renameNote(renameNoteTarget.path, renameNoteTitle.trim());
-    const newRelPath = toRelativePath(result.path, vaultPath);
-    updateNotePaths(oldRelPath, newRelPath);
-    setRenameNoteTarget(null);
-    showToast(t["obsidian.renamed"].replace("{name}", renameNoteTitle.trim()));
-    loadNotes();
+    try {
+      const result = await window.prism.renameNote(vaultPath, renameNoteTarget.path, renameNoteTitle.trim());
+      const newRelPath = toRelativePath(result.path, vaultPath);
+      updateNotePaths(oldRelPath, newRelPath);
+      setRenameNoteTarget(null);
+      showToast(t["obsidian.renamed"].replace("{name}", renameNoteTitle.trim()));
+      loadNotes();
+    } catch {
+      showToast(t["obsidian.renameFailed"]);
+    }
   };
 
   // ---- Select mode ----
@@ -221,10 +243,21 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
 
   // ---- Context menu ----
 
-  const getContextMenuItems = (note: ObsidianNote): MenuItem[] => {
-    const relPath = toRelativePath(note.path, vaultPath);
+  const getContextMenuItems = (
+    note: { path: string; title: string },
+    collectionContext?: { collectionId: string; groupId: string | null; relPath: string; onRemove: () => void },
+  ): MenuItem[] => {
+    const relPath = collectionContext?.relPath ?? toRelativePath(note.path, vaultPath);
 
-    return [
+    const addToCollectionSubmenu: MenuItem[] = collections.length > 0
+      ? collections.map((c) => ({
+        label: c.name,
+        checked: c.notePaths.includes(relPath),
+        onClick: () => handleDropNoteDirect(c.id, [relPath]),
+      }))
+      : [{ label: t["collections.none"], onClick: () => {} }];
+
+    const items: MenuItem[] = [
       {
         label: t["menu.openInObsidian"],
         icon: <ExternalLink size={14} />,
@@ -238,20 +271,44 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
       {
         label: t["menu.rename"],
         icon: <Pencil size={14} />,
-        onClick: () => { setRenameNoteTarget(note); setRenameNoteTitle(note.title); },
+        onClick: () => { setRenameNoteTarget(note as ObsidianNote); setRenameNoteTitle(note.title); },
       },
       { label: "", divider: true },
-      {
+    ];
+
+    if (collectionContext) {
+      const otherCollections = collections.filter((c) => c.id !== collectionContext.collectionId);
+      items.push(
+        {
+          label: t["menu.addToCollection"],
+          icon: <FileText size={14} />,
+          children: addToCollectionSubmenu,
+        },
+        {
+          label: t["menu.removeFromCollection"],
+          icon: <Trash2 size={14} />,
+          onClick: collectionContext.onRemove,
+        },
+        {
+          label: t["menu.moveTo"],
+          icon: <ArrowRightLeft size={14} />,
+          children: otherCollections.length > 0
+            ? otherCollections.map((c) => ({
+              label: c.name,
+              onClick: () => handleMoveToCollection(collectionContext.collectionId, c.id, collectionContext.relPath, collectionContext.groupId),
+            }))
+            : [{ label: t["collections.none"], onClick: () => {} }],
+        },
+      );
+    } else {
+      items.push({
         label: t["menu.addToCollection"],
         icon: <FileText size={14} />,
-        children: collections.length > 0
-          ? collections.map((c) => ({
-            label: c.name,
-            checked: c.notePaths.includes(relPath),
-            onClick: () => handleDropNote(c.id, [relPath]),
-          }))
-          : [{ label: t["collections.none"], onClick: () => {} }],
-      },
+        children: addToCollectionSubmenu,
+      });
+    }
+
+    items.push(
       { label: "", divider: true },
       {
         label: t["menu.moveToTrash"],
@@ -265,16 +322,20 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
               setConfirm(null);
               const result = await window.prism.trashFile(note.path);
               if (result.success) {
+                // Remove the DB row too, otherwise the next loadNotes() resurrects it
+                await window.prism.deleteNotes([note.path]);
                 removeNotePaths([relPath]);
                 setNotes((prev) => prev.filter((n) => n.path !== note.path));
               } else {
-                showToast(`Failed to delete: ${result.error}`);
+                showToast(t["obsidian.deleteFailed"].replace("{error}", result.error ?? ""));
               }
             },
           });
         },
       },
-    ];
+    );
+
+    return items;
   };
 
   // ---- Virtual scroll ----
@@ -304,6 +365,26 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
 
   return (
     <div className="h-full flex">
+      {initialLoading ? (
+        // Single loading view until scan + collections + restored selection are
+        // all ready — prevents flashing intermediate layouts on first mount
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 anim-fade-in">
+          <RefreshCw size={22} className="animate-spin text-muted" />
+          <p className="text-sm text-muted">{t["obsidian.scanning"]}</p>
+        </div>
+      ) : vaultError ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center anim-fade-in">
+          <FolderX size={36} className="text-faint mb-1" />
+          <p className="text-sm font-medium text-secondary">{t["obsidian.vaultNotFound"]}</p>
+          <p className="text-xs text-muted leading-relaxed break-all max-w-md">
+            {t["obsidian.vaultNotFoundDesc"].replace("{path}", vaultPath)}
+          </p>
+          <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReloadKey((k) => k + 1)}>
+            {t["obsidian.retry"]}
+          </Button>
+        </div>
+      ) : (
+      <>
       {/* Collections Sidebar */}
       <CollectionsSidebar
         collections={collections}
@@ -337,26 +418,22 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
         }}
         onReorder={handleReorderCollections}
         onDropNote={handleDropNote}
-        onRefresh={handleRefresh}
       />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {!selectedCollectionId && (
-          <div className="flex items-center gap-2 px-4 h-11 border-b border-gray-800/50 flex-shrink-0 bg-white/[0.04]">
+          <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t["obsidian.search"]}
-                className="w-full bg-gray-800 border border-gray-700 rounded-full pl-8 pr-3 py-1 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
               />
             </div>
-            <Button variant="ghost" size="icon-md" onClick={handleRefresh} disabled={scanning} title={t["obsidian.refresh"]}>
-              <RefreshCw size={16} className={scanning ? "animate-spin" : ""} />
-            </Button>
             <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["obsidian.newNote"]}>
               <Plus size={16} />
             </Button>
@@ -366,17 +443,17 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-hidden flex flex-col relative">
           {selectedCollection && selectedCollectionId && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-4 h-11 border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2 bg-white/[0.04]">
-                <h2 className="text-base font-semibold text-gray-200">{selectedCollection.name}</h2>
-                <span className="text-xs text-gray-500">{totalCollectionNotes} notes</span>
+            <div key={selectedCollectionId} className="flex-1 flex flex-col overflow-hidden relative z-10 anim-fade-in">
+              <div className="px-4 h-11 border-b border-line/50 flex-shrink-0 flex items-center gap-2 glass bg-tint/[0.04]">
+                <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
+                <span className="text-xs text-muted">{t["obsidian.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
                 <div className="flex-1" />
                 <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["obsidian.newNote"]}>
                   <Plus size={16} />
                 </Button>
-                <Button variant="ghost" size="icon-md" onClick={handleToggleAll} title={allExpanded ? (t["collections.collapseAll"] ?? "折叠全部") : (t["collections.expandAll"] ?? "展开全部")}>
+                <Button variant="ghost" size="icon-md" onClick={handleToggleAll} title={allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}>
                   <Maximize2 size={16} />
                 </Button>
               </div>
@@ -391,21 +468,37 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
                 onRenameGroup={(groupId, name) => handleRenameGroup(selectedCollectionId!, groupId, name)}
                 onDeleteGroup={(groupId) => handleDeleteGroup(selectedCollectionId!, groupId)}
                 onReorderGroups={(from, to) => handleReorderGroups(selectedCollectionId!, from, to)}
-                onMoveNote={(relPath, fromG, toG) => handleMoveNote(selectedCollectionId!, relPath, fromG, toG)}
+                onMoveNote={(relPath, fromG, toG, toIdx) => handleMoveNote(selectedCollectionId!, relPath, fromG, toG, toIdx)}
                 onRemoveNote={(relPath, groupId) => handleRemoveNote(selectedCollectionId!, relPath, groupId)}
                 onReorderNotes={(groupId, from, to) => handleReorderNotesInGroup(selectedCollectionId!, groupId, from, to)}
-                onNoteContextMenu={(e, note) => onContextMenu(e, getContextMenuItems(note as unknown as ObsidianNote))}
+                onNoteContextMenu={(e, note, groupId) => onContextMenu(e, getContextMenuItems(
+                  note as unknown as { path: string; title: string },
+                  {
+                    collectionId: selectedCollectionId!,
+                    groupId,
+                    relPath: note.relativePath,
+                    onRemove: () => handleRemoveNote(selectedCollectionId!, note.relativePath, groupId),
+                  },
+                ))}
               />
             </div>
           )}
           <div
-            style={{ display: !selectedCollectionId ? "" : "none" }}
-            className="flex-1 overflow-y-auto py-1"
+            style={!selectedCollectionId ? {} : { position: "absolute", visibility: "hidden" }}
+            className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId ? "anim-fade-in" : ""}`}
             ref={notesScrollRef}
           >
               {sortedNotes.length === 0 && (
-                <div className="text-center text-gray-400 mt-20 animate-pulse text-sm">
-                  {scanning ? t["obsidian.scanning"] : (searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"])}
+                <div className="flex flex-col items-center gap-3 mt-20 anim-fade-in">
+                  <p className="text-center text-tertiary text-sm">
+                    {scanning ? t["obsidian.scanning"] : (searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"])}
+                  </p>
+                  {!scanning && !searchQuery && (
+                    <Button variant="primary" size="sm" onClick={() => setShowNewNoteModal(true)}>
+                      <Plus size={14} />
+                      {t["obsidian.newNote"]}
+                    </Button>
+                  )}
                 </div>
               )}
               {sortedNotes.length > 0 && (
@@ -416,7 +509,7 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
                     const isSelected = selectedPaths.has(note.path);
                     return (
                       <div
-                        key={note.id}
+                        key={note.path}
                         data-index={virtualRow.index}
                         ref={rowVirtualizer.measureElement}
                         style={{
@@ -437,15 +530,15 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
                             if (selectMode) toggleSelectPath(note.path);
                             else window.prism.openInObsidian(note.path);
                           }}
-                          className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer ${isSelected ? "bg-[var(--accent-muted)]" : "hover:bg-gray-800/30"}`}
+                          className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer ${isSelected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/30"}`}
                           title={note.path}
                         >
                           {selectMode && (
-                            <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-gray-600"}`}>
+                            <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`}>
                               {isSelected && <CheckSquare size={12} className="text-white" />}
                             </div>
                           )}
-                          <span className={`text-sm truncate flex-1 ${isSelected ? "text-[var(--accent-text)]" : "text-gray-300"}`}>
+                          <span className={`text-sm truncate flex-1 ${isSelected ? "text-[var(--accent-text)]" : "text-secondary"}`}>
                             {note.title}
                           </span>
                           {!selectMode && (() => {
@@ -453,16 +546,16 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
                             if (noteColls.length === 0) {
                               return (
                                 <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 whitespace-nowrap">
-                                  未归类
+                                  {t["obsidian.uncategorized"]}
                                 </span>
                               );
                             }
                             return (
                               <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                                 {noteColls.slice(0, 3).map((name) => (
-                                  <span key={name} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-400 whitespace-nowrap">{name}</span>
+                                  <span key={name} className="text-[10px] px-1.5 py-0.5 rounded bg-hover/60 text-tertiary whitespace-nowrap">{name}</span>
                                 ))}
-                                {noteColls.length > 3 && <span className="text-[10px] text-gray-600">+{noteColls.length - 3}</span>}
+                                {noteColls.length > 3 && <span className="text-[10px] text-faint">+{noteColls.length - 3}</span>}
                               </span>
                             );
                           })()}
@@ -502,6 +595,8 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* Modals */}
       {showCreateModal && (
@@ -548,7 +643,7 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
           onKeyDown={(e) => { if (e.key === "Enter") handleRenameNote(); }}
           placeholder={t["obsidian.renameTitle"]}
           autoFocus
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
         />
       </Modal>
 
@@ -559,13 +654,16 @@ export default function ObsidianVault({ vaultPath, vaultName, onScanComplete }: 
             <Button variant="danger" size="sm" onClick={confirm.onConfirm}>{confirm.confirmLabel}</Button>
           </>
         }>
-          <p className="text-sm text-gray-200">{confirm.message}</p>
+          <p className="text-sm text-primary">{confirm.message}</p>
         </Modal>
       )}
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg shadow-lg text-sm text-gray-200 animate-pulse">
-          {toast}
+      {toastMounted && (
+        <div
+          key={toastSeq}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 glass bg-elevated/85 border border-strong rounded-lg shadow-lg text-sm text-primary ${toastExiting ? "anim-exit" : "anim-toast"}`}
+        >
+          {toast ?? lastToast.current}
         </div>
       )}
     </div>

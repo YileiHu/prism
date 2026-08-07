@@ -2,11 +2,11 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const api = {
   // Resources
-  addResource: (url: string, title: string, notes: string, tags: string[]) =>
-    ipcRenderer.invoke("resources:add", url, title, notes, tags),
+  addResource: (url: string, title: string, tags: string[]) =>
+    ipcRenderer.invoke("resources:add", url, title, tags),
   getResources: () => ipcRenderer.invoke("resources:list"),
-  updateResource: (id: number, url: string, title: string, notes: string, tags: string[]) =>
-    ipcRenderer.invoke("resources:update", id, url, title, notes, tags),
+  updateResource: (id: number, url: string, title: string, tags: string[]) =>
+    ipcRenderer.invoke("resources:update", id, url, title, tags),
   deleteResource: (id: number) => ipcRenderer.invoke("resources:delete", id),
   searchResources: (query: string) => ipcRenderer.invoke("resources:search", query),
   fetchPageTitle: (url: string) => ipcRenderer.invoke("fetch:title", url),
@@ -14,11 +14,20 @@ const api = {
 
   // Obsidian
   setVaultPath: (vaultPath: string) => ipcRenderer.invoke("obsidian:set-path", vaultPath),
-  getNoteList: () => ipcRenderer.invoke("obsidian:list-brief"),
-  searchNotes: (query: string) => ipcRenderer.invoke("obsidian:search", query),
+  unwatchVault: (vaultPath: string) => ipcRenderer.invoke("obsidian:unwatch-path", vaultPath),
+  getNoteList: (vaultPath: string) => ipcRenderer.invoke("obsidian:list-brief", vaultPath),
+  searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("obsidian:search", vaultPath, query),
+  deleteNotes: (paths: string[]) => ipcRenderer.invoke("obsidian:delete-notes", paths),
   openInObsidian: (filePath: string) => ipcRenderer.invoke("obsidian:open", filePath),
+  launchObsidian: () => ipcRenderer.invoke("obsidian:launch"),
   createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("obsidian:create-note", vaultPath, title),
-  renameNote: (oldPath: string, newTitle: string) => ipcRenderer.invoke("obsidian:rename-note", oldPath, newTitle),
+  renameNote: (vaultPath: string, oldPath: string, newTitle: string) =>
+    ipcRenderer.invoke("obsidian:rename-note", vaultPath, oldPath, newTitle),
+  onVaultUpdated: (callback: (vaultPath: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, vaultPath: string) => callback(vaultPath);
+    ipcRenderer.on("obsidian:vault-updated", handler);
+    return () => { ipcRenderer.removeListener("obsidian:vault-updated", handler); };
+  },
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),

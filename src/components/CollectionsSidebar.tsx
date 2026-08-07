@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useT } from "../i18n";
 import Button from "./Button";
 import Sidebar from "./Sidebar";
@@ -45,7 +45,6 @@ interface Props {
   onDelete: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onDropNote: (collectionId: string, notePaths: string[]) => void;
-  onRefresh: () => void;
 }
 
 function makeCollId(id: string) { return `coll-${id}`; }
@@ -53,6 +52,7 @@ function makeCollId(id: string) { return `coll-${id}`; }
 function SortableCollectionItem({
   coll,
   isSelected,
+  staggerIndex,
   onSelect,
   onRename,
   onDelete,
@@ -60,6 +60,7 @@ function SortableCollectionItem({
 }: {
   coll: CollectionData;
   isSelected: boolean;
+  staggerIndex: number;
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -86,7 +87,8 @@ function SortableCollectionItem({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
-  };
+    "--i": Math.min(staggerIndex, 10),
+  } as React.CSSProperties;
 
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
 
@@ -96,10 +98,10 @@ function SortableCollectionItem({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative flex items-center gap-1.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
+      className={`group relative flex items-center gap-1.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm stagger-in ${
         isSelected
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
-          : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+          : "text-tertiary hover:text-primary hover:bg-elevated/50"
       }`}
       onClick={onSelect}
       onDragOver={(e) => {
@@ -121,7 +123,7 @@ function SortableCollectionItem({
       onContextMenu={(e) => onContextMenu(e, menuItems)}
     >
       <span className="flex-1 text-sm truncate">{coll.name}</span>
-      <span className="text-xs text-gray-600 flex-shrink-0">{totalNotes}</span>
+      <span className="text-xs text-faint flex-shrink-0">{totalNotes}</span>
     </div>
   );
 }
@@ -129,9 +131,9 @@ function SortableCollectionItem({
 function DragOverlayCollection({ coll }: { coll: CollectionData }) {
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-[var(--accent)] shadow-xl opacity-90">
-      <span className="flex-1 text-sm text-gray-200">{coll.name}</span>
-      <span className="text-xs text-gray-500">{totalNotes}</span>
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-elevated border border-[var(--accent)] shadow-xl opacity-90">
+      <span className="flex-1 text-sm text-primary">{coll.name}</span>
+      <span className="text-xs text-muted">{totalNotes}</span>
     </div>
   );
 }
@@ -146,7 +148,6 @@ export default function CollectionsSidebar({
   onDelete,
   onReorder,
   onDropNote,
-  onRefresh,
 }: Props) {
   const { t } = useT();
   const [activeDrag, setActiveDrag] = useState<CollectionData | null>(null);
@@ -182,16 +183,9 @@ export default function CollectionsSidebar({
       onDragEnd={handleDragEnd}
     >
       <Sidebar
+        storageKey="vault"
         footer={
           <div className="flex items-center justify-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-md"
-              onClick={onRefresh}
-              title={t["obsidian.refresh"]}
-            >
-              <RefreshCw size={16} />
-            </Button>
             <Button
               variant="ghost"
               size="icon-md"
@@ -205,28 +199,29 @@ export default function CollectionsSidebar({
       >
         <div
           onClick={() => onSelect(null)}
-          className={`w-full flex items-center gap-1.5 px-3 py-2 text-sm transition-colors rounded-lg cursor-pointer mb-1 pb-2 border-b border-gray-800/50 ${
+          className={`w-full flex items-center gap-1.5 px-3 py-2 text-sm transition-colors rounded-lg cursor-pointer mb-1 pb-2 border-b border-line/50 ${
             selectedId === null
-              ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
-              : "text-gray-300 hover:text-gray-200 hover:bg-gray-800/50 font-medium"
+              ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+              : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
           }`}
         >
           <span className="flex-1 text-sm truncate text-left">{t["collections.allNotes"]}</span>
-          <span className="text-xs text-gray-600 flex-shrink-0">{allNotesCount}</span>
+          <span className="text-xs text-faint flex-shrink-0">{allNotesCount}</span>
         </div>
 
         <SortableContext items={collIds} strategy={verticalListSortingStrategy}>
           {collections.length === 0 && (
-            <p className="px-3 py-8 text-center text-xs text-gray-500 leading-relaxed">
-              {t["collections.emptyHint"] ?? "点击下方 + 按钮创建第一个收藏集"}
+            <p className="px-3 py-8 text-center text-xs text-muted leading-relaxed">
+              {t["collections.emptyHint"]}
             </p>
           )}
 
-          {collections.map((coll) => (
+          {collections.map((coll, i) => (
             <SortableCollectionItem
               key={coll.id}
               coll={coll}
               isSelected={selectedId === coll.id}
+              staggerIndex={i}
               onSelect={() => onSelect(coll.id)}
               onRename={() => onRename(coll.id)}
               onDelete={() => onDelete(coll.id)}

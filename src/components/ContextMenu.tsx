@@ -16,14 +16,16 @@ interface Props {
   items: MenuItem[];
   position: { x: number; y: number };
   onClose: () => void;
+  exiting?: boolean;
 }
 
-export default function ContextMenu({ items, position, onClose }: Props) {
+export default function ContextMenu({ items, position, onClose, exiting = false }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [submenuOpen, setSubmenuOpen] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [adjustedPos, setAdjustedPos] = useState(position);
+  const [flipSubmenu, setFlipSubmenu] = useState(false);
 
   const clearCloseTimer = () => {
     if (closeTimer.current) {
@@ -47,6 +49,8 @@ export default function ContextMenu({ items, position, onClose }: Props) {
         if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
         if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
         setAdjustedPos({ x, y });
+        // Submenus open to the left when there isn't enough room on the right
+        setFlipSubmenu(x + rect.width + 170 > window.innerWidth);
       }
       setReady(true);
     });
@@ -66,7 +70,7 @@ export default function ContextMenu({ items, position, onClose }: Props) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 min-w-[180px]"
+      className={`fixed z-[100] glass bg-elevated/85 border border-strong rounded-lg shadow-xl p-1 min-w-[180px] ${exiting ? "anim-exit" : "anim-menu"}`}
       style={{ left: adjustedPos.x, top: adjustedPos.y, visibility: ready ? "visible" : "hidden" }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -95,11 +99,11 @@ export default function ContextMenu({ items, position, onClose }: Props) {
               {item.icon && <span className="w-4 flex-shrink-0">{item.icon}</span>}
               <span className="flex-1 text-left">{item.label}</span>
               {item.checked && <span className="text-[var(--accent-text)] text-xs">✓</span>}
-              {item.children && <ChevronRight size={12} className="text-gray-500 flex-shrink-0" />}
+              {item.children && <ChevronRight size={12} className="text-muted flex-shrink-0" />}
             </DropdownMenuItem>
             {item.children && submenuOpen === i && (
               <div
-                className="absolute left-full top-0 ml-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 min-w-[160px]"
+                className={`absolute top-0 glass bg-elevated/85 border border-strong rounded-lg shadow-xl p-1 min-w-[160px] anim-fade-in ${flipSubmenu ? "right-full mr-1" : "left-full ml-1"}`}
                 onMouseEnter={clearCloseTimer}
                 onMouseLeave={scheduleClose}
               >

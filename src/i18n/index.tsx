@@ -12,6 +12,13 @@ export const langOptions: { value: Lang; label: string }[] = [
   { value: "en", label: "English" },
 ];
 
+const LANG_STORAGE_KEY = "prism_lang";
+
+function readStoredLang(): Lang {
+  const saved = localStorage.getItem(LANG_STORAGE_KEY);
+  return saved === "en" || saved === "zh" ? saved : "zh";
+}
+
 const LangContext = createContext<{
   lang: Lang;
   t: Translation;
@@ -23,7 +30,12 @@ const LangContext = createContext<{
 });
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>("zh");
+  const [lang, setLangState] = useState<Lang>(readStoredLang);
+
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    localStorage.setItem(LANG_STORAGE_KEY, next);
+  }, []);
 
   return (
     <LangContext.Provider value={{ lang, t: translations[lang], setLang }}>

@@ -18,11 +18,11 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 };
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:       'bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed',
-  secondary:     'text-gray-400 hover:text-gray-200 hover:bg-gray-800',
+  primary:       'btn-glossy text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed',
+  secondary:     'text-tertiary hover:text-primary hover:bg-elevated',
   danger:        'bg-red-500 hover:bg-red-600 text-white font-medium',
   'danger-subtle': 'bg-red-400/10 hover:bg-red-400/20 text-red-400',
-  ghost:         'text-gray-500 hover:text-gray-300 hover:bg-gray-700 disabled:opacity-50',
+  ghost:         'text-muted hover:text-secondary hover:bg-hover disabled:opacity-50',
 };
 
 const ACTIVE_CLASSES: Partial<Record<ButtonVariant, string>> = {
@@ -39,7 +39,7 @@ export default function Button({
   ...props
 }: ButtonProps) {
   const classes = [
-    'inline-flex items-center justify-center transition-colors flex-shrink-0',
+    'inline-flex items-center justify-center transition-[color,background-color,border-color,transform] duration-150 flex-shrink-0 active:scale-[0.97]',
     SIZE_CLASSES[size],
     VARIANT_CLASSES[variant],
     active && ACTIVE_CLASSES[variant],

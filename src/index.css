@@ -8,6 +8,28 @@
   --accent-muted: rgba(139, 92, 246, 0.15);
   --accent-text: #c4b5fd;
   --accent-border: rgba(139, 92, 246, 0.3);
+  --accent-rgb: 139 92 246;
+
+  /* Surface defaults (= darkSurfaces) — required so first paint isn't unstyled */
+  --c-base: 3 7 18;
+  --c-surface: 17 24 39;
+  --c-elevated: 31 41 55;
+  --c-hover: 55 65 81;
+  --c-tint: 255 255 255;
+  --c-overlay: 0 0 0;
+  --c-primary: 229 231 235;
+  --c-secondary: 209 213 219;
+  --c-tertiary: 156 163 175;
+  --c-muted: 107 114 128;
+  --c-faint: 75 85 99;
+  --c-line: 31 41 55;
+  --c-strong: 55 65 81;
+
+  --glass-blur: 10px;
+  --glass-saturate: 130%;
+  --glow: transparent;
+  --aurora: rgb(var(--c-base));
+  --window-ring: rgba(255, 255, 255, 0.08);
 }
 
 body {
@@ -38,4 +60,153 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/* Horizontally scrollable tab bar — scrollbar hidden, mouse wheel scrolls sideways */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* App shell is transparent so the body-level aurora shows through.
+   The aurora is set per theme via --aurora (radial gradients + base color). */
+.app-shell {
+  background: transparent;
+}
+
+/* Universal aurora background — every theme gets its own accent-tinted
+   gradient layers; Aero overrides with a multi-hue 4-layer variant */
+body {
+  background: var(--aurora);
+  background-attachment: fixed;
+}
+
+/* Selected-item indicator: small rounded pill on the left edge
+   (inset box-shadow follows border-radius and looks like a crescent — this doesn't) */
+.active-bar {
+  position: relative;
+}
+.active-bar::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 14px;
+  width: 3px;
+  border-radius: 9999px;
+  background-color: var(--accent);
+  box-shadow: 0 0 8px var(--glow);
+}
+
+/* Frosted glass — always active on every theme. Intensity controlled by
+   --glass-blur / --glass-saturate (strongest on Aero, subtler on others).
+   Translucency comes from Tailwind alpha modifiers (e.g. bg-surface/80). */
+.glass {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.glass-overlay {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Glossy primary button — gradient + inset sheen + soft glow */
+.btn-glossy {
+  background-image: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 0 14px -6px var(--glow);
+  transition: filter 150ms ease, background-color 150ms ease, color 150ms ease, transform 100ms ease;
+}
+.btn-glossy:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.btn-glossy:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Keyboard focus ring */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Motion tokens (Fluent/Linear-style: fast, subtle, ease-out) ---- */
+
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes pop-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.97) translateY(4px); }
+}
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes menu-up-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes bar-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes stagger-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.anim-overlay { animation: fade-in 150ms ease-out; }
+.anim-fade-in { animation: fade-in 150ms ease-out; }
+.anim-pop { animation: pop-in 180ms var(--ease-out); }
+.anim-menu { animation: menu-in 120ms var(--ease-out); transform-origin: top center; }
+.anim-menu-up { animation: menu-up-in 120ms var(--ease-out); transform-origin: bottom center; }
+.anim-toast { animation: toast-in 200ms var(--ease-out); }
+.anim-bar { animation: bar-in 150ms var(--ease-out); }
+.anim-exit { animation: fade-out 100ms var(--ease-in) forwards; }
+.anim-exit-pop { animation: pop-out 100ms var(--ease-in) forwards; }
+
+/* Replays when the class is re-added (pane becomes visible again) */
+.pane-enter { animation: fade-in 160ms ease-out; }
+
+/* List entrance stagger — set --i per item, capped by the caller.
+   fill-mode backwards only: a forward fill would override dnd-kit's inline transforms */
+.stagger-in {
+  animation: stagger-in 200ms var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 25ms);
+}
+
+/* Respect the OS "reduce motion" setting */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -6,4 +6,4 @@ release/
 .DS_Store
 Thumbs.db
 .claude/
-public/icon.png
+public/icon*.png

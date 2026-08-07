@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus, Trash2, Edit3, Search, ExternalLink, Link2, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Edit3, Search, ExternalLink, Link2, ChevronDown, ChevronRight } from "lucide-react";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import Button from "./Button";
@@ -47,6 +47,12 @@ function extractDomain(url: string) {
   }
 }
 
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function isUniqueViolation(e: unknown): boolean {
+  return /unique/i.test(String((e as Error)?.message ?? e));
+}
+
 function ResourceRowView({
   r,
   onOpenTag,
@@ -71,20 +77,20 @@ function ResourceRowView({
 
   return (
       <div
-        className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer hover:bg-gray-700/30 ${flat ? "" : "rounded-lg"}`}
+        className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer hover:bg-hover/30 ${flat ? "" : "rounded-lg"}`}
         onContextMenu={(e) => onContextMenu(e, menuItems)}
       >
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span
             onClick={() => window.prism.openUrl(r.url)}
-            className="flex-1 text-sm truncate text-gray-200 hover:text-[var(--accent-text)] transition-colors cursor-pointer"
+            className="flex-1 text-sm truncate text-primary hover:text-[var(--accent-text)] transition-colors cursor-pointer"
             title={r.url}
           >
             {r.title || r.url}
           </span>
           <button
             onClick={() => window.prism.openUrl(r.url)}
-            className="text-xs text-gray-600 hover:text-gray-400 truncate flex items-center gap-1"
+            className="text-xs text-faint hover:text-tertiary truncate flex items-center gap-1"
           >
             <Link2 size={10} />
             {extractDomain(r.url)}
@@ -125,30 +131,35 @@ function TagCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-3 border border-gray-700/50 rounded-xl bg-gray-900/20 overflow-hidden">
+    <div className="mb-3 border border-strong/50 rounded-xl bg-surface/20 overflow-hidden">
       <div
         className="flex items-center gap-2 px-3 h-8 cursor-pointer"
         style={{ backgroundColor: `${color.bar}18` }}
         onClick={onToggle}
       >
-        <button className="text-gray-500 hover:text-gray-300 transition-colors">
+        <button className="text-muted hover:text-secondary transition-colors">
           {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
         <span className="text-xs font-medium truncate" style={{ color: color.name }}>{tag}</span>
-        <span className="text-xs text-gray-500">{count}</span>
+        <span className="text-xs text-muted">{count}</span>
         <div className="flex-1" />
         <button
           onClick={(e) => { e.stopPropagation(); onOpenTag(); }}
-          className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+          className="text-xs text-faint hover:text-tertiary transition-colors"
         >
           <ExternalLink size={12} />
         </button>
       </div>
-      {!collapsed && (
-        <div className="p-2">
-          {children}
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
+      >
+        <div className="overflow-hidden min-h-0">
+          <div className="p-2">
+            {children}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -168,12 +179,14 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const [modalUrl, setModalUrl] = useState("");
   const [modalTitle, setModalTitle] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
+  const [modalError, setModalError] = useState("");
 
   // Edit modal state
   const [editResource, setEditResource] = useState<Resource | null>(null);
   const [editUrl, setEditUrl] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editError, setEditError] = useState("");
 
   // Card collapse state
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
@@ -209,16 +222,17 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     loadTags();
   }, []);
 
-  const handleRefresh = () => {
-    loadResources();
-    loadTags();
-  };
-
   const handleSaveNew = async () => {
     if (!modalUrl.trim()) return;
-    const trimmedUrl = modalUrl.trim().startsWith("http") ? modalUrl.trim() : `https://${modalUrl.trim()}`;
-    const title = modalTitle.trim() || (await window.prism.fetchPageTitle(trimmedUrl));
-    await window.prism.addResource(trimmedUrl, title, "", modalTags);
+    const trimmed = modalUrl.trim();
+    const normalizedUrl = HAS_SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const title = modalTitle.trim() || (await window.prism.fetchPageTitle(normalizedUrl));
+    try {
+      await window.prism.addResource(normalizedUrl, title, modalTags);
+    } catch (e) {
+      setModalError(isUniqueViolation(e) ? t["resources.urlExists"] : String((e as Error)?.message ?? e));
+      return;
+    }
     closeModal();
     loadResources();
     loadTags();
@@ -229,6 +243,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setModalUrl("");
     setModalTitle("");
     setModalTags([]);
+    setModalError("");
   };
 
   const handleDelete = async (id: number) => {
@@ -242,6 +257,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setEditUrl(r.url);
     setEditTitle(r.title);
     setEditTags([...r.tags]);
+    setEditError("");
   };
 
   const closeEditModal = () => {
@@ -249,11 +265,17 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setEditUrl("");
     setEditTitle("");
     setEditTags([]);
+    setEditError("");
   };
 
   const handleSaveEdit = async () => {
     if (!editResource || !editUrl.trim()) return;
-    await window.prism.updateResource(editResource.id, editUrl.trim(), editTitle.trim() || editUrl, "", editTags);
+    try {
+      await window.prism.updateResource(editResource.id, editUrl.trim(), editTitle.trim() || editUrl, editTags);
+    } catch (e) {
+      setEditError(isUniqueViolation(e) ? t["resources.urlExists"] : String((e as Error)?.message ?? e));
+      return;
+    }
     closeEditModal();
     loadResources();
     loadTags();
@@ -301,11 +323,9 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     <div className="h-full flex">
       {/* Tag sidebar */}
       <Sidebar
+        storageKey="resources"
         footer={
           <div className="flex items-center justify-center gap-1">
-            <Button variant="ghost" size="icon-md" onClick={handleRefresh} title={t["obsidian.refresh"]}>
-              <RefreshCw size={16} />
-            </Button>
             <Button variant="ghost" size="icon-md" onClick={() => setShowModal(true)} title={t["resources.add"]}>
               <Plus size={16} />
             </Button>
@@ -314,26 +334,27 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
           <button
             onClick={() => setActiveTag(null)}
-            className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1 pb-2 border-b border-gray-800/50 ${
+            className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1 pb-2 border-b border-line/50 ${
               !activeTag
-                ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
-                : "text-gray-300 hover:text-gray-200 hover:bg-gray-800/50 font-medium"
+                ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+                : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
             }`}
           >
             <span className="flex-1 text-left truncate">{t["resources.allTags"]}</span>
-            <span className="text-xs text-gray-500">{totalCount}</span>
+            <span className="text-xs text-muted">{totalCount}</span>
           </button>
-          {allTags.map((tag) => {
+          {allTags.map((tag, i) => {
             const c = getTagColor(tag.name);
             const isActive = activeTag === tag.name;
             return (
               <button
                 key={tag.name}
                 onClick={() => setActiveTag(isActive ? null : tag.name)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors stagger-in ${
                   isActive
-                    ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
-                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+                    ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+                    : "text-tertiary hover:text-primary hover:bg-elevated/50"
                 }`}
               >
                 <div
@@ -341,27 +362,27 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
                   style={{ backgroundColor: c.bar }}
                 />
                 <span className="flex-1 text-left truncate">{tag.name}</span>
-                <span className="text-xs text-gray-500">{tag.count}</span>
+                <span className="text-xs text-muted">{tag.count}</span>
               </button>
             );
           })}
           {allTags.length === 0 && (
-            <p className="px-3 py-8 text-center text-xs text-gray-500 leading-relaxed">{t["resources.empty"]}</p>
+            <p className="px-3 py-8 text-center text-xs text-muted leading-relaxed">{t["resources.empty"]}</p>
           )}
       </Sidebar>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Search bar */}
-        <div className="flex items-center gap-2 px-4 h-11 border-b border-gray-800/50 flex-shrink-0 bg-white/[0.04]">
+        <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
           <div className="relative flex-1">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t["resources.search"]}
-              className="w-full bg-gray-800 border border-gray-700 rounded-full pl-8 pr-3 py-1 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
         </div>
@@ -369,8 +390,16 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
         {/* Content area */}
         <div className="flex-1 overflow-y-auto">
           {resources.length === 0 && (
-            <div className="text-center text-gray-500 mt-20 text-sm">
-              {searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
+            <div className="flex flex-col items-center gap-3 mt-20 anim-fade-in">
+              <p className="text-center text-muted text-sm">
+                {searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
+              </p>
+              {!searchQuery && !activeTag && (
+                <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+                  <Plus size={14} />
+                  {t["resources.add"]}
+                </Button>
+              )}
             </div>
           )}
 
@@ -391,24 +420,29 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
                 </TagCard>
               ))}
               {tagGroups.untagged.length > 0 && (
-                <div className="mb-3 border border-gray-700/30 rounded-xl bg-gray-900/10 overflow-hidden">
+                <div className="mb-3 border border-strong/30 rounded-xl bg-surface/10 overflow-hidden">
                   <div
-                    className="flex items-center gap-2 px-3 h-8 bg-gray-800/30 cursor-pointer"
+                    className="flex items-center gap-2 px-3 h-8 bg-elevated/30 cursor-pointer"
                     onClick={() => toggleCollapse("__untagged__")}
                   >
-                    <button className="text-gray-500 hover:text-gray-300 transition-colors">
+                    <button className="text-muted hover:text-secondary transition-colors">
                       {collapsedTags.has("__untagged__") ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                     </button>
-                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      {t["collections.ungrouped"] ?? "未分组"}
+                    <span className="text-xs font-medium text-muted uppercase tracking-wide">
+                      {t["collections.ungrouped"]}
                     </span>
-                    <span className="text-xs text-gray-600">{tagGroups.untagged.length}</span>
+                    <span className="text-xs text-faint">{tagGroups.untagged.length}</span>
                   </div>
-                  {!collapsedTags.has("__untagged__") && (
-                    <div className="p-2">
-                      {tagGroups.untagged.map((r) => renderRow(r))}
+                  <div
+                    className="grid transition-[grid-template-rows] duration-200 ease-out"
+                    style={{ gridTemplateRows: collapsedTags.has("__untagged__") ? "0fr" : "1fr" }}
+                  >
+                    <div className="overflow-hidden min-h-0">
+                      <div className="p-2">
+                        {tagGroups.untagged.map((r) => renderRow(r))}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -416,7 +450,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
           {/* Flat list (tag filtered) */}
           {activeTag && resources.map((r) => (
-            <div key={r.id} className="border-b border-gray-800/30">
+            <div key={r.id} className="border-b border-line/30">
               {renderRow(r, true)}
             </div>
           ))}
@@ -447,7 +481,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               }}
               placeholder={t["resources.addUrl"]}
               autoFocus
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
           <div>
@@ -456,7 +490,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               value={modalTitle}
               onChange={(e) => setModalTitle(e.target.value)}
               placeholder={t["resources.title"]}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
 
@@ -468,6 +502,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             placeholder={t["resources.tags"]}
             colorForTag={getTagColor}
           />
+          {modalError && <p className="text-xs text-red-400">{modalError}</p>}
         </div>
       </Modal>
 
@@ -486,17 +521,17 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{t["resources.addUrl"]}</label>
+            <label className="block text-xs text-muted mb-1">{t["resources.addUrl"]}</label>
             <input
               type="text"
               value={editUrl}
               onChange={(e) => setEditUrl(e.target.value)}
               placeholder={t["resources.addUrl"]}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{t["resources.title"]}</label>
+            <label className="block text-xs text-muted mb-1">{t["resources.title"]}</label>
             <input
               type="text"
               value={editTitle}
@@ -506,7 +541,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               }}
               placeholder={t["resources.title"]}
               autoFocus
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
 
@@ -518,6 +553,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             placeholder={t["resources.tags"]}
             colorForTag={getTagColor}
           />
+          {editError && <p className="text-xs text-red-400">{editError}</p>}
         </div>
       </Modal>
     </div>

@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { type CollectionData } from "./CollectionsSidebar";
+import { useT } from "../i18n";
 
 function makeId(): string {
   return crypto.randomUUID().slice(0, 8);
@@ -29,27 +30,47 @@ interface CollectionsFile {
 }
 
 interface UseCollectionsOptions {
-  selectedVault: { name: string; path: string } | null;
+  vaultPath: string;
   notes: ObsidianNote[];
   showToast: (msg: string) => void;
   loadNotes: () => Promise<void>;
 }
 
-export function useCollections({ selectedVault, notes, showToast, loadNotes }: UseCollectionsOptions) {
+export function useCollections({ vaultPath, notes, showToast, loadNotes }: UseCollectionsOptions) {
+  const { t } = useT();
   const [collections, setCollections] = useState<CollectionData[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<CollectionData[] | null>(null);
 
   const saveCollections = useCallback((colls: CollectionData[]) => {
-    if (!selectedVault) return;
+    pendingRef.current = colls;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      window.prism.saveCollections(selectedVault.path, { version: 1, collections: colls });
+      pendingRef.current = null;
+      saveTimer.current = null;
+      window.prism.saveCollections(vaultPath, { version: 1, collections: colls });
     }, 300);
-  }, [selectedVault]);
+  }, [vaultPath]);
 
-  const loadCollections = useCallback(async (vaultPath: string) => {
-    const data = await window.prism.loadCollections(vaultPath) as CollectionsFile | null;
+  // Flush pending debounced save on unmount / window close so the last edit isn't lost
+  useEffect(() => {
+    const flush = () => {
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      if (pendingRef.current) {
+        window.prism.saveCollections(vaultPath, { version: 1, collections: pendingRef.current });
+        pendingRef.current = null;
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, [vaultPath]);
+
+  const loadCollections = useCallback(async (vp: string) => {
+    const data = await window.prism.loadCollections(vp) as CollectionsFile | null;
     setCollections(data?.collections ?? []);
   }, []);
 
@@ -84,24 +105,18 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
   const handleDeleteCollection = useCallback((id: string) => {
     const coll = collections.find((c) => c.id === id);
     return {
-      message: "",
       collName: coll?.name ?? "",
-      onConfirm: async () => {
-        setCollections((prev) => {
-          const updated = prev.filter((c) => c.id !== id);
-          saveCollections(updated);
-          return updated;
-        });
+      onConfirm: () => {
+        const updated = collections.filter((c) => c.id !== id);
+        setCollections(updated);
+        saveCollections(updated);
         if (selectedCollectionId === id) {
           setSelectedCollectionId(null);
-          if (selectedVault) {
-            await window.prism.setSetting(`last_coll_${selectedVault.path}`, "");
-          }
+          window.prism.setSetting(`last_coll_${vaultPath}`, "");
         }
-        showToast(coll?.name ?? "");
       },
     };
-  }, [collections, saveCollections, selectedCollectionId, selectedVault, showToast]);
+  }, [collections, saveCollections, selectedCollectionId, vaultPath]);
 
   const handleReorderCollections = useCallback((from: number, to: number) => {
     setCollections((prev) => {
@@ -114,42 +129,39 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
   }, [saveCollections]);
 
   // ---- Note-to-collection operations ----
+  // A note may belong to multiple collections (context menu checkmarks imply it),
+  // so adding never removes it from other collections.
 
   const handleDropNote = useCallback((collectionId: string, notePaths: string[]) => {
-    const relPaths = selectedVault
-      ? notePaths.map((p) => toRelativePath(p, selectedVault.path))
-      : notePaths;
-    setCollections((prev) => {
-      const updated = prev.map((c) => {
-        if (c.id !== collectionId) return c;
-        const newPaths = [...c.notePaths];
-        let added = 0;
-        for (const np of relPaths) {
-          if (!newPaths.includes(np)) { newPaths.push(np); added++; }
-        }
-        if (added > 0) showToast(c.name);
-        else showToast("");
-        return { ...c, notePaths: newPaths };
-      });
-      saveCollections(updated);
-      return updated;
-    });
-  }, [selectedVault, saveCollections, showToast]);
+    const relPaths = notePaths.map((p) => toRelativePath(p, vaultPath));
+    const target = collections.find((c) => c.id === collectionId);
+    if (!target) return;
+    const newOnes = relPaths.filter((np) => !target.notePaths.includes(np));
+    showToast(newOnes.length > 0
+      ? t["collections.added"].replace("{name}", target.name)
+      : t["collections.alreadyExists"]);
+    if (newOnes.length === 0) return;
+    const updated = collections.map((c) =>
+      c.id === collectionId ? { ...c, notePaths: [...c.notePaths, ...newOnes] } : c);
+    setCollections(updated);
+    saveCollections(updated);
+  }, [collections, vaultPath, saveCollections, showToast, t]);
 
-  const handleDropNoteDirect = useCallback((collectionId: string, notePaths: string[]) => {
-    setCollections((prev) => {
-      const updated = prev.map((c) => {
-        if (c.id !== collectionId) return c;
-        const newPaths = [...c.notePaths];
-        for (const np of notePaths) {
-          if (!newPaths.includes(np)) newPaths.push(np);
-        }
-        return { ...c, notePaths: newPaths };
-      });
-      saveCollections(updated);
-      return updated;
-    });
-  }, [saveCollections]);
+  const handleDropNoteDirect = useCallback((collectionId: string, notePaths: string[], silent = false) => {
+    const target = collections.find((c) => c.id === collectionId);
+    if (!target) return;
+    const newOnes = notePaths.filter((np) => !target.notePaths.includes(np));
+    if (!silent) {
+      showToast(newOnes.length > 0
+        ? t["collections.added"].replace("{name}", target.name)
+        : t["collections.alreadyExists"]);
+    }
+    if (newOnes.length === 0) return;
+    const updated = collections.map((c) =>
+      c.id === collectionId ? { ...c, notePaths: [...c.notePaths, ...newOnes] } : c);
+    setCollections(updated);
+    saveCollections(updated);
+  }, [collections, saveCollections, showToast, t]);
 
   const handleMoveNoteDirect = useCallback((collectionId: string, relPath: string, toGroupId: string) => {
     updateCollection(collectionId, (c) => ({
@@ -194,24 +206,21 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
     });
   }, [updateCollection]);
 
-  const handleMoveNote = useCallback((collId: string, relPath: string, fromGroupId: string | null, toGroupId: string | null) => {
+  const handleMoveNote = useCallback((collId: string, relPath: string, fromGroupId: string | null, toGroupId: string | null, toIndex?: number) => {
     updateCollection(collId, (c) => {
-      let updated = { ...c, groups: (c.groups ?? []).map((g) => ({ ...g, notePaths: [...g.notePaths] })), notePaths: [...c.notePaths] };
+      const updated = { ...c, groups: (c.groups ?? []).map((g) => ({ ...g, notePaths: [...g.notePaths] })), notePaths: [...c.notePaths] };
       if (fromGroupId) {
         const fromGroup = updated.groups!.find((g) => g.id === fromGroupId);
         if (fromGroup) fromGroup.notePaths = fromGroup.notePaths.filter((p) => p !== relPath);
       } else {
         updated.notePaths = updated.notePaths.filter((p) => p !== relPath);
       }
-      if (toGroupId) {
-        const toGroup = updated.groups!.find((g) => g.id === toGroupId);
-        if (toGroup && !toGroup.notePaths.includes(relPath)) {
-          toGroup.notePaths = [...toGroup.notePaths, relPath];
-        }
-      } else {
-        if (!updated.notePaths.includes(relPath)) {
-          updated.notePaths = [...updated.notePaths, relPath];
-        }
+      const targetArr = toGroupId
+        ? updated.groups!.find((g) => g.id === toGroupId)?.notePaths
+        : updated.notePaths;
+      if (targetArr && !targetArr.includes(relPath)) {
+        const idx = toIndex !== undefined ? Math.max(0, Math.min(toIndex, targetArr.length)) : targetArr.length;
+        targetArr.splice(idx, 0, relPath);
       }
       return updated;
     });
@@ -224,8 +233,27 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
       }
       return { ...c, notePaths: c.notePaths.filter((p) => p !== relPath) };
     });
-    showToast("");
-  }, [updateCollection, showToast]);
+    showToast(t["collections.removed"]);
+  }, [updateCollection, showToast, t]);
+
+  const handleMoveToCollection = useCallback((fromCollId: string, toCollId: string, relPath: string, fromGroupId: string | null) => {
+    const target = collections.find((c) => c.id === toCollId);
+    const updated = collections.map((c) => {
+      if (c.id === fromCollId) {
+        if (fromGroupId) {
+          return { ...c, groups: (c.groups ?? []).map((g) => g.id === fromGroupId ? { ...g, notePaths: g.notePaths.filter((p) => p !== relPath) } : g) };
+        }
+        return { ...c, notePaths: c.notePaths.filter((p) => p !== relPath) };
+      }
+      if (c.id === toCollId && !c.notePaths.includes(relPath)) {
+        return { ...c, notePaths: [...c.notePaths, relPath] };
+      }
+      return c;
+    });
+    setCollections(updated);
+    saveCollections(updated);
+    showToast(t["collections.moved"].replace("{name}", target?.name ?? ""));
+  }, [collections, saveCollections, showToast, t]);
 
   const handleReorderNotesInGroup = useCallback((collId: string, groupId: string | null, fromIndex: number, toIndex: number) => {
     updateCollection(collId, (c) => {
@@ -289,21 +317,68 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
 
   const notesByRelPath = useMemo(() => {
     const map = new Map<string, ObsidianNote>();
-    if (!selectedVault) return map;
     for (const n of notes) {
-      map.set(toRelativePath(n.path, selectedVault.path).replace(/\//g, "\\").toLowerCase(), n);
+      map.set(toRelativePath(n.path, vaultPath).replace(/\//g, "\\").toLowerCase(), n);
     }
     return map;
-  }, [notes, selectedVault]);
+  }, [notes, vaultPath]);
+
+  // Auto-heal collection paths after an external (e.g. Obsidian-side) rename/move.
+  // A missing path is relinked only when exactly one note in the vault shares the
+  // same file name — ambiguous or absent matches keep the "missing" marker.
+  useEffect(() => {
+    if (notes.length === 0 || collections.length === 0) return;
+
+    const missing = new Set<string>();
+    const collectMissing = (paths: string[]) => {
+      for (const np of paths) {
+        if (!notesByRelPath.has(np.replace(/\//g, "\\").toLowerCase())) missing.add(np);
+      }
+    };
+    for (const c of collections) {
+      collectMissing(c.notePaths);
+      for (const g of c.groups ?? []) collectMissing(g.notePaths);
+    }
+    if (missing.size === 0) return;
+
+    const notesByTitle = new Map<string, ObsidianNote[]>();
+    for (const n of notes) {
+      const arr = notesByTitle.get(n.title);
+      if (arr) arr.push(n);
+      else notesByTitle.set(n.title, [n]);
+    }
+
+    const renames = new Map<string, string>();
+    for (const oldRel of missing) {
+      const fileName = oldRel.split(/[/\\]/).pop() ?? "";
+      const title = fileName.replace(/\.md$/i, "");
+      if (!title) continue;
+      const candidates = notesByTitle.get(title) ?? [];
+      if (candidates.length === 1) {
+        renames.set(oldRel, toRelativePath(candidates[0].path, vaultPath));
+      }
+    }
+    if (renames.size === 0) return;
+
+    setCollections((prev) => {
+      const remap = (paths: string[]) => paths.map((p) => renames.get(p) ?? p);
+      const updated = prev.map((c) => ({
+        ...c,
+        notePaths: remap(c.notePaths),
+        groups: (c.groups ?? []).map((g) => ({ ...g, notePaths: remap(g.notePaths) })),
+      }));
+      saveCollections(updated);
+      return updated;
+    });
+  }, [notes, collections, notesByRelPath, vaultPath, saveCollections]);
 
   const mapNotes = useCallback((notePaths: string[]) => {
-    if (!selectedVault) return [];
     return notePaths.map((relPath) => {
       const found = notesByRelPath.get(relPath.replace(/\//g, "\\").toLowerCase());
-      const absPath = found?.path ?? `${selectedVault.path}/${relPath}`.replace(/\\/g, "/");
+      const absPath = found?.path ?? `${vaultPath}/${relPath}`.replace(/\\/g, "/");
       return { path: absPath, relativePath: relPath, title: found?.title ?? relPath, missing: !found };
     });
-  }, [selectedVault, notesByRelPath]);
+  }, [vaultPath, notesByRelPath]);
 
   const groupedViews = useMemo(() => {
     if (!selectedCollection) return [];
@@ -323,7 +398,6 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
 
   const noteCollections = useMemo(() => {
     const map = new Map<string, string[]>();
-    if (!selectedVault) return map;
     for (const c of collections) {
       for (const np of c.notePaths) {
         const key = np.replace(/\//g, "\\").toLowerCase();
@@ -341,13 +415,12 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
       }
     }
     return map;
-  }, [collections, selectedVault]);
+  }, [collections]);
 
   const sortedNotes = useMemo(() => {
-    if (!selectedVault) return notes;
     return [...notes].sort((a, b) => {
-      const aKey = toRelativePath(a.path, selectedVault.path).replace(/\//g, "\\").toLowerCase();
-      const bKey = toRelativePath(b.path, selectedVault.path).replace(/\//g, "\\").toLowerCase();
+      const aKey = toRelativePath(a.path, vaultPath).replace(/\//g, "\\").toLowerCase();
+      const bKey = toRelativePath(b.path, vaultPath).replace(/\//g, "\\").toLowerCase();
       const aColls = noteCollections.get(aKey) ?? [];
       const bColls = noteCollections.get(bKey) ?? [];
       if (aColls.length === 0 && bColls.length > 0) return -1;
@@ -358,7 +431,7 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
       }
       return a.title.localeCompare(b.title);
     });
-  }, [notes, selectedVault, noteCollections]);
+  }, [notes, vaultPath, noteCollections]);
 
   // ---- Batch operations ----
 
@@ -367,23 +440,25 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
   }, [handleDropNote]);
 
   const handleBatchDelete = useCallback((paths: string[]) => {
-    if (!selectedVault) return { message: "", onConfirm: () => {} };
-    const relativePaths = paths.map((p) => toRelativePath(p, selectedVault.path));
     return {
-      message: "",
       onConfirm: async () => {
         const result = await window.prism.trashFiles(paths);
-        if (result.allSuccess) {
-          removeNotePaths(relativePaths);
+        const succeeded = (result.results as { path: string; success: boolean }[])
+          .filter((r) => r.success)
+          .map((r) => r.path);
+        if (succeeded.length > 0) {
+          // Remove DB rows too, otherwise the next loadNotes() resurrects them
+          await window.prism.deleteNotes(succeeded);
+          removeNotePaths(succeeded.map((p) => toRelativePath(p, vaultPath)));
           await loadNotes();
-          showToast(`Deleted ${paths.length} files`);
-        } else {
-          const failed = result.results.filter((r: any) => !r.success);
-          showToast(`Failed to delete ${failed.length} file(s)`);
         }
+        const failed = result.results.length - succeeded.length;
+        showToast(failed === 0
+          ? t["batch.deleted"].replace("{count}", String(succeeded.length))
+          : t["batch.deleteFailed"].replace("{count}", String(failed)));
       },
     };
-  }, [selectedVault, removeNotePaths, loadNotes, showToast]);
+  }, [vaultPath, removeNotePaths, loadNotes, showToast, t]);
 
   return {
     collections,
@@ -391,7 +466,6 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
     selectedCollectionId,
     setSelectedCollectionId,
     loadCollections,
-    saveCollections,
     // CRUD
     handleCreateCollection,
     handleRenameCollection,
@@ -403,6 +477,7 @@ export function useCollections({ selectedVault, notes, showToast, loadNotes }: U
     handleMoveNoteDirect,
     handleMoveNote,
     handleRemoveNote,
+    handleMoveToCollection,
     handleReorderNotesInGroup,
     // Groups
     handleAddGroup,

@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import ContextMenu, { type MenuItem } from "../components/ContextMenu";
+import { useAnimatedMount } from "./useAnimatedMount";
 
 interface CtxState {
   x: number;
@@ -16,15 +17,25 @@ const Ctx = createContext<CtxValue | null>(null);
 
 export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const [ctx, setCtx] = useState<CtxState | null>(null);
+  // Keep the last menu state so it can render through its exit animation
+  const lastCtx = useRef<CtxState | null>(null);
+  if (ctx) lastCtx.current = ctx;
 
   const open = useCallback((state: CtxState) => setCtx(state), []);
   const close = useCallback(() => setCtx(null), []);
 
+  const { mounted, exiting } = useAnimatedMount(ctx !== null, 100);
+
   return (
     <Ctx.Provider value={{ open, close }}>
       {children}
-      {ctx && (
-        <ContextMenu items={ctx.items} position={{ x: ctx.x, y: ctx.y }} onClose={close} />
+      {mounted && lastCtx.current && (
+        <ContextMenu
+          items={lastCtx.current.items}
+          position={{ x: lastCtx.current.x, y: lastCtx.current.y }}
+          onClose={close}
+          exiting={exiting}
+        />
       )}
     </Ctx.Provider>
   );

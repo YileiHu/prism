@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Trash2, FolderOpen, ExternalLink, Monitor, Palette, Database, Wrench, ChevronDown } from "lucide-react";
 import { useT, langOptions } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
@@ -22,6 +22,8 @@ export default function Settings() {
   const [obsidianPath, setObsidianPath] = useState("");
   const [defaultNotesDir, setDefaultNotesDir] = useState("");
   const [langOpen, setLangOpen] = useState(false);
+  const [addError, setAddError] = useState("");
+  const langAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadSettings();
@@ -54,14 +56,28 @@ export default function Settings() {
     flashSaved();
   };
 
+  const normalizePath = (p: string) => p.trim().replace(/[\\/]+$/, "");
+
   const handleAddVault = async () => {
-    if (!newName.trim() || !newPath.trim()) return;
-    await saveVaults([...vaults, { name: newName.trim(), path: newPath.trim() }]);
+    const name = newName.trim();
+    const normalizedPath = normalizePath(newPath);
+    if (!name || !normalizedPath) return;
+    if (vaults.some((v) => normalizePath(v.path).toLowerCase() === normalizedPath.toLowerCase())) {
+      setAddError(t["settings.vaultExists"]);
+      return;
+    }
+    setAddError("");
+    await saveVaults([...vaults, { name, path: normalizedPath }]);
     setNewName(""); setNewPath("");
   };
 
   const handleRemoveVault = async (index: number) => {
+    const removed = vaults[index];
     await saveVaults(vaults.filter((_, i) => i !== index));
+    if (removed) {
+      const last = await window.prism.getSetting("last_vault_path");
+      if (last === removed.path) await window.prism.setSetting("last_vault_path", "");
+    }
   };
 
   const handleSelectDir = async () => {
@@ -76,9 +92,7 @@ export default function Settings() {
 
   const handleTestBrowser = () => { window.prism.openUrl("https://example.com"); };
 
-  const handleTestObsidian = () => {
-    window.prism.openInObsidian(vaults.length > 0 ? vaults[0].path : "");
-  };
+  const handleTestObsidian = () => { window.prism.launchObsidian(); };
 
   const categories: { key: SettingsCategory; label: string; icon: typeof Database }[] = [
     { key: "vaults", label: t["settings.catVaults"], icon: Database },
@@ -89,7 +103,7 @@ export default function Settings() {
   return (
     <div className="h-full flex">
       {/* Sidebar */}
-      <Sidebar>
+      <Sidebar storageKey="settings">
         <nav className="space-y-0.5">
           {categories.map(({ key, label, icon: Icon }) => (
             <button
@@ -97,8 +111,8 @@ export default function Settings() {
               onClick={() => setCategory(key)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
                 category === key
-                  ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
-                  : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+                  ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+                  : "text-tertiary hover:text-primary hover:bg-elevated/50"
               }`}
             >
               <Icon size={16} />
@@ -107,8 +121,8 @@ export default function Settings() {
           ))}
         </nav>
         {saved && (
-          <div className="px-4 pt-2 mt-2 border-t border-gray-800/50">
-            <span className="text-xs text-green-400">Settings saved</span>
+          <div className="px-4 pt-2 mt-2 border-t border-line/50">
+            <span className="text-xs text-green-400">{t["settings.saved"]}</span>
           </div>
         )}
       </Sidebar>
@@ -117,21 +131,21 @@ export default function Settings() {
       <div className="flex-1 overflow-y-auto p-8">
         {category === "vaults" && (
           <section>
-            <h3 className="text-base font-semibold text-gray-200 mb-1">{t["settings.vaults"]}</h3>
-            <p className="text-xs text-gray-500 mb-5">{t["settings.vaultsDesc"]}</p>
+            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.vaults"]}</h3>
+            <p className="text-xs text-muted mb-5">{t["settings.vaultsDesc"]}</p>
 
             <div className="space-y-2 mb-5">
               {vaults.length === 0 && (
-                <div className="text-center text-gray-500 py-8 text-sm bg-gray-900/30 rounded-lg border border-gray-800/50">
+                <div className="text-center text-muted py-8 text-sm bg-surface/30 rounded-lg border border-line/50">
                   {t["settings.noVaults"]}
                 </div>
               )}
               {vaults.map((v, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg border border-gray-800/50">
+                <div key={v.path} className="flex items-center gap-3 p-3 bg-surface/50 rounded-lg border border-line/50">
                   <FolderOpen size={16} className="text-amber-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-gray-200 font-medium truncate">{v.name}</div>
-                    <div className="text-xs text-gray-500 truncate">{v.path}</div>
+                    <div className="text-sm text-primary font-medium truncate">{v.name}</div>
+                    <div className="text-xs text-muted truncate">{v.path}</div>
                   </div>
                   <Button
                     variant="ghost"
@@ -145,36 +159,36 @@ export default function Settings() {
               ))}
             </div>
 
-            <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 mb-5">
+            <div className="p-4 bg-surface/30 rounded-lg border border-line/50 mb-5">
               <div className="flex items-center gap-2 mb-3">
                 <FolderOpen size={14} className="text-amber-500" />
-                <span className="text-sm font-medium text-gray-300">{t["settings.defaultNotesDir"]}</span>
+                <span className="text-sm font-medium text-secondary">{t["settings.defaultNotesDir"]}</span>
               </div>
-              <p className="text-xs text-gray-500 mb-3">{t["settings.defaultNotesDirDesc"]}</p>
+              <p className="text-xs text-muted mb-3">{t["settings.defaultNotesDirDesc"]}</p>
               <input
                 value={defaultNotesDir}
                 onChange={(e) => setDefaultNotesDir(e.target.value)}
                 onBlur={() => saveSetting("default_notes_dir", defaultNotesDir)}
                 placeholder={t["settings.defaultNotesDirPlaceholder"]}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                className="w-full bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
               />
             </div>
 
-            <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 space-y-3">
-              <p className="text-xs text-gray-400 font-medium">{t["settings.addVault"]}</p>
+            <div className="p-4 bg-surface/30 rounded-lg border border-line/50 space-y-3">
+              <p className="text-xs text-tertiary font-medium">{t["settings.addVault"]}</p>
               <div className="flex gap-2">
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder={t["settings.vaultNamePlaceholder"]}
-                  className="w-44 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                  className="w-44 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
                 />
                 <div className="flex-1 flex gap-2">
                   <input
                     value={newPath}
                     onChange={(e) => setNewPath(e.target.value)}
                     placeholder={t["settings.vaultPath"]}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
                   <Button variant="ghost" size="icon-md" onClick={handleSelectDir}>
                     <FolderOpen size={16} />
@@ -190,20 +204,21 @@ export default function Settings() {
                   {t["settings.addVault"]}
                 </Button>
               </div>
+              {addError && <p className="text-xs text-red-400">{addError}</p>}
             </div>
           </section>
         )}
 
         {category === "external" && (
           <section>
-            <h3 className="text-base font-semibold text-gray-200 mb-1">{t["settings.external"]}</h3>
-            <p className="text-xs text-gray-500 mb-5">{t["settings.externalDesc"]}</p>
+            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.external"]}</h3>
+            <p className="text-xs text-muted mb-5">{t["settings.externalDesc"]}</p>
 
             <div className="space-y-4">
-              <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800/50">
+              <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
                 <div className="flex items-center gap-2 mb-3">
                   <Monitor size={14} className="text-blue-400" />
-                  <span className="text-sm font-medium text-gray-300">{t["settings.browserPath"]}</span>
+                  <span className="text-sm font-medium text-secondary">{t["settings.browserPath"]}</span>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -211,9 +226,9 @@ export default function Settings() {
                     onChange={(e) => setBrowserPath(e.target.value)}
                     onBlur={() => saveSetting("browser_path", browserPath)}
                     placeholder={t["settings.browserPathPlaceholder"]}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <Button size="xs" onClick={() => handleSelectFile(setBrowserPath, "browser_path")} className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-normal">
+                  <Button variant="secondary" size="xs" onClick={() => handleSelectFile(setBrowserPath, "browser_path")}>
                     {t["settings.selectFile"]}
                   </Button>
                   <Button variant="secondary" size="xs" onClick={handleTestBrowser} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20">
@@ -223,10 +238,10 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800/50">
+              <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
                 <div className="flex items-center gap-2 mb-3">
                   <FolderOpen size={14} className="text-[var(--accent-text)]" />
-                  <span className="text-sm font-medium text-gray-300">{t["settings.obsidianPath"]}</span>
+                  <span className="text-sm font-medium text-secondary">{t["settings.obsidianPath"]}</span>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -234,9 +249,9 @@ export default function Settings() {
                     onChange={(e) => setObsidianPath(e.target.value)}
                     onBlur={() => saveSetting("obsidian_path", obsidianPath)}
                     placeholder={t["settings.obsidianPathPlaceholder"]}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
-                  <Button size="xs" onClick={() => handleSelectFile(setObsidianPath, "obsidian_path")} className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-normal">
+                  <Button variant="secondary" size="xs" onClick={() => handleSelectFile(setObsidianPath, "obsidian_path")}>
                     {t["settings.selectFile"]}
                   </Button>
                   <Button variant="secondary" size="xs" onClick={handleTestObsidian} className="text-[var(--accent-text)] bg-[var(--accent-muted)] hover:opacity-80">
@@ -251,25 +266,25 @@ export default function Settings() {
 
         {category === "appearance" && (
           <section>
-            <h3 className="text-base font-semibold text-gray-200 mb-1">{t["settings.appearance"]}</h3>
-            <p className="text-xs text-gray-500 mb-5">{t["settings.appearanceDesc"]}</p>
+            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.appearance"]}</h3>
+            <p className="text-xs text-muted mb-5">{t["settings.appearanceDesc"]}</p>
 
-            <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800/50 mb-5">
+            <div className="p-4 bg-surface/50 rounded-lg border border-line/50 mb-5">
               <div className="flex items-center gap-2 mb-3">
                 <Palette size={14} className="text-[var(--accent-text)]" />
-                <span className="text-sm font-medium text-gray-300">{t["settings.language"]}</span>
+                <span className="text-sm font-medium text-secondary">{t["settings.language"]}</span>
               </div>
-              <p className="text-xs text-gray-500 mb-3">{t["settings.languageDesc"]}</p>
-              <div className="relative">
+              <p className="text-xs text-muted mb-3">{t["settings.languageDesc"]}</p>
+              <div ref={langAnchorRef}>
                 <button
                   type="button"
                   onClick={() => setLangOpen(!langOpen)}
-                  className="w-full flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-200 transition-colors hover:border-gray-600"
+                  className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm text-primary transition-colors hover:border-strong"
                 >
                   <span>{langOptions.find((o) => o.value === lang)?.label}</span>
-                  <ChevronDown size={14} className="text-gray-500 flex-shrink-0" />
+                  <ChevronDown size={14} className="text-muted flex-shrink-0" />
                 </button>
-                <DropdownMenu open={langOpen} onClose={() => setLangOpen(false)} className="left-0 top-full mt-1 w-full">
+                <DropdownMenu open={langOpen} onClose={() => setLangOpen(false)} anchorRef={langAnchorRef} matchWidth>
                   {langOptions.map((opt) => (
                     <DropdownMenuItem
                       key={opt.value}
@@ -291,17 +306,17 @@ export default function Settings() {
                   className={`p-4 rounded-xl border transition-all text-left ${
                     themeId === th.id
                       ? "border-[var(--accent)] bg-[var(--accent-muted)]"
-                      : "border-gray-800 bg-gray-900/50 hover:border-gray-700"
+                      : "border-line bg-surface/50 hover:border-strong"
                   }`}
                 >
                   <div className="flex items-center gap-3 mb-3">
                     <div
-                      className="w-8 h-8 rounded-full border-2 border-gray-700 flex-shrink-0"
+                      className="w-8 h-8 rounded-full border-2 border-strong flex-shrink-0"
                       style={{ backgroundColor: th.primary }}
                     />
                     <div>
-                      <div className="text-sm font-medium text-gray-200">{th.name}</div>
-                      <div className="text-xs text-gray-500">{th.nameEn}</div>
+                      <div className="text-sm font-medium text-primary">{th.name}</div>
+                      <div className="text-xs text-muted">{th.nameEn}</div>
                     </div>
                     {themeId === th.id && (
                       <div

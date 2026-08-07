@@ -19,10 +19,11 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
   const [open, setOpen] = useState(false);
 
   const filtered = useMemo(() => {
+    const available = suggestions.filter((s) => !tags.includes(s.name));
     const q = input.toLowerCase().trim();
-    if (!q) return suggestions.slice(0, 8);
-    return suggestions.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [suggestions, input]);
+    if (!q) return available.slice(0, 8);
+    return available.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [suggestions, input, tags]);
 
   const addTag = (name: string, e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -66,21 +67,21 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}
           placeholder={placeholder}
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full bg-elevated border border-strong rounded-lg px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
         />
         {open && filtered.length > 0 && (
-          <div className="absolute top-full mt-1 left-0 z-30 bg-gray-800 border border-gray-700 rounded-lg shadow-lg p-1 w-full">
+          <div className="absolute top-full mt-1 left-0 z-30 glass bg-elevated/90 border border-strong rounded-lg shadow-lg p-1 w-full">
             {filtered.map((s) => (
               <button
                 key={s.name}
                 onMouseDown={(e) => addTag(s.name, e)}
-                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center justify-between rounded-md"
+                className="w-full text-left px-3 py-2 text-sm text-secondary hover:bg-hover flex items-center justify-between rounded-md"
               >
                 <span className="flex items-center gap-2">
-                  <Tag size={12} className="text-gray-500" />
+                  <Tag size={12} className="text-muted" />
                   {s.name}
                 </span>
-                <span className="text-xs text-gray-500">{s.count}</span>
+                <span className="text-xs text-muted">{s.count}</span>
               </button>
             ))}
           </div>
