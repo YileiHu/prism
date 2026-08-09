@@ -3,23 +3,25 @@ import WebResources from "./components/WebResources";
 import ObsidianVault from "./components/ObsidianVault";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
-import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks } from "lucide-react";
+import HomeView from "./components/home/HomeView";
+import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks, House } from "lucide-react";
 
 import { useT } from "./i18n";
 import ErrorBoundary from "./components/ErrorBoundary";
 import SplashScreen from "./components/SplashScreen";
 import { ContextMenuProvider } from "./lib/useContextMenu";
+import { ToastProvider } from "./lib/toast";
 import ChangelogModal from "./components/ChangelogModal";
 import { type VaultEntry } from "./types";
 import "./lib/api";
 
-type SpecialTab = "resources" | "gtd" | "settings";
+type SpecialTab = "home" | "resources" | "gtd" | "settings";
 
-const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["resources", "gtd", "settings"]);
+const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["home", "resources", "gtd", "settings"]);
 
 export default function App() {
   const { t } = useT();
-  const [activeTab, setActiveTab] = useState<string>("resources");
+  const [activeTab, setActiveTab] = useState<string>("home");
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [maximized, setMaximized] = useState(false);
   const [mountedVaults, setMountedVaults] = useState<Set<string>>(new Set());
@@ -33,23 +35,21 @@ export default function App() {
     return window.prism.onMaximizeChange(setMaximized);
   }, []);
 
-  // Load vaults + select initial tab
+  // Load vaults + select initial tab (always the home dashboard)
   useEffect(() => {
     (async () => {
-      const [raw, lastPath] = await Promise.all([
-        window.prism.getSetting("vault_paths"),
-        window.prism.getSetting("last_vault_path"),
-      ]);
+      const raw = await window.prism.getSetting("vault_paths");
       let parsed: VaultEntry[] = [];
       if (raw) {
         try { parsed = JSON.parse(raw); } catch { parsed = []; }
       }
       setVaults(parsed);
-      const last = lastPath ? parsed.find((v) => v.path === lastPath) : undefined;
-      const initial = last?.path ?? parsed[0]?.path ?? "resources";
-      setActiveTab(initial);
+      // Seed the background preload chain: mounting the first vault triggers its
+      // scan, and each scan completion mounts the next vault (handleScanComplete)
+      if (parsed.length > 0) setMountedVaults(new Set([parsed[0].path]));
+      setActiveTab("home");
       // WebResources may have finished loading while settings were being read
-      if (initial === "resources" && contentReadyRef.current) dismissSplash();
+      if (contentReadyRef.current) dismissSplash();
     })();
   }, []);
 
@@ -92,8 +92,9 @@ export default function App() {
 
   const handleContentReady = useCallback(() => {
     contentReadyRef.current = true;
-    // Only the resources tab reports readiness; vault tabs report scan completion
-    if (activeTabRef.current === "resources" || activeTabRef.current === "settings") {
+    // WebResources reports readiness; special tabs dismiss the splash on it,
+    // vault tabs dismiss on scan completion
+    if (SPECIAL_TAB_KEYS.has(activeTabRef.current)) {
       dismissSplash();
     }
   }, []);
@@ -145,12 +146,13 @@ export default function App() {
     label: v.name,
     icon: FolderSearch,
   }));
+  const homeTab = { key: "home", label: t["nav.home"], icon: House };
+  const gtdTab = { key: "gtd", label: t["nav.gtd"], icon: ListChecks };
   const specialTabs: { key: SpecialTab; label: string; icon: typeof Globe }[] = [
     { key: "resources", label: t["nav.resources"], icon: Globe },
-    { key: "gtd", label: t["nav.gtd"], icon: ListChecks },
     { key: "settings", label: t["nav.settings"], icon: Settings2 },
   ];
-  const allTabs = [...vaultTabs, ...specialTabs];
+  const allTabs = [homeTab, gtdTab, ...vaultTabs, ...specialTabs];
 
   // Inactive panes stay laid out (visibility instead of display:none) so scroll
   // positions and virtualizer measurements survive tab switches without flashes
@@ -162,6 +164,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <ContextMenuProvider>
+    <ToastProvider>
     <div
       className="h-screen flex flex-col app-shell text-primary select-none"
       style={{ borderRadius: "8px", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
@@ -227,6 +230,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden relative">
+        <div style={paneStyle(activeTab === "home")} className={activeTab === "home" ? "pane-enter" : ""}>
+          <HomeView active={activeTab === "home"} onNavigateToGtd={() => handleTabClick("gtd")} />
+        </div>
         <div style={paneStyle(activeTab === "resources")} className={activeTab === "resources" ? "pane-enter" : ""}>
           <WebResources onReady={handleContentReady} />
         </div>
@@ -252,6 +258,7 @@ export default function App() {
       {splashVisible && <SplashScreen fadeOut={splashFadeOut} />}
       <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
+    </ToastProvider>
     </ContextMenuProvider>
     </ErrorBoundary>
   );

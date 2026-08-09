@@ -52,6 +52,20 @@ const api = {
   setGtdActionNext: (projectId: number, actionId: number | null) => ipcRenderer.invoke("gtd:set-action-next", projectId, actionId),
   getGtdNextList: () => ipcRenderer.invoke("gtd:next-list"),
 
+  // Schedule template
+  getScheduleBlocks: () => ipcRenderer.invoke("schedule:list"),
+  addScheduleBlock: (block: { label: string; start: string; end: string; color: string }) =>
+    ipcRenderer.invoke("schedule:add", block),
+  updateScheduleBlock: (id: number, block: { label: string; start: string; end: string; color: string }) =>
+    ipcRenderer.invoke("schedule:update", id, block),
+  deleteScheduleBlock: (id: number) => ipcRenderer.invoke("schedule:delete", id),
+
+  // Favorite / recent notes
+  toggleFavoriteNote: (notePath: string, title: string) => ipcRenderer.invoke("notes:toggle-favorite", notePath, title),
+  getFavoriteNotes: () => ipcRenderer.invoke("notes:favorites"),
+  getFavoriteStatus: (paths: string[]) => ipcRenderer.invoke("notes:favorite-status", paths),
+  getRecentNotes: (limit?: number) => ipcRenderer.invoke("notes:recents", limit),
+
   // Dialog
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
   selectFile: () => ipcRenderer.invoke("dialog:select-file"),

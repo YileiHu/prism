@@ -2,6 +2,7 @@ import type { Translation } from "./zh";
 
 const en: Translation = {
   "app.title": "PRISM",
+  "nav.home": "Home",
   "nav.resources": "Web Resources",
   "nav.gtd": "Tasks",
   "nav.settings": "Settings",
@@ -19,6 +20,9 @@ const en: Translation = {
   "resources.save": "Save",
   "resources.cancel": "Cancel",
   "resources.urlExists": "This URL is already saved",
+  "resources.added": "Added",
+  "resources.updated": "Updated",
+  "resources.deleteConfirm": "Delete this resource? This cannot be undone.",
 
   "obsidian.search": "Search notes...",
   "obsidian.emptySearch": "No notes match your search.",
@@ -31,6 +35,7 @@ const en: Translation = {
   "obsidian.vaultNotFound": "Vault not accessible",
   "obsidian.vaultNotFoundDesc": "The path {path} does not exist or is not readable. Check that the drive is connected, or update the path in Settings.",
   "obsidian.retry": "Retry",
+  "obsidian.trashed": "Moved to trash",
 
   "settings.catVaults": "Vaults",
   "settings.catExternal": "External",
@@ -90,6 +95,8 @@ const en: Translation = {
   "menu.delete": "Delete",
   "menu.openInBrowser": "Open in Browser",
   "menu.edit": "Edit",
+  "menu.favorite": "Favorite",
+  "menu.unfavorite": "Unfavorite",
 
   // Rename
   "obsidian.renameTitle": "New name...",
@@ -122,9 +129,9 @@ const en: Translation = {
   "changelog.title": "Changelog",
   "changelog.button": "Changelog",
 
-  // Confirm
-  "confirm.deleteFile": "Move {name} to trash?",
-  "confirm.deleteFiles": "Move {count} files to trash?",
+  // Common
+  "common.deleted": "Deleted",
+  "common.confirmDelete": "Confirm deletion",
 
   // GTD
   "gtd.inbox": "Inbox",
@@ -164,6 +171,24 @@ const en: Translation = {
   "gtd.completeProject": "Complete project",
   "gtd.later": "Later",
   "gtd.deleteProjectConfirm": "Deleting a project also deletes all its actions. Continue?",
+  "gtd.deleteItemConfirm": "Delete this item?",
+  "gtd.deleteActionConfirm": "Delete this action?",
+
+  // Home
+  "home.schedule": "Daily Schedule",
+  "home.nextActions": "Next Actions",
+  "home.recents": "Recent Notes",
+  "home.favorites": "Favorites",
+  "home.viewAll": "View all",
+  "home.addBlock": "Add Time Block",
+  "home.editBlock": "Edit Time Block",
+  "home.labelPlaceholder": "e.g. Deep work...",
+  "home.deleteBlock": "Delete",
+  "home.deleteBlockConfirm": "Confirm delete?",
+  "home.emptyRecents": "No recently opened notes.",
+  "home.emptyFavorites": "No favorites yet. Star a note to pin it here.",
+  "home.overlapError": "Overlaps an existing time block",
+  "home.timeOrderError": "Start time must be before end time",
 };
 
 export default en;

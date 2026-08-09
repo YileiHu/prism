@@ -83,6 +83,27 @@ export function initDatabase(): void {
       FOREIGN KEY (project_id) REFERENCES gtd_items(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_gtd_actions_project ON gtd_actions(project_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS schedule_blocks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL DEFAULT '',
+      start TEXT NOT NULL,
+      end TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#6366f1',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS favorite_notes (
+      path TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS recent_notes (
+      path TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      opened_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
   `);
 
   // Migration: rows written before vault_path existed can't be attributed to a
@@ -313,7 +334,10 @@ export function deleteNotesByPaths(paths: string[]): void {
   db.transaction(() => {
     for (let i = 0; i < paths.length; i += CHUNK) {
       const chunk = paths.slice(i, i + CHUNK);
-      db.prepare(`DELETE FROM obsidian_notes WHERE path IN (${chunk.map(() => "?").join(",")})`).run(...chunk);
+      const placeholders = chunk.map(() => "?").join(",");
+      db.prepare(`DELETE FROM obsidian_notes WHERE path IN (${placeholders})`).run(...chunk);
+      db.prepare(`DELETE FROM favorite_notes WHERE path IN (${placeholders})`).run(...chunk);
+      db.prepare(`DELETE FROM recent_notes WHERE path IN (${placeholders})`).run(...chunk);
     }
   })();
 }
@@ -533,4 +557,111 @@ export function getGtdNextList(): GtdNextList {
       },
     })),
   };
+}
+
+// ---- Schedule template operations ----
+
+export interface ScheduleBlock {
+  id: number;
+  label: string;
+  start: string;
+  end: string;
+  color: string;
+  sort_order: number;
+}
+
+export interface ScheduleBlockInput {
+  label: string;
+  start: string;
+  end: string;
+  color: string;
+}
+
+export function listScheduleBlocks(): ScheduleBlock[] {
+  return db.prepare("SELECT * FROM schedule_blocks ORDER BY start ASC, sort_order ASC, id ASC").all() as ScheduleBlock[];
+}
+
+export function addScheduleBlock(block: ScheduleBlockInput): ScheduleBlock {
+  const id = db
+    .prepare("INSERT INTO schedule_blocks (label, start, end, color) VALUES (?, ?, ?, ?)")
+    .run(block.label, block.start, block.end, block.color).lastInsertRowid as number;
+  return db.prepare("SELECT * FROM schedule_blocks WHERE id = ?").get(id) as ScheduleBlock;
+}
+
+export function updateScheduleBlock(id: number, block: ScheduleBlockInput): ScheduleBlock | null {
+  const changes = db
+    .prepare("UPDATE schedule_blocks SET label = ?, start = ?, end = ?, color = ? WHERE id = ?")
+    .run(block.label, block.start, block.end, block.color, id).changes;
+  if (changes === 0) return null;
+  return db.prepare("SELECT * FROM schedule_blocks WHERE id = ?").get(id) as ScheduleBlock;
+}
+
+export function deleteScheduleBlock(id: number): boolean {
+  return db.prepare("DELETE FROM schedule_blocks WHERE id = ?").run(id).changes > 0;
+}
+
+// ---- Favorite / recent notes ----
+
+export interface FavoriteNote {
+  path: string;
+  title: string;
+  created_at: string;
+}
+
+export interface RecentNote {
+  path: string;
+  title: string;
+  opened_at: string;
+}
+
+export function toggleFavoriteNote(notePath: string, title: string): boolean {
+  const existing = db.prepare("SELECT path FROM favorite_notes WHERE path = ?").get(notePath);
+  if (existing) {
+    db.prepare("DELETE FROM favorite_notes WHERE path = ?").run(notePath);
+    return false;
+  }
+  db.prepare("INSERT INTO favorite_notes (path, title) VALUES (?, ?)").run(notePath, title);
+  return true;
+}
+
+export function getFavoriteNotes(): FavoriteNote[] {
+  return db.prepare("SELECT * FROM favorite_notes ORDER BY created_at DESC").all() as FavoriteNote[];
+}
+
+export function getFavoriteStatus(paths: string[]): string[] {
+  if (paths.length === 0) return [];
+  const CHUNK = 500;
+  const found: string[] = [];
+  for (let i = 0; i < paths.length; i += CHUNK) {
+    const chunk = paths.slice(i, i + CHUNK);
+    const rows = db
+      .prepare(`SELECT path FROM favorite_notes WHERE path IN (${chunk.map(() => "?").join(",")})`)
+      .all(...chunk) as { path: string }[];
+    for (const r of rows) found.push(r.path);
+  }
+  return found;
+}
+
+const RECENT_KEEP = 100;
+
+export function recordRecentOpen(notePath: string): void {
+  const row = db.prepare("SELECT title FROM obsidian_notes WHERE path = ?").get(notePath) as { title: string } | undefined;
+  const title = row?.title ?? path.basename(notePath, path.extname(notePath));
+  db.transaction(() => {
+    db.prepare("INSERT OR REPLACE INTO recent_notes (path, title, opened_at) VALUES (?, ?, datetime('now', 'localtime'))").run(notePath, title);
+    db.prepare("DELETE FROM recent_notes WHERE path NOT IN (SELECT path FROM recent_notes ORDER BY opened_at DESC LIMIT ?)").run(RECENT_KEEP);
+  })();
+}
+
+export function getRecentNotes(limit = 20): RecentNote[] {
+  return db.prepare("SELECT * FROM recent_notes ORDER BY opened_at DESC LIMIT ?").all(limit) as RecentNote[];
+}
+
+// Keep favorites/recents pointing at the right file after a rename, even when
+// the note wasn't indexed (renameNoteInDb returns null for those).
+export function renameNoteEntry(oldPath: string, newPath: string, newTitle: string): void {
+  db.transaction(() => {
+    db.prepare("UPDATE favorite_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath);
+    db.prepare("UPDATE recent_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath);
+  })();
 }

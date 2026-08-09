@@ -1,6 +1,7 @@
 const zh = {
   // App header
   "app.title": "PRISM",
+  "nav.home": "主页",
   "nav.resources": "网页资源",
   "nav.gtd": "事务",
   "nav.settings": "设置",
@@ -18,6 +19,9 @@ const zh = {
   "resources.save": "保存",
   "resources.cancel": "取消",
   "resources.urlExists": "该网址已存在",
+  "resources.added": "已添加",
+  "resources.updated": "已更新",
+  "resources.deleteConfirm": "确定要删除这个资源吗？此操作无法撤销。",
 
   // Obsidian Vault
   "obsidian.search": "搜索笔记...",
@@ -31,6 +35,7 @@ const zh = {
   "obsidian.vaultNotFound": "无法访问知识库",
   "obsidian.vaultNotFoundDesc": "路径 {path} 不存在或没有读取权限。请检查磁盘是否已连接，或在设置中修改路径。",
   "obsidian.retry": "重试",
+  "obsidian.trashed": "已移入回收站",
 
   // Settings
   "settings.catVaults": "知识库",
@@ -91,6 +96,8 @@ const zh = {
   "menu.delete": "删除",
   "menu.openInBrowser": "在浏览器中打开",
   "menu.edit": "编辑",
+  "menu.favorite": "收藏",
+  "menu.unfavorite": "取消收藏",
 
   // Rename
   "obsidian.renameTitle": "新名称...",
@@ -123,9 +130,9 @@ const zh = {
   "changelog.title": "更新公告",
   "changelog.button": "公告板",
 
-  // Confirm
-  "confirm.deleteFile": "确定要将 {name} 移动到回收站吗？",
-  "confirm.deleteFiles": "确定要将 {count} 个文件移动到回收站吗？",
+  // Common
+  "common.deleted": "已删除",
+  "common.confirmDelete": "确认删除",
 
   // GTD
   "gtd.inbox": "收集箱",
@@ -165,6 +172,24 @@ const zh = {
   "gtd.completeProject": "完成项目",
   "gtd.later": "稍后",
   "gtd.deleteProjectConfirm": "删除项目将同时删除其所有行动。确定删除吗？",
+  "gtd.deleteItemConfirm": "确定要删除该条目吗？",
+  "gtd.deleteActionConfirm": "确定要删除该行动吗？",
+
+  // Home
+  "home.schedule": "日程模板",
+  "home.nextActions": "下一步",
+  "home.recents": "最近打开",
+  "home.favorites": "收藏",
+  "home.viewAll": "查看全部",
+  "home.addBlock": "添加时间段",
+  "home.editBlock": "编辑时间段",
+  "home.labelPlaceholder": "例如：深度工作...",
+  "home.deleteBlock": "删除",
+  "home.deleteBlockConfirm": "确认删除？",
+  "home.emptyRecents": "暂无最近打开的笔记。",
+  "home.emptyFavorites": "暂无收藏，在笔记上点星标即可收藏。",
+  "home.overlapError": "与已有时间段重叠",
+  "home.timeOrderError": "开始时间必须早于结束时间",
 };
 
 export default zh;

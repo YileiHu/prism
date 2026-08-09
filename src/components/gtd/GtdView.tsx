@@ -11,7 +11,7 @@ import type { GtdItem, GtdListKey, GtdStatus } from "./types";
 
 export default function GtdView() {
   const { t } = useT();
-  const [list, setList] = useState<GtdListKey>("inbox");
+  const [list, setList] = useState<GtdListKey>("next");
   const [counts, setCounts] = useState<Record<GtdStatus, number>>({
     inbox: 0,
     someday: 0,
@@ -36,8 +36,8 @@ export default function GtdView() {
   }, [reloadCounts]);
 
   const nav: { key: GtdListKey; icon: LucideIcon; label: string; count?: number }[] = [
-    { key: "inbox", icon: Inbox, label: t["gtd.inbox"], count: counts.inbox },
     { key: "next", icon: Zap, label: t["gtd.next"] },
+    { key: "inbox", icon: Inbox, label: t["gtd.inbox"], count: counts.inbox },
     { key: "waiting", icon: Clock, label: t["gtd.waiting"], count: counts.waiting },
     { key: "project", icon: FolderKanban, label: t["gtd.projects"], count: counts.project },
     { key: "someday", icon: Lightbulb, label: t["gtd.someday"], count: counts.someday },

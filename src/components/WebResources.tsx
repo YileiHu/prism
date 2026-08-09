@@ -1,13 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus, Trash2, Edit3, Search, ExternalLink, Link2, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Edit3, ExternalLink, Link2 } from "lucide-react";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useToast } from "../lib/toast";
+import { hashColor } from "../lib/colors";
 import Button from "./Button";
 import Modal from "./Modal";
 import Sidebar from "./Sidebar";
 import { type MenuItem } from "./ContextMenu";
-import { useContextMenu } from "../lib/useContextMenu";
 import TagInput from "./TagInput";
+import ItemRow from "./ItemRow";
+import SectionCard from "./SectionCard";
+import SearchInput from "./SearchInput";
+import EmptyState from "./EmptyState";
+import ConfirmDialog from "./ConfirmDialog";
 import { useSetToggle } from "../lib/useToggleSet";
 
 interface Resource {
@@ -21,22 +27,6 @@ interface Resource {
 interface TagInfo {
   name: string;
   count: number;
-}
-
-const TAG_COLORS = [
-  { bar: "#c75b4a", name: "#d4846e", bg: "rgba(199, 91, 74, 0.08)" },
-  { bar: "#c4a43e", name: "#d4b85a", bg: "rgba(196, 164, 62, 0.08)" },
-  { bar: "#5b7fa5", name: "#7a9db8", bg: "rgba(91, 127, 165, 0.08)" },
-  { bar: "#6b8e5a", name: "#8aa878", bg: "rgba(107, 142, 90, 0.08)" },
-];
-
-function getTagColor(tag: string) {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = ((hash << 5) - hash) + tag.charCodeAt(i);
-    hash |= 0;
-  }
-  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
 }
 
 function extractDomain(url: string) {
@@ -67,105 +57,63 @@ function ResourceRowView({
   flat?: boolean;
 }) {
   const { t } = useT();
-  const { onContextMenu } = useContextMenu();
 
   const menuItems: MenuItem[] = [
     { label: t["menu.openInBrowser"], icon: <ExternalLink size={14} />, onClick: () => window.prism.openUrl(r.url) },
+    { label: "", divider: true },
     { label: t["menu.edit"], icon: <Edit3 size={14} />, onClick: onStartEdit },
+    { label: "", divider: true },
     { label: t["menu.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
 
   return (
-      <div
-        className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer hover:bg-hover/30 ${flat ? "" : "rounded-lg"}`}
-        onContextMenu={(e) => onContextMenu(e, menuItems)}
-      >
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span
-            onClick={() => window.prism.openUrl(r.url)}
-            className="flex-1 text-sm truncate text-primary hover:text-[var(--accent-text)] transition-colors cursor-pointer"
-            title={r.url}
-          >
-            {r.title || r.url}
-          </span>
+    <ItemRow
+      variant="list"
+      className={flat ? "border-b border-line/30" : "rounded-lg"}
+      onPrimaryClick={() => window.prism.openUrl(r.url)}
+      menuItems={menuItems}
+      tooltip={r.url}
+      title={r.title}
+      meta={
+        <>
           <button
-            onClick={() => window.prism.openUrl(r.url)}
-            className="text-xs text-faint hover:text-tertiary truncate flex items-center gap-1"
+            onClick={(e) => { e.stopPropagation(); window.prism.openUrl(r.url); }}
+            className="text-xs text-faint hover:text-tertiary truncate flex items-center gap-1 flex-shrink-0 max-w-[160px]"
           >
             <Link2 size={10} />
             {extractDomain(r.url)}
           </button>
-          {r.tags.map((tag) => {
-            const c = getTagColor(tag);
-            return (
-              <span
-                key={tag}
-                onClick={(e) => { e.stopPropagation(); onOpenTag(tag); }}
-                className="text-xs px-1.5 py-0.5 rounded cursor-pointer whitespace-nowrap transition-colors hover:opacity-80"
-                style={{ color: c.name, backgroundColor: c.bg }}
-              >
-                {tag}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-  );
-}
-
-function TagCard({
-  tag,
-  count,
-  color,
-  collapsed,
-  onToggle,
-  onOpenTag,
-  children,
-}: {
-  tag: string;
-  count: number;
-  color: typeof TAG_COLORS[0];
-  collapsed: boolean;
-  onToggle: () => void;
-  onOpenTag: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-3 border border-strong/50 rounded-xl bg-surface/20 overflow-hidden">
-      <div
-        className="flex items-center gap-2 px-3 h-8 cursor-pointer"
-        style={{ backgroundColor: `${color.bar}18` }}
-        onClick={onToggle}
-      >
-        <button className="text-muted hover:text-secondary transition-colors">
-          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-        </button>
-        <span className="text-xs font-medium truncate" style={{ color: color.name }}>{tag}</span>
-        <span className="text-xs text-muted">{count}</span>
-        <div className="flex-1" />
-        <button
-          onClick={(e) => { e.stopPropagation(); onOpenTag(); }}
-          className="text-xs text-faint hover:text-tertiary transition-colors"
-        >
-          <ExternalLink size={12} />
-        </button>
-      </div>
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
-      >
-        <div className="overflow-hidden min-h-0">
-          <div className="p-2">
-            {children}
-          </div>
-        </div>
-      </div>
-    </div>
+          {r.tags.length > 0 && (
+            <span className="hidden md:flex items-center gap-1 flex-shrink-0 max-w-[240px] overflow-hidden">
+              {r.tags.slice(0, 3).map((tag) => {
+                const c = hashColor(tag);
+                return (
+                  <span
+                    key={tag}
+                    onClick={(e) => { e.stopPropagation(); onOpenTag(tag); }}
+                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 whitespace-nowrap"
+                    style={{ color: c.name, backgroundColor: c.bg }}
+                  >
+                    {tag}
+                  </span>
+                );
+              })}
+              {r.tags.length > 3 && <span className="text-[10px] text-faint">+{r.tags.length - 3}</span>}
+            </span>
+          )}
+        </>
+      }
+      hoverActions={[
+        { icon: <ExternalLink size={13} />, label: t["menu.openInBrowser"], onClick: () => window.prism.openUrl(r.url) },
+        { icon: <Edit3 size={13} />, label: t["menu.edit"], onClick: onStartEdit },
+      ]}
+    />
   );
 }
 
 export default function WebResources({ onReady }: { onReady?: () => void }) {
   const { t } = useT();
+  const showToast = useToast();
   const readyFired = useRef(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
@@ -187,6 +135,9 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const [editTitle, setEditTitle] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
   const [editError, setEditError] = useState("");
+
+  // Delete confirm state
+  const [deleting, setDeleting] = useState<Resource | null>(null);
 
   // Card collapse state
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
@@ -234,6 +185,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       return;
     }
     closeModal();
+    showToast(t["resources.added"]);
     loadResources();
     loadTags();
   };
@@ -246,8 +198,10 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setModalError("");
   };
 
-  const handleDelete = async (id: number) => {
-    await window.prism.deleteResource(id);
+  const handleDelete = async () => {
+    if (!deleting) return;
+    await window.prism.deleteResource(deleting.id);
+    showToast(t["common.deleted"]);
     loadResources();
     loadTags();
   };
@@ -277,6 +231,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       return;
     }
     closeEditModal();
+    showToast(t["resources.updated"]);
     loadResources();
     loadTags();
   };
@@ -301,7 +256,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
     const groups = Array.from(grouped.entries())
       .sort((a, b) => b[1].length - a[1].length)
-      .map(([tag, items]) => ({ tag, resources: items, color: getTagColor(tag) }));
+      .map(([tag, items]) => ({ tag, resources: items, color: hashColor(tag) }));
 
     return { groups, untagged };
   }, [resources, activeTag]);
@@ -315,7 +270,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       flat={flat}
       onOpenTag={setActiveTag}
       onStartEdit={() => openEditModal(r)}
-      onDelete={() => handleDelete(r.id)}
+      onDelete={() => setDeleting(r)}
     />
   );
 
@@ -344,7 +299,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             <span className="text-xs text-muted">{totalCount}</span>
           </button>
           {allTags.map((tag, i) => {
-            const c = getTagColor(tag.name);
+            const c = hashColor(tag.name);
             const isActive = activeTag === tag.name;
             return (
               <button
@@ -375,85 +330,64 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Search bar */}
         <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t["resources.search"]}
-              className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
-          </div>
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t["resources.search"]}
+            wrapperClassName="flex-1"
+          />
         </div>
 
         {/* Content area */}
         <div className="flex-1 overflow-y-auto">
           {resources.length === 0 && (
-            <div className="flex flex-col items-center gap-3 mt-20 anim-fade-in">
-              <p className="text-center text-muted text-sm">
-                {searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
-              </p>
-              {!searchQuery && !activeTag && (
-                <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-                  <Plus size={14} />
-                  {t["resources.add"]}
-                </Button>
-              )}
-            </div>
+            <EmptyState
+              size="module"
+              text={searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
+              cta={!searchQuery && !activeTag ? { label: t["resources.add"], onClick: () => setShowModal(true), icon: <Plus size={14} /> } : undefined}
+            />
           )}
 
           {/* Card view (All) */}
           {!activeTag && resources.length > 0 && (
             <div className="p-3">
               {tagGroups.groups.map(({ tag, resources: items, color }) => (
-                <TagCard
+                <SectionCard
                   key={tag}
-                  tag={tag}
+                  className="mb-3"
+                  title={tag}
                   count={items.length}
-                  color={color}
+                  tintColor={color}
                   collapsed={collapsedTags.has(tag)}
                   onToggle={() => toggleCollapse(tag)}
-                  onOpenTag={() => setActiveTag(tag)}
+                  headerActions={
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setActiveTag(tag); }}
+                      className="text-xs text-faint hover:text-tertiary transition-colors"
+                    >
+                      <ExternalLink size={12} />
+                    </button>
+                  }
                 >
                   {items.map((r) => renderRow(r))}
-                </TagCard>
+                </SectionCard>
               ))}
               {tagGroups.untagged.length > 0 && (
-                <div className="mb-3 border border-strong/30 rounded-xl bg-surface/10 overflow-hidden">
-                  <div
-                    className="flex items-center gap-2 px-3 h-8 bg-elevated/30 cursor-pointer"
-                    onClick={() => toggleCollapse("__untagged__")}
-                  >
-                    <button className="text-muted hover:text-secondary transition-colors">
-                      {collapsedTags.has("__untagged__") ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                    <span className="text-xs font-medium text-muted uppercase tracking-wide">
-                      {t["collections.ungrouped"]}
-                    </span>
-                    <span className="text-xs text-faint">{tagGroups.untagged.length}</span>
-                  </div>
-                  <div
-                    className="grid transition-[grid-template-rows] duration-200 ease-out"
-                    style={{ gridTemplateRows: collapsedTags.has("__untagged__") ? "0fr" : "1fr" }}
-                  >
-                    <div className="overflow-hidden min-h-0">
-                      <div className="p-2">
-                        {tagGroups.untagged.map((r) => renderRow(r))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <SectionCard
+                  className="mb-3"
+                  title={<span className="uppercase tracking-wide text-muted">{t["collections.ungrouped"]}</span>}
+                  count={tagGroups.untagged.length}
+                  collapsed={collapsedTags.has("__untagged__")}
+                  onToggle={() => toggleCollapse("__untagged__")}
+                >
+                  {tagGroups.untagged.map((r) => renderRow(r))}
+                </SectionCard>
               )}
             </div>
           )}
 
           {/* Flat list (tag filtered) */}
-          {activeTag && resources.map((r) => (
-            <div key={r.id} className="border-b border-line/30">
-              {renderRow(r, true)}
-            </div>
-          ))}
+          {activeTag && resources.map((r) => renderRow(r, true))}
         </div>
       </div>
 
@@ -500,7 +434,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             onChange={setModalTags}
             suggestions={allTags}
             placeholder={t["resources.tags"]}
-            colorForTag={getTagColor}
+            colorForTag={hashColor}
           />
           {modalError && <p className="text-xs text-red-400">{modalError}</p>}
         </div>
@@ -551,11 +485,19 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             onChange={setEditTags}
             suggestions={allTags}
             placeholder={t["resources.tags"]}
-            colorForTag={getTagColor}
+            colorForTag={hashColor}
           />
           {editError && <p className="text-xs text-red-400">{editError}</p>}
         </div>
       </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={deleting !== null}
+        message={t["resources.deleteConfirm"]}
+        onConfirm={handleDelete}
+        onClose={() => setDeleting(null)}
+      />
     </div>
   );
 }

@@ -33,7 +33,18 @@ import {
   deleteGtdAction,
   setGtdActionNext,
   getGtdNextList,
+  listScheduleBlocks,
+  addScheduleBlock,
+  updateScheduleBlock,
+  deleteScheduleBlock,
+  toggleFavoriteNote,
+  getFavoriteNotes,
+  getFavoriteStatus,
+  getRecentNotes,
+  recordRecentOpen,
+  renameNoteEntry,
   type GtdStatus,
+  type ScheduleBlockInput,
 } from "./database";
 
 let mainWindow: BrowserWindow | null = null;
@@ -527,6 +538,7 @@ function registerIpcHandlers(): void {
       fs.renameSync(oldPath, newPath);
     }
     const updated = renameNoteInDb(oldPath, newPath, finalTitle);
+    renameNoteEntry(oldPath, newPath, finalTitle);
     if (updated) return updated;
     // Note wasn't indexed yet (e.g. created externally) — index it now
     const content = fs.readFileSync(newPath, "utf-8");
@@ -536,6 +548,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("obsidian:open", (_e, filePath: string) => {
+    recordRecentOpen(filePath);
     const uri = `obsidian://open?path=${encodeURIComponent(filePath)}&paneType=tab`;
     const obsidianPath = getSetting("obsidian_path");
     if (obsidianPath && fs.existsSync(obsidianPath)) {
@@ -587,6 +600,38 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:delete-action", (_e, id: number) => deleteGtdAction(id));
   ipcMain.handle("gtd:set-action-next", (_e, projectId: number, actionId: number | null) => setGtdActionNext(projectId, actionId));
   ipcMain.handle("gtd:next-list", () => getGtdNextList());
+
+  // Schedule template (one-day time-block division)
+  const isTime = (s: string) => /^\d{2}:\d{2}$/.test(s) && +s.slice(0, 2) <= 23 && +s.slice(3) <= 59;
+  const validateBlock = (block: ScheduleBlockInput, excludeId?: number): { error?: string } => {
+    if (!isTime(block.start) || !isTime(block.end)) return { error: "format" };
+    if (block.start >= block.end) return { error: "order" };
+    const overlap = listScheduleBlocks().some((b) => b.id !== excludeId && block.start < b.end && b.start < block.end);
+    if (overlap) return { error: "overlap" };
+    return {};
+  };
+
+  ipcMain.handle("schedule:list", () => listScheduleBlocks());
+
+  ipcMain.handle("schedule:add", (_e, block: ScheduleBlockInput) => {
+    const v = validateBlock(block);
+    if (v.error) return v;
+    return { block: addScheduleBlock(block) };
+  });
+
+  ipcMain.handle("schedule:update", (_e, id: number, block: ScheduleBlockInput) => {
+    const v = validateBlock(block, id);
+    if (v.error) return v;
+    return { block: updateScheduleBlock(id, block) };
+  });
+
+  ipcMain.handle("schedule:delete", (_e, id: number) => deleteScheduleBlock(id));
+
+  // Favorite / recent notes
+  ipcMain.handle("notes:toggle-favorite", (_e, notePath: string, title: string) => toggleFavoriteNote(notePath, title));
+  ipcMain.handle("notes:favorites", () => getFavoriteNotes().map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
+  ipcMain.handle("notes:favorite-status", (_e, paths: string[]) => getFavoriteStatus(paths));
+  ipcMain.handle("notes:recents", (_e, limit?: number) => getRecentNotes(limit).map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
 
   // Collections
   ipcMain.handle("collections:load", (_e, vaultPath: string) => {

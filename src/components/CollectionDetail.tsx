@@ -19,13 +19,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-const GROUP_COLORS = [
-  { bar: "#c75b4a", name: "#d4846e" },
-  { bar: "#c4a43e", name: "#d4b85a" },
-  { bar: "#5b7fa5", name: "#7a9db8" },
-  { bar: "#6b8e5a", name: "#8aa878" },
-];
+import { positionalColor, type PaletteColor } from "../lib/colors";
 
 export interface NoteInfo {
   path: string;
@@ -308,7 +302,7 @@ export default function CollectionDetail({
   const { t } = useT();
   const [addingGroup, setAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
-  const [activeDrag, setActiveDrag] = useState<{ type: "group"; group: GroupView; color: typeof GROUP_COLORS[0] } | { type: "note"; note: NoteInfo } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ type: "group"; group: GroupView; color: PaletteColor } | { type: "note"; note: NoteInfo } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -331,7 +325,7 @@ export default function CollectionDetail({
       const g = groups.find((x) => x.id === gid);
       if (g) {
         const idx = groups.findIndex((x) => x.id === gid);
-        setActiveDrag({ type: "group", group: g, color: GROUP_COLORS[idx % GROUP_COLORS.length] });
+        setActiveDrag({ type: "group", group: g, color: positionalColor(idx) });
         return;
       }
     }
@@ -429,7 +423,7 @@ export default function CollectionDetail({
               key={group.id}
               group={group}
               collapsed={collapsedGroups.has(group.id)}
-              color={GROUP_COLORS[i % GROUP_COLORS.length]}
+              color={positionalColor(i)}
               onToggle={() => onToggleGroup(group.id)}
               onRename={(name) => onRenameGroup(group.id, name)}
               onDelete={() => onDeleteGroup(group.id)}

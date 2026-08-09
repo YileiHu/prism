@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Search, FileText, ExternalLink,
+  FileText, ExternalLink,
   FolderOpen, FolderX, CheckSquare, Maximize2,
   Trash2, Plus, Pencil, RefreshCw,
-  ArrowRightLeft,
+  ArrowRightLeft, Star,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useToast } from "../lib/toast";
 import CollectionsSidebar, { type CollectionData, type NoteGroup } from "./CollectionsSidebar";
 import CollectionDetail from "./CollectionDetail";
 import CreateCollectionModal from "./CreateCollectionModal";
@@ -16,10 +17,13 @@ import BatchActionBar from "./BatchActionBar";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
 import { useSetToggle } from "../lib/useToggleSet";
-import { useAnimatedMount } from "../lib/useAnimatedMount";
 import { useCollections, toRelativePath } from "./useCollections";
 import Button from "./Button";
-import Modal from "./Modal";
+import ItemRow from "./ItemRow";
+import SearchInput from "./SearchInput";
+import EmptyState from "./EmptyState";
+import RenameModal from "./RenameModal";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface ObsidianNote {
   id: number;
@@ -30,7 +34,7 @@ interface ObsidianNote {
   modified_at: string;
 }
 
-interface ConfirmDialog {
+interface ConfirmState {
   message: string;
   confirmLabel: string;
   onConfirm: () => void;
@@ -59,7 +63,6 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
 
   // Rename note state
   const [renameNoteTarget, setRenameNoteTarget] = useState<ObsidianNote | null>(null);
-  const [renameNoteTitle, setRenameNoteTitle] = useState("");
 
   // Select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -74,28 +77,10 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
   const toggleCollapsedGroup = useSetToggle(setCollapsedGroups);
 
   // Confirm dialog
-  const [confirm, setConfirm] = useState<ConfirmDialog | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  // Toast
-  const [toast, setToast] = useState<string | null>(null);
-  const [toastSeq, setToastSeq] = useState(0);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useToast();
   const initialLoadDone = useRef(false);
-  const lastToast = useRef("");
-  if (toast) lastToast.current = toast;
-  const { mounted: toastMounted, exiting: toastExiting } = useAnimatedMount(toast !== null, 150);
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    // Bump the key so repeating the same message replays the animation
-    setToastSeq((s) => s + 1);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
-  };
-
-  useEffect(() => {
-    return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
-  }, []);
 
   // ---- Vault loading (triggered by vaultPath prop / retry) ----
 
@@ -150,6 +135,39 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
     if (!scanning) loadNotes();
   }, [loadNotes, scanning]);
 
+  // ---- Favorites (starred notes) ----
+
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  const refreshFavorites = useCallback(async () => {
+    if (notes.length === 0) {
+      setFavorites(new Set());
+      return;
+    }
+    const paths = await window.prism.getFavoriteStatus(notes.map((n) => n.path));
+    setFavorites(new Set(paths));
+  }, [notes]);
+
+  useEffect(() => { refreshFavorites(); }, [refreshFavorites]);
+
+  // Home dashboard can unstar notes while this view stays mounted
+  useEffect(() => {
+    const handler = () => refreshFavorites();
+    window.addEventListener("favorites-changed", handler);
+    return () => window.removeEventListener("favorites-changed", handler);
+  }, [refreshFavorites]);
+
+  const toggleFavorite = async (note: { path: string; title: string }) => {
+    const nowFav = await window.prism.toggleFavoriteNote(note.path, note.title);
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (nowFav) next.add(note.path);
+      else next.delete(note.path);
+      return next;
+    });
+    window.dispatchEvent(new Event("favorites-changed"));
+  };
+
   // Silent refresh when the file watcher reports external changes to this vault
   useEffect(() => {
     return window.prism.onVaultUpdated((changedPath) => {
@@ -190,7 +208,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
     totalCollectionNotes,
     noteCollections,
     sortedNotes,
-  } = useCollections({ vaultPath, notes, showToast, loadNotes });
+  } = useCollections({ vaultPath, notes, loadNotes });
 
   // ---- Create note callback ----
 
@@ -210,15 +228,14 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
 
   // ---- Rename note ----
 
-  const handleRenameNote = async () => {
-    if (!renameNoteTitle.trim() || !renameNoteTarget) return;
+  const handleRenameNote = async (newTitle: string) => {
+    if (!renameNoteTarget) return;
     const oldRelPath = toRelativePath(renameNoteTarget.path, vaultPath);
     try {
-      const result = await window.prism.renameNote(vaultPath, renameNoteTarget.path, renameNoteTitle.trim());
+      const result = await window.prism.renameNote(vaultPath, renameNoteTarget.path, newTitle);
       const newRelPath = toRelativePath(result.path, vaultPath);
       updateNotePaths(oldRelPath, newRelPath);
-      setRenameNoteTarget(null);
-      showToast(t["obsidian.renamed"].replace("{name}", renameNoteTitle.trim()));
+      showToast(t["obsidian.renamed"].replace("{name}", newTitle));
       loadNotes();
     } catch {
       showToast(t["obsidian.renameFailed"]);
@@ -264,16 +281,15 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
         onClick: () => window.prism.openInObsidian(note.path),
       },
       {
+        label: favorites.has(note.path) ? t["menu.unfavorite"] : t["menu.favorite"],
+        icon: <Star size={14} />,
+        onClick: () => toggleFavorite(note),
+      },
+      {
         label: t["menu.showInExplorer"],
         icon: <FolderOpen size={14} />,
         onClick: () => window.prism.showItemInFolder(note.path),
       },
-      {
-        label: t["menu.rename"],
-        icon: <Pencil size={14} />,
-        onClick: () => { setRenameNoteTarget(note as ObsidianNote); setRenameNoteTitle(note.title); },
-      },
-      { label: "", divider: true },
     ];
 
     if (collectionContext) {
@@ -311,26 +327,26 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
     items.push(
       { label: "", divider: true },
       {
+        label: t["menu.rename"],
+        icon: <Pencil size={14} />,
+        onClick: () => setRenameNoteTarget(note as ObsidianNote),
+      },
+      { label: "", divider: true },
+      {
         label: t["menu.moveToTrash"],
         icon: <Trash2 size={14} />,
         danger: true,
-        onClick: () => {
-          setConfirm({
-            message: t["confirm.deleteFile"].replace("{name}", note.title + ".md"),
-            confirmLabel: t["menu.moveToTrash"],
-            onConfirm: async () => {
-              setConfirm(null);
-              const result = await window.prism.trashFile(note.path);
-              if (result.success) {
-                // Remove the DB row too, otherwise the next loadNotes() resurrects it
-                await window.prism.deleteNotes([note.path]);
-                removeNotePaths([relPath]);
-                setNotes((prev) => prev.filter((n) => n.path !== note.path));
-              } else {
-                showToast(t["obsidian.deleteFailed"].replace("{error}", result.error ?? ""));
-              }
-            },
-          });
+        onClick: async () => {
+          const result = await window.prism.trashFile(note.path);
+          if (result.success) {
+            // Remove the DB row too, otherwise the next loadNotes() resurrects it
+            await window.prism.deleteNotes([note.path]);
+            removeNotePaths([relPath]);
+            setNotes((prev) => prev.filter((n) => n.path !== note.path));
+            showToast(t["obsidian.trashed"]);
+          } else {
+            showToast(t["obsidian.deleteFailed"].replace("{error}", result.error ?? ""));
+          }
         },
       },
     );
@@ -424,16 +440,12 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
       <div className="flex-1 flex flex-col min-w-0">
         {!selectedCollectionId && (
           <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t["obsidian.search"]}
-                className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-              />
-            </div>
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={t["obsidian.search"]}
+              wrapperClassName="flex-1"
+            />
             <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["obsidian.newNote"]}>
               <Plus size={16} />
             </Button>
@@ -489,17 +501,11 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
             ref={notesScrollRef}
           >
               {sortedNotes.length === 0 && (
-                <div className="flex flex-col items-center gap-3 mt-20 anim-fade-in">
-                  <p className="text-center text-tertiary text-sm">
-                    {scanning ? t["obsidian.scanning"] : (searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"])}
-                  </p>
-                  {!scanning && !searchQuery && (
-                    <Button variant="primary" size="sm" onClick={() => setShowNewNoteModal(true)}>
-                      <Plus size={14} />
-                      {t["obsidian.newNote"]}
-                    </Button>
-                  )}
-                </div>
+                <EmptyState
+                  size="module"
+                  text={scanning ? t["obsidian.scanning"] : (searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"])}
+                  cta={!scanning && !searchQuery ? { label: t["obsidian.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> } : undefined}
+                />
               )}
               {sortedNotes.length > 0 && (
                 <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
@@ -517,7 +523,8 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div
+                        <ItemRow
+                          variant="list"
                           draggable
                           onDragStart={(e) => {
                             const paths = selectedPaths.size > 0 && selectedPaths.has(note.path)
@@ -525,48 +532,56 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
                             e.dataTransfer.setData("text/x-note-paths", JSON.stringify(paths));
                             e.dataTransfer.effectAllowed = "copy";
                           }}
-                          onContextMenu={(e) => onContextMenu(e, getContextMenuItems(note))}
-                          onClick={() => {
+                          menuItems={getContextMenuItems(note)}
+                          onPrimaryClick={() => {
                             if (selectMode) toggleSelectPath(note.path);
                             else window.prism.openInObsidian(note.path);
                           }}
-                          className={`flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer ${isSelected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/30"}`}
-                          title={note.path}
-                        >
-                          {selectMode && (
+                          selected={isSelected}
+                          tooltip={note.path}
+                          leading={selectMode ? (
                             <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`}>
                               {isSelected && <CheckSquare size={12} className="text-white" />}
                             </div>
-                          )}
-                          <span className={`text-sm truncate flex-1 ${isSelected ? "text-[var(--accent-text)]" : "text-secondary"}`}>
-                            {note.title}
-                          </span>
-                          {!selectMode && (() => {
-                            const noteColls = noteCollections.get(relPath.replace(/\//g, "\\").toLowerCase()) ?? [];
-                            if (noteColls.length === 0) {
-                              return (
-                                <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 whitespace-nowrap">
-                                  {t["obsidian.uncategorized"]}
+                          ) : undefined}
+                          title={note.title}
+                          meta={!selectMode ? (
+                            <>
+                              {(() => {
+                                const noteColls = noteCollections.get(relPath.replace(/\//g, "\\").toLowerCase()) ?? [];
+                                if (noteColls.length === 0) {
+                                  return (
+                                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 whitespace-nowrap">
+                                      {t["obsidian.uncategorized"]}
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
+                                    {noteColls.slice(0, 3).map((name) => (
+                                      <span key={name} className="text-[10px] px-1.5 py-0.5 rounded bg-hover/60 text-tertiary whitespace-nowrap">{name}</span>
+                                    ))}
+                                    {noteColls.length > 3 && <span className="text-[10px] text-faint">+{noteColls.length - 3}</span>}
+                                  </span>
+                                );
+                              })()}
+                              {note.tags && (
+                                <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
+                                  {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
+                                    <span key={tag} className="text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-1.5 py-0.5 rounded whitespace-nowrap">{tag}</span>
+                                  ))}
                                 </span>
-                              );
-                            }
-                            return (
-                              <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
-                                {noteColls.slice(0, 3).map((name) => (
-                                  <span key={name} className="text-[10px] px-1.5 py-0.5 rounded bg-hover/60 text-tertiary whitespace-nowrap">{name}</span>
-                                ))}
-                                {noteColls.length > 3 && <span className="text-[10px] text-faint">+{noteColls.length - 3}</span>}
-                              </span>
-                            );
-                          })()}
-                          {note.tags && !selectMode && (
-                            <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
-                              {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
-                                <span key={tag} className="text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-1.5 py-0.5 rounded whitespace-nowrap">{tag}</span>
-                              ))}
-                            </span>
-                          )}
-                        </div>
+                              )}
+                            </>
+                          ) : undefined}
+                          hoverActions={!selectMode ? [{
+                            icon: <Star size={13} fill={favorites.has(note.path) ? "currentColor" : "none"} />,
+                            label: favorites.has(note.path) ? t["menu.unfavorite"] : t["menu.favorite"],
+                            onClick: () => toggleFavorite(note),
+                            active: favorites.has(note.path),
+                            className: favorites.has(note.path) ? "text-[var(--accent)]" : undefined,
+                          }] : []}
+                        />
                       </div>
                     );
                   })}
@@ -582,14 +597,10 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
                 handleBatchAddToCollection(collId, Array.from(selectedPaths));
                 setSelectedPaths(new Set());
               }}
-              onDelete={() => {
-                const paths = Array.from(selectedPaths);
-                const { onConfirm } = handleBatchDelete(paths);
-                setConfirm({
-                  message: t["confirm.deleteFiles"].replace("{count}", String(paths.length)),
-                  confirmLabel: t["menu.moveToTrash"],
-                  onConfirm: () => { setConfirm(null); onConfirm(); setSelectedPaths(new Set()); },
-                });
+              onDelete={async () => {
+                const { onConfirm } = handleBatchDelete(Array.from(selectedPaths));
+                await onConfirm();
+                setSelectedPaths(new Set());
               }}
             />
           )}
@@ -623,49 +634,22 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
         />
       )}
 
-      <Modal
+      <RenameModal
         open={renameNoteTarget !== null}
-        title={t["menu.rename"]}
+        initialValue={renameNoteTarget?.title ?? ""}
+        placeholder={t["obsidian.renameTitle"]}
         icon={<Pencil size={18} className="text-[var(--accent-text)]" />}
         onClose={() => setRenameNoteTarget(null)}
-        width="400px"
-        footer={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setRenameNoteTarget(null)}>{t["resources.cancel"]}</Button>
-            <Button variant="primary" size="md" onClick={handleRenameNote} disabled={!renameNoteTitle.trim()}>{t["resources.save"]}</Button>
-          </>
-        }
-      >
-        <input
-          type="text"
-          value={renameNoteTitle}
-          onChange={(e) => setRenameNoteTitle(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleRenameNote(); }}
-          placeholder={t["obsidian.renameTitle"]}
-          autoFocus
-          className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-        />
-      </Modal>
+        onSubmit={handleRenameNote}
+      />
 
-      {confirm && (
-        <Modal open onClose={() => setConfirm(null)} position="center" footer={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setConfirm(null)}>{t["resources.cancel"]}</Button>
-            <Button variant="danger" size="sm" onClick={confirm.onConfirm}>{confirm.confirmLabel}</Button>
-          </>
-        }>
-          <p className="text-sm text-primary">{confirm.message}</p>
-        </Modal>
-      )}
-
-      {toastMounted && (
-        <div
-          key={toastSeq}
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 glass bg-elevated/85 border border-strong rounded-lg shadow-lg text-sm text-primary ${toastExiting ? "anim-exit" : "anim-toast"}`}
-        >
-          {toast ?? lastToast.current}
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirm !== null}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={async () => { await confirm?.onConfirm(); }}
+        onClose={() => setConfirm(null)}
+      />
     </div>
   );
 }

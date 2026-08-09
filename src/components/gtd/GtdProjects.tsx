@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Pencil, Check, Trash2 } from "lucide-react";
-import Modal from "../Modal";
-import Button from "../Button";
 import Sidebar from "../Sidebar";
 import { useT } from "../../i18n";
+import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import GtdProjectDetail from "./GtdProjectDetail";
-import GtdRenameModal from "./GtdRenameModal";
+import RenameModal from "../RenameModal";
+import ConfirmDialog from "../ConfirmDialog";
+import EmptyState from "../EmptyState";
 import type { GtdItem } from "./types";
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 export default function GtdProjects({ version, onChanged }: Props) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
+  const showToast = useToast();
   const [projects, setProjects] = useState<GtdItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
@@ -38,16 +40,14 @@ export default function GtdProjects({ version, onChanged }: Props) {
   const deleteProject = async () => {
     if (!confirmDelete) return;
     await window.prism.deleteGtdItem(confirmDelete.id);
-    setConfirmDelete(null);
+    showToast(t["common.deleted"]);
     onChanged();
   };
 
   return (
     <>
       {projects.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center gap-3 mt-20 anim-fade-in">
-          <p className="text-center text-muted text-sm">{t["gtd.emptyList"]}</p>
-        </div>
+        <EmptyState size="module" text={t["gtd.emptyList"]} />
       ) : (
         <div className="flex-1 flex min-w-0">
           <Sidebar storageKey="gtd-projects">
@@ -62,8 +62,10 @@ export default function GtdProjects({ version, onChanged }: Props) {
                   onClick={() => setSelectedId(p.id)}
                   onContextMenu={(e) =>
                     onContextMenu(e, [
-                      { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
                       { label: t["gtd.completeProject"], icon: <Check size={14} />, onClick: () => completeProject(p) },
+                      { label: "", divider: true },
+                      { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
+                      { label: "", divider: true },
                       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
                     ])
                   }
@@ -108,7 +110,7 @@ export default function GtdProjects({ version, onChanged }: Props) {
         </div>
       )}
 
-      <GtdRenameModal
+      <RenameModal
         open={renaming !== null}
         initialValue={renaming?.title ?? ""}
         onClose={() => setRenaming(null)}
@@ -118,24 +120,12 @@ export default function GtdProjects({ version, onChanged }: Props) {
         }}
       />
 
-      <Modal
+      <ConfirmDialog
         open={confirmDelete !== null}
+        message={t["gtd.deleteProjectConfirm"]}
+        onConfirm={deleteProject}
         onClose={() => setConfirmDelete(null)}
-        title={t["menu.delete"]}
-        position="center"
-        footer={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>
-              {t["resources.cancel"]}
-            </Button>
-            <Button variant="danger" size="sm" onClick={deleteProject}>
-              {t["menu.delete"]}
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-secondary">{t["gtd.deleteProjectConfirm"]}</p>
-      </Modal>
+      />
     </>
   );
 }

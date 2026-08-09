@@ -2,8 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { Check, Star, Pencil, Trash2 } from "lucide-react";
 import Button from "../Button";
 import { useT } from "../../i18n";
-import { useContextMenu } from "../../lib/useContextMenu";
-import GtdRenameModal from "./GtdRenameModal";
+import { useToast } from "../../lib/toast";
+import ItemRow from "../ItemRow";
+import EmptyState from "../EmptyState";
+import ConfirmDialog from "../ConfirmDialog";
+import RenameModal from "../RenameModal";
 import type { GtdAction, GtdItem } from "./types";
 
 interface Props {
@@ -14,10 +17,11 @@ interface Props {
 
 export default function GtdProjectDetail({ project, version, onChanged }: Props) {
   const { t } = useT();
-  const { onContextMenu } = useContextMenu();
+  const showToast = useToast();
   const [actions, setActions] = useState<GtdAction[]>([]);
   const [draft, setDraft] = useState("");
   const [renaming, setRenaming] = useState<GtdAction | null>(null);
+  const [deleting, setDeleting] = useState<GtdAction | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +46,18 @@ export default function GtdProjectDetail({ project, version, onChanged }: Props)
     setDraft("");
     onChanged();
     inputRef.current?.focus();
+  };
+
+  const toggleNext = async (action: GtdAction) => {
+    await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id);
+    onChanged();
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    await window.prism.deleteGtdAction(deleting.id);
+    showToast(t["common.deleted"]);
+    onChanged();
   };
 
   return (
@@ -76,56 +92,52 @@ export default function GtdProjectDetail({ project, version, onChanged }: Props)
             </Button>
           </div>
         )}
-        {actions.length === 0 && (
-          <div className="flex flex-col items-center gap-3 mt-20 anim-fade-in">
-            <p className="text-center text-muted text-sm">{t["gtd.emptyActions"]}</p>
-          </div>
-        )}
+        {actions.length === 0 && <EmptyState size="module" text={t["gtd.emptyActions"]} />}
         {actions.map((action) => (
-          <div
+          <ItemRow
             key={action.id}
-            onContextMenu={(e) =>
-              onContextMenu(e, [
-                { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(action) },
-                {
-                  label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"],
-                  icon: <Star size={14} />,
-                  onClick: async () => { await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id); onChanged(); },
-                },
-                { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: async () => { await window.prism.deleteGtdAction(action.id); onChanged(); } },
-              ])
-            }
-            className="group flex items-center gap-2 px-4 py-2 border-b border-line/30 hover:bg-elevated/40 transition-colors"
-          >
-            <button
-              onClick={async () => { await window.prism.toggleGtdAction(action.id); onChanged(); }}
-              className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
-                action.is_done
-                  ? "bg-[var(--accent)] border-[var(--accent)] text-white"
-                  : "border-strong hover:border-[var(--accent)]"
-              }`}
-            >
-              {action.is_done === 1 && <Check size={11} strokeWidth={3} />}
-            </button>
-            <span className={`flex-1 text-sm truncate ${action.is_done ? "text-muted line-through" : "text-primary"}`}>
-              {action.title}
-            </span>
-            {action.is_done === 0 && (
+            variant="list"
+            className="border-b border-line/30"
+            menuItems={[
+              { label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(action) },
+              { label: "", divider: true },
+              { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(action) },
+              { label: "", divider: true },
+              { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(action) },
+            ]}
+            leading={
               <button
-                onClick={async () => { await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id); onChanged(); }}
-                title={action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"]}
-                className={`flex-shrink-0 transition-colors ${
-                  action.is_next ? "text-[var(--accent-text)]" : "text-faint hover:text-tertiary opacity-0 group-hover:opacity-100"
+                onClick={async () => { await window.prism.toggleGtdAction(action.id); onChanged(); }}
+                className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
+                  action.is_done
+                    ? "bg-[var(--accent)] border-[var(--accent)] text-white"
+                    : "border-strong hover:border-[var(--accent)]"
                 }`}
               >
-                <Star size={14} fill={action.is_next ? "currentColor" : "none"} />
+                {action.is_done === 1 && <Check size={11} strokeWidth={3} />}
               </button>
-            )}
-          </div>
+            }
+            title={
+              action.is_done
+                ? <span className="text-muted line-through">{action.title}</span>
+                : action.title
+            }
+            hoverActions={
+              action.is_done === 0
+                ? [{
+                    icon: <Star size={14} fill={action.is_next ? "currentColor" : "none"} />,
+                    label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"],
+                    onClick: () => toggleNext(action),
+                    active: !!action.is_next,
+                    className: action.is_next ? "text-[var(--accent-text)]" : undefined,
+                  }]
+                : []
+            }
+          />
         ))}
       </div>
 
-      <GtdRenameModal
+      <RenameModal
         open={renaming !== null}
         initialValue={renaming?.title ?? ""}
         onClose={() => setRenaming(null)}
@@ -133,6 +145,13 @@ export default function GtdProjectDetail({ project, version, onChanged }: Props)
           if (renaming) await window.prism.renameGtdAction(renaming.id, title);
           onChanged();
         }}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        message={t["gtd.deleteActionConfirm"]}
+        onConfirm={handleDelete}
+        onClose={() => setDeleting(null)}
       />
     </>
   );

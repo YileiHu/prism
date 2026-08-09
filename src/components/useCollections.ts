@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { type CollectionData } from "./CollectionsSidebar";
 import { useT } from "../i18n";
+import { useToast } from "../lib/toast";
 
 function makeId(): string {
   return crypto.randomUUID().slice(0, 8);
@@ -32,12 +33,12 @@ interface CollectionsFile {
 interface UseCollectionsOptions {
   vaultPath: string;
   notes: ObsidianNote[];
-  showToast: (msg: string) => void;
   loadNotes: () => Promise<void>;
 }
 
-export function useCollections({ vaultPath, notes, showToast, loadNotes }: UseCollectionsOptions) {
+export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOptions) {
   const { t } = useT();
+  const showToast = useToast();
   const [collections, setCollections] = useState<CollectionData[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
