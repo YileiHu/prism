@@ -45,7 +45,7 @@ export function initDatabase(): void {
       FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS obsidian_notes (
+    CREATE TABLE IF NOT EXISTS notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vault_path TEXT NOT NULL DEFAULT '',
       path TEXT NOT NULL UNIQUE,
@@ -54,7 +54,7 @@ export function initDatabase(): void {
       tags TEXT NOT NULL DEFAULT '',
       modified_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_obsidian_modified ON obsidian_notes(modified_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notes_modified ON notes(modified_at DESC);
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -106,16 +106,28 @@ export function initDatabase(): void {
     );
   `);
 
-  // Migration: rows written before vault_path existed can't be attributed to a
-  // vault, so drop them and let each vault re-index on next scan.
-  const noteCols = db.prepare("PRAGMA table_info(obsidian_notes)").all() as { name: string }[];
-  if (!noteCols.some((c) => c.name === "vault_path")) {
+  // Migration: the notes table was previously named obsidian_notes — rename
+  // it in place (SQLite keeps the old index names, so recreate them)
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('obsidian_notes', 'notes')").all() as { name: string }[];
+  if (tables.some((t) => t.name === "obsidian_notes") && !tables.some((t) => t.name === "notes")) {
     db.exec(`
-      ALTER TABLE obsidian_notes ADD COLUMN vault_path TEXT NOT NULL DEFAULT '';
-      DELETE FROM obsidian_notes;
+      ALTER TABLE obsidian_notes RENAME TO notes;
+      DROP INDEX IF EXISTS idx_obsidian_modified;
+      DROP INDEX IF EXISTS idx_obsidian_vault;
+      DELETE FROM settings WHERE key = 'obsidian_path';
     `);
   }
-  db.exec("CREATE INDEX IF NOT EXISTS idx_obsidian_vault ON obsidian_notes(vault_path)");
+
+  // Migration: rows written before vault_path existed can't be attributed to a
+  // vault, so drop them and let each vault re-index on next scan.
+  const noteCols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+  if (noteCols.length > 0 && !noteCols.some((c) => c.name === "vault_path")) {
+    db.exec(`
+      ALTER TABLE notes ADD COLUMN vault_path TEXT NOT NULL DEFAULT '';
+      DELETE FROM notes;
+    `);
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_notes_vault ON notes(vault_path)");
 }
 
 // ---- Resource operations ----
@@ -230,9 +242,9 @@ function rowToResource(row: ResourceRow): Resource {
   };
 }
 
-// ---- Obsidian note operations ----
+// ---- Note operations ----
 
-export interface ObsidianNote {
+export interface VaultNote {
   id: number;
   vault_path: string;
   path: string;
@@ -251,7 +263,7 @@ export interface NoteUpsertRow {
 }
 
 export function getNoteMtimes(vaultPath: string): { path: string; modified_at: string }[] {
-  return db.prepare("SELECT path, modified_at FROM obsidian_notes WHERE vault_path = ?").all(vaultPath) as { path: string; modified_at: string }[];
+  return db.prepare("SELECT path, modified_at FROM notes WHERE vault_path = ?").all(vaultPath) as { path: string; modified_at: string }[];
 }
 
 const SYNC_CHUNK = 500;
@@ -259,7 +271,7 @@ const SYNC_CHUNK = 500;
 export function syncVaultNotes(vaultPath: string, upsert: NoteUpsertRow[], deletePaths: string[]): void {
   // ON CONFLICT keeps the row id stable, unlike INSERT OR REPLACE
   const upsertStmt = db.prepare(`
-    INSERT INTO obsidian_notes (vault_path, path, title, content, tags, modified_at)
+    INSERT INTO notes (vault_path, path, title, content, tags, modified_at)
     VALUES (@vaultPath, @path, @title, @content, @tags, @modifiedAt)
     ON CONFLICT(path) DO UPDATE SET
       vault_path = excluded.vault_path,
@@ -268,7 +280,7 @@ export function syncVaultNotes(vaultPath: string, upsert: NoteUpsertRow[], delet
       tags = excluded.tags,
       modified_at = excluded.modified_at
   `);
-  const deleteStmt = db.prepare("DELETE FROM obsidian_notes WHERE vault_path = ? AND path = ?");
+  const deleteStmt = db.prepare("DELETE FROM notes WHERE vault_path = ? AND path = ?");
 
   // Chunked transactions so huge vaults don't block the main process in one long txn
   for (let i = 0; i < upsert.length; i += SYNC_CHUNK) {
@@ -286,7 +298,7 @@ export function syncVaultNotes(vaultPath: string, upsert: NoteUpsertRow[], delet
   }
 }
 
-export interface ObsidianNoteBrief {
+export interface NoteBrief {
   id: number;
   path: string;
   title: string;
@@ -294,11 +306,11 @@ export interface ObsidianNoteBrief {
   modified_at: string;
 }
 
-export function getNoteList(vaultPath: string): ObsidianNoteBrief[] {
-  return db.prepare("SELECT id, path, title, tags, modified_at FROM obsidian_notes WHERE vault_path = ? ORDER BY modified_at DESC").all(vaultPath) as ObsidianNoteBrief[];
+export function getNoteList(vaultPath: string): NoteBrief[] {
+  return db.prepare("SELECT id, path, title, tags, modified_at FROM notes WHERE vault_path = ? ORDER BY modified_at DESC").all(vaultPath) as NoteBrief[];
 }
 
-export function searchNotes(vaultPath: string, query: string): ObsidianNoteBrief[] {
+export function searchNotes(vaultPath: string, query: string): NoteBrief[] {
   const terms = query.split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
 
@@ -306,25 +318,25 @@ export function searchNotes(vaultPath: string, query: string): ObsidianNoteBrief
   const params = terms.map((t) => `%${escapeLike(t)}%`);
 
   return db.prepare(`
-    SELECT id, path, title, tags, modified_at FROM obsidian_notes
+    SELECT id, path, title, tags, modified_at FROM notes
     WHERE vault_path = ? AND ${clauses}
     ORDER BY modified_at DESC
-  `).all(vaultPath, ...params) as ObsidianNoteBrief[];
+  `).all(vaultPath, ...params) as NoteBrief[];
 }
 
-export function insertNote(note: NoteUpsertRow & { vault_path: string }): ObsidianNote {
+export function insertNote(note: NoteUpsertRow & { vault_path: string }): VaultNote {
   const stmt = db.prepare(
-    "INSERT INTO obsidian_notes (vault_path, path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO notes (vault_path, path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const result = stmt.run(note.vault_path, note.path, note.title, note.content, note.tags, note.modified_at);
   const id = result.lastInsertRowid as number;
-  return db.prepare("SELECT * FROM obsidian_notes WHERE id = ?").get(id) as ObsidianNote;
+  return db.prepare("SELECT * FROM notes WHERE id = ?").get(id) as VaultNote;
 }
 
-export function renameNoteInDb(oldPath: string, newPath: string, newTitle: string): ObsidianNote | null {
-  const changes = db.prepare("UPDATE obsidian_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath).changes;
+export function renameNoteInDb(oldPath: string, newPath: string, newTitle: string): VaultNote | null {
+  const changes = db.prepare("UPDATE notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath).changes;
   if (changes === 0) return null;
-  return db.prepare("SELECT * FROM obsidian_notes WHERE path = ?").get(newPath) as ObsidianNote;
+  return db.prepare("SELECT * FROM notes WHERE path = ?").get(newPath) as VaultNote;
 }
 
 export function deleteNotesByPaths(paths: string[]): void {
@@ -335,7 +347,7 @@ export function deleteNotesByPaths(paths: string[]): void {
     for (let i = 0; i < paths.length; i += CHUNK) {
       const chunk = paths.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => "?").join(",");
-      db.prepare(`DELETE FROM obsidian_notes WHERE path IN (${placeholders})`).run(...chunk);
+      db.prepare(`DELETE FROM notes WHERE path IN (${placeholders})`).run(...chunk);
       db.prepare(`DELETE FROM favorite_notes WHERE path IN (${placeholders})`).run(...chunk);
       db.prepare(`DELETE FROM recent_notes WHERE path IN (${placeholders})`).run(...chunk);
     }
@@ -645,7 +657,7 @@ export function getFavoriteStatus(paths: string[]): string[] {
 const RECENT_KEEP = 100;
 
 export function recordRecentOpen(notePath: string): void {
-  const row = db.prepare("SELECT title FROM obsidian_notes WHERE path = ?").get(notePath) as { title: string } | undefined;
+  const row = db.prepare("SELECT title FROM notes WHERE path = ?").get(notePath) as { title: string } | undefined;
   const title = row?.title ?? path.basename(notePath, path.extname(notePath));
   db.transaction(() => {
     db.prepare("INSERT OR REPLACE INTO recent_notes (path, title, opened_at) VALUES (?, ?, datetime('now', 'localtime'))").run(notePath, title);

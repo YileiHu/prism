@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  FileText, ExternalLink,
+  FileText,
   FolderOpen, FolderX, CheckSquare, Maximize2,
   Trash2, Plus, Pencil, RefreshCw,
   ArrowRightLeft, Star,
@@ -36,7 +36,7 @@ export interface NoteOpenRequest {
   title: string;
 }
 
-interface ObsidianNote {
+interface VaultNote {
   id: number;
   path: string;
   title: string;
@@ -57,10 +57,10 @@ interface Props {
   openRequest?: NoteOpenRequest | null;
 }
 
-export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }: Props) {
+export default function VaultView({ vaultPath, onScanComplete, openRequest }: Props) {
   const { t } = useT();
 
-  const [notes, setNotes] = useState<ObsidianNote[]>([]);
+  const [notes, setNotes] = useState<VaultNote[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [scanning, setScanning] = useState(true);
@@ -74,7 +74,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
   const [renameTarget, setRenameTarget] = useState<CollectionData | null>(null);
 
   // Rename note state
-  const [renameNoteTarget, setRenameNoteTarget] = useState<ObsidianNote | null>(null);
+  const [renameNoteTarget, setRenameNoteTarget] = useState<VaultNote | null>(null);
 
   // Select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -243,7 +243,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
 
   const handleCreateNote = (note: { id: number; path: string; title: string }, collectionId?: string, groupId?: string) => {
     setShowNewNoteModal(false);
-    showToast(t["obsidian.newNoteCreated"].replace("{name}", note.title));
+    showToast(t["vault.newNoteCreated"].replace("{name}", note.title));
     const relPath = toRelativePath(note.path, vaultPath);
     if (collectionId) {
       if (groupId) {
@@ -301,10 +301,10 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
       const newRelPath = toRelativePath(result.path, vaultPath);
       updateNotePaths(oldRelPath, newRelPath);
       updateNote(renameNoteTarget.path, { path: result.path, title: newTitle });
-      showToast(t["obsidian.renamed"].replace("{name}", newTitle));
+      showToast(t["vault.renamed"].replace("{name}", newTitle));
       loadNotes();
     } catch {
-      showToast(t["obsidian.renameFailed"]);
+      showToast(t["vault.renameFailed"]);
     }
   };
 
@@ -341,11 +341,6 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
       : [{ label: t["collections.none"], onClick: () => {} }];
 
     const items: MenuItem[] = [
-      {
-        label: t["menu.openInObsidian"],
-        icon: <ExternalLink size={14} />,
-        onClick: () => window.prism.openInObsidian(note.path),
-      },
       {
         label: favorites.has(note.path) ? t["menu.unfavorite"] : t["menu.favorite"],
         icon: <Star size={14} />,
@@ -395,7 +390,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
       {
         label: t["menu.rename"],
         icon: <Pencil size={14} />,
-        onClick: () => setRenameNoteTarget(note as ObsidianNote),
+        onClick: () => setRenameNoteTarget(note as VaultNote),
       },
       { label: "", divider: true },
       {
@@ -410,9 +405,9 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
             removeNotePaths([relPath]);
             removePaths([note.path]);
             setNotes((prev) => prev.filter((n) => n.path !== note.path));
-            showToast(t["obsidian.trashed"]);
+            showToast(t["vault.trashed"]);
           } else {
-            showToast(t["obsidian.deleteFailed"].replace("{error}", result.error ?? ""));
+            showToast(t["vault.deleteFailed"].replace("{error}", result.error ?? ""));
           }
         },
       },
@@ -453,17 +448,17 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
         // all ready — prevents flashing intermediate layouts on first mount
         <div className="flex-1 flex flex-col items-center justify-center gap-3 anim-fade-in">
           <RefreshCw size={22} className="animate-spin text-muted" />
-          <p className="text-sm text-muted">{t["obsidian.scanning"]}</p>
+          <p className="text-sm text-muted">{t["vault.scanning"]}</p>
         </div>
       ) : vaultError ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center anim-fade-in">
           <FolderX size={36} className="text-faint mb-1" />
-          <p className="text-sm font-medium text-secondary">{t["obsidian.vaultNotFound"]}</p>
+          <p className="text-sm font-medium text-secondary">{t["vault.vaultNotFound"]}</p>
           <p className="text-xs text-muted leading-relaxed break-all max-w-md">
-            {t["obsidian.vaultNotFoundDesc"].replace("{path}", vaultPath)}
+            {t["vault.vaultNotFoundDesc"].replace("{path}", vaultPath)}
           </p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReloadKey((k) => k + 1)}>
-            {t["obsidian.retry"]}
+            {t["vault.retry"]}
           </Button>
         </div>
       ) : (
@@ -512,7 +507,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
           <NoteTabBar
             tabs={tabs}
             activePath={activePath}
-            newLabel={t["obsidian.newNote"]}
+            newLabel={t["vault.newNote"]}
             closeLabel={t["editor.closeTab"]}
             onSelect={setActivePath}
             onClose={closeTab}
@@ -524,10 +519,10 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
             <SearchInput
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder={t["obsidian.search"]}
+              placeholder={t["vault.search"]}
               wrapperClassName="flex-1"
             />
-            <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["obsidian.newNote"]}>
+            <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["vault.newNote"]}>
               <Plus size={16} />
             </Button>
             <Button variant="ghost" size="icon-md" active={selectMode} onClick={toggleSelectMode} title={selectMode ? t["batch.cancelSelect"] : t["batch.selectMode"]}>
@@ -555,9 +550,9 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
             >
               <div className="px-4 h-11 border-b border-line/50 flex-shrink-0 flex items-center gap-2 glass bg-tint/[0.04]">
                 <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
-                <span className="text-xs text-muted">{t["obsidian.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
+                <span className="text-xs text-muted">{t["vault.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
                 <div className="flex-1" />
-                <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["obsidian.newNote"]}>
+                <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["vault.newNote"]}>
                   <Plus size={16} />
                 </Button>
                 <Button variant="ghost" size="icon-md" onClick={handleToggleAll} title={allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}>
@@ -599,8 +594,8 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
               {sortedNotes.length === 0 && (
                 <EmptyState
                   size="module"
-                  text={scanning ? t["obsidian.scanning"] : (searchQuery ? t["obsidian.emptySearch"] : t["obsidian.emptyVault"])}
-                  cta={!scanning && !searchQuery ? { label: t["obsidian.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> } : undefined}
+                  text={scanning ? t["vault.scanning"] : (searchQuery ? t["vault.emptySearch"] : t["vault.emptyVault"])}
+                  cta={!scanning && !searchQuery ? { label: t["vault.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> } : undefined}
                 />
               )}
               {sortedNotes.length > 0 && (
@@ -648,7 +643,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
                                 if (noteColls.length === 0) {
                                   return (
                                     <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 whitespace-nowrap">
-                                      {t["obsidian.uncategorized"]}
+                                      {t["vault.uncategorized"]}
                                     </span>
                                   );
                                 }
@@ -734,7 +729,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }
       <RenameModal
         open={renameNoteTarget !== null}
         initialValue={renameNoteTarget?.title ?? ""}
-        placeholder={t["obsidian.renameTitle"]}
+        placeholder={t["vault.renameTitle"]}
         icon={<Pencil size={18} className="text-[var(--accent-text)]" />}
         onClose={() => setRenameNoteTarget(null)}
         onSubmit={handleRenameNote}

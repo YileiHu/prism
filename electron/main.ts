@@ -212,11 +212,11 @@ async function fetchPageTitle(url: string): Promise<string> {
   }
 }
 
-// ---- Scan Obsidian vault ----
+// ---- Vault scanning ----
 
 function extractTags(content: string): Set<string> {
   const tagSet = new Set<string>();
-  // Obsidian files on Windows are often CRLF; the regexes below assume \n
+  // Note files on Windows are often CRLF; the regexes below assume \n
   const normalized = content.replace(/\r\n/g, "\n");
 
   // 1. Parse YAML frontmatter tags
@@ -400,7 +400,7 @@ async function rescanAndNotify(vaultPath: string): Promise<void> {
     // Only notify when the index actually changed (e.g. ignore .prism/collections.json writes)
     if (upsert.length === 0 && deletePaths.length === 0) return;
     syncVaultNotes(vaultPath, upsert, deletePaths);
-    mainWindow?.webContents.send("obsidian:vault-updated", vaultPath);
+    mainWindow?.webContents.send("vault:updated", vaultPath);
   } catch { /* watcher-triggered scans are best-effort */ }
 }
 
@@ -499,8 +499,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("fetch:title", async (_e, url: string) => fetchPageTitle(url));
 
-  // Obsidian
-  ipcMain.handle("obsidian:set-path", async (_e, vaultPath: string) => {
+  // Vault notes
+  ipcMain.handle("vault:set-path", async (_e, vaultPath: string) => {
     // Refuse to scan a missing/unreadable path — the empty walk would
     // otherwise wipe this vault's entire index from the DB
     if (!isValidVaultDir(vaultPath)) {
@@ -513,20 +513,20 @@ function registerIpcHandlers(): void {
     return totalCount;
   });
 
-  ipcMain.handle("obsidian:unwatch-path", (_e, vaultPath: string) => {
+  ipcMain.handle("vault:unwatch-path", (_e, vaultPath: string) => {
     watchedVaults.delete(vaultPath);
     unwatchVault(vaultPath);
   });
 
-  ipcMain.handle("obsidian:list-brief", (_e, vaultPath: string) => getNoteList(vaultPath));
+  ipcMain.handle("vault:list-brief", (_e, vaultPath: string) => getNoteList(vaultPath));
 
-  ipcMain.handle("obsidian:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query));
+  ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query));
 
-  ipcMain.handle("obsidian:delete-notes", (_e, paths: string[]) => {
+  ipcMain.handle("vault:delete-notes", (_e, paths: string[]) => {
     deleteNotesByPaths(paths);
   });
 
-  ipcMain.handle("obsidian:create-note", (_e, vaultPath: string, title: string) => {
+  ipcMain.handle("vault:create-note", (_e, vaultPath: string, title: string) => {
     const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
     const defaultDir = getSetting("default_notes_dir") || "";
     const targetDir = defaultDir ? path.join(vaultPath, defaultDir) : vaultPath;
@@ -549,7 +549,7 @@ function registerIpcHandlers(): void {
     return insertNote({ vault_path: vaultPath, path: filePath, title: finalTitle, content, tags, modified_at: now });
   });
 
-  ipcMain.handle("obsidian:rename-note", (_e, vaultPath: string, oldPath: string, newTitle: string) => {
+  ipcMain.handle("vault:rename-note", (_e, vaultPath: string, oldPath: string, newTitle: string) => {
     const safeName = newTitle.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
     const dir = path.dirname(oldPath);
     let newPath = path.join(dir, `${safeName}.md`);
@@ -572,19 +572,9 @@ function registerIpcHandlers(): void {
     return insertNote({ vault_path: vaultPath, path: newPath, title: finalTitle, content, tags, modified_at: stat.mtime.toISOString() });
   });
 
-  ipcMain.handle("obsidian:open", (_e, filePath: string) => {
-    recordRecentOpen(filePath);
-    const uri = `obsidian://open?path=${encodeURIComponent(filePath)}&paneType=tab`;
-    const obsidianPath = getSetting("obsidian_path");
-    if (obsidianPath && fs.existsSync(obsidianPath)) {
-      spawn(obsidianPath, [uri], { detached: true, stdio: "ignore" }).unref();
-    } else {
-      shell.openExternal(uri);
-    }
-  });
-
-  ipcMain.handle("obsidian:read-note", async (_e, filePath: string) => {
+  ipcMain.handle("vault:read-note", async (_e, filePath: string) => {
     if (!findOwningVault(filePath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    recordRecentOpen(filePath);
     const content = await fs.promises.readFile(filePath, "utf-8");
     const stat = await fs.promises.stat(filePath);
     return {
@@ -595,7 +585,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle("obsidian:save-note", async (_e, filePath: string, content: string) => {
+  ipcMain.handle("vault:save-note", async (_e, filePath: string, content: string) => {
     const vaultPath = findOwningVault(filePath);
     if (!vaultPath) throw new Error("NOTE_OUTSIDE_VAULT");
     await fs.promises.writeFile(filePath, content, "utf-8");
@@ -614,14 +604,28 @@ function registerIpcHandlers(): void {
     return { modified_at };
   });
 
-  // Launch Obsidian without a target file (Settings "test" button)
-  ipcMain.handle("obsidian:launch", () => {
-    const obsidianPath = getSetting("obsidian_path");
-    if (obsidianPath && fs.existsSync(obsidianPath)) {
-      spawn(obsidianPath, [], { detached: true, stdio: "ignore" }).unref();
-    } else {
-      shell.openExternal("obsidian://");
+  // Pasted editor images → <vault>/attachments/<YYYY-MM-DD-HHmmss>.<ext>.
+  // Space-free names keep standard ![](path) links clean (no <> wrapping).
+  // Returns the vault-relative ref (forward slashes).
+  ipcMain.handle("vault:save-attachment", (_e, vaultPath: string, ext: string, data: Uint8Array) => {
+    if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!ASSET_MIME[safeExt]) throw new Error("UNSUPPORTED_TYPE");
+    const dir = path.join(vaultPath, "attachments");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    let name = `${stamp}.${safeExt}`;
+    let filePath = path.join(dir, name);
+    let counter = 2;
+    while (fs.existsSync(filePath)) {
+      name = `${stamp}-${counter}.${safeExt}`;
+      filePath = path.join(dir, name);
+      counter++;
     }
+    fs.writeFileSync(filePath, Buffer.from(data));
+    return `attachments/${name}`;
   });
 
   // Open URL
@@ -798,16 +802,18 @@ async function findAssetByBasename(vaultPath: string, basename: string): Promise
 }
 
 // prism-file:///asset?vault=<vault>&ref=<image ref>&dir=<note folder> —
-// resolves the ref the way Obsidian does: note-relative, then vault-root,
+// resolves the ref like a markdown wiki: note-relative, then vault-root,
 // then (bare filenames only) a basename scan of the vault. Only registered
 // vaults and known media extensions are served.
 function registerAssetProtocol(): void {
   protocol.handle("prism-file", async (request) => {
     try {
       const url = new URL(request.url);
-      const vault = decodeURIComponent(url.searchParams.get("vault") ?? "");
-      const ref = decodeURIComponent(url.searchParams.get("ref") ?? "");
-      const dir = decodeURIComponent(url.searchParams.get("dir") ?? "");
+      // searchParams already percent-decodes — decoding again would throw on
+      // filenames containing a literal "%"
+      const vault = url.searchParams.get("vault") ?? "";
+      const ref = url.searchParams.get("ref") ?? "";
+      const dir = url.searchParams.get("dir") ?? "";
       if (!vault || !ref || !findOwningVault(vault)) {
         return new Response("forbidden", { status: 403 });
       }
@@ -824,14 +830,17 @@ function registerAssetProtocol(): void {
       };
 
       const candidates = [
-        dir ? path.join(vault, dir, cleanRef) : null,
+        // dir arrives absolute from the renderer, but accept vault-relative too
+        dir ? path.join(path.isAbsolute(dir) ? dir : path.join(vault, dir), cleanRef) : null,
         path.join(vault, cleanRef),
       ].filter((p): p is string => Boolean(p));
       let target = candidates.find((p) => {
         try { return inside(p) && fs.statSync(p).isFile(); } catch { return false; }
       });
 
-      if (!target && !cleanRef.includes("/")) {
+      // Exact paths failed — fall back to a basename scan (wiki-style
+      // "shortest path" resolution, so a moved attachment folder won't 404)
+      if (!target) {
         const found = await findAssetByBasename(vault, path.basename(cleanRef));
         if (found && inside(found)) target = found;
       }

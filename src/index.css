@@ -225,6 +225,12 @@ body {
   --md-h5: #6fcdcd;  /* teal */
   --md-h6: #eda05c;  /* apricot */
   --md-bold: #f6d968; /* butter yellow */
+  --md-code-keyword: #c792ea;
+  --md-code-string: #9ecb7f;
+  --md-code-comment: #6a737d;
+  --md-code-number: #eda05c;
+  --md-code-function: #85b6ee;
+  --md-code-property: #6fcdcd;
 }
 
 /* Rendered preview typography (markdown-it output) */
@@ -376,6 +382,13 @@ body {
   cursor: pointer;
 }
 .cm-md-wikilink:hover { border-bottom-style: solid; }
+.cm-md-link {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--accent-rgb) / 0.45);
+  text-underline-offset: 2px;
+}
+.cm-md-link:hover { text-decoration-color: var(--accent-text); }
 .cm-md-highlight {
   background: rgba(250, 204, 21, 0.28);
   border-radius: 3px;
@@ -391,70 +404,26 @@ body {
   border-left: 3px solid rgb(var(--c-strong));
   padding-left: 10px;
   margin-left: 2px;
-}
-.cm-md-image {
-  max-width: 100%;
-  border-radius: 8px;
-  vertical-align: top;
+  color: rgb(var(--c-tertiary));
 }
 .cm-md-math { color: rgb(var(--c-primary)); }
+.cm-md-frontmatter {
+  color: rgb(var(--c-faint));
+  font-size: 0.88em;
+}
 .cm-md-math-display {
   display: block;
   margin: 0.5em 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
-.cm-md-table {
-  margin: 0.5em 0;
-  overflow-x: auto;
-}
-.cm-md-table table {
-  border-collapse: collapse;
-}
-.cm-md-table th, .cm-md-table td {
-  border: 1px solid rgb(var(--c-strong));
-  padding: 4px 12px;
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-.cm-md-table th {
-  background: rgb(var(--c-tint) / 0.05);
-  font-weight: 600;
-  color: rgb(var(--c-primary));
-}
 
-/* Heading fold controls — editor (CodeMirror widgets) */
-.cm-md-fold-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: 4px;
-  border-radius: 4px;
-  color: rgb(var(--c-faint));
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.cm-md-fold-chevron:hover {
-  background: rgb(var(--c-tint) / 0.08);
-  color: rgb(var(--c-secondary));
-}
-.cm-md-fold-placeholder {
-  display: inline-block;
-  padding: 1px 10px;
-  margin: 2px 0;
-  border-radius: 999px;
-  background: rgb(var(--c-tint) / 0.06);
-  border: 1px dashed rgb(var(--c-strong));
-  color: rgb(var(--c-muted));
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.cm-md-fold-placeholder:hover {
-  color: rgb(var(--c-secondary));
+/* Fenced code blocks in the editor: continuous tinted block, monospace */
+.cm-line.cm-md-codeblock {
+  background: rgb(var(--c-tint) / 0.055);
+  font-family: Consolas, 'Cascadia Code', SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  padding: 0 14px;
 }
 
 /* Heading fold controls — reading view */

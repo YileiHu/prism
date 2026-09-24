@@ -23,26 +23,26 @@ const zh = {
   "resources.updated": "已更新",
   "resources.deleteConfirm": "确定要删除这个资源吗？此操作无法撤销。",
 
-  // Obsidian Vault
-  "obsidian.search": "搜索笔记...",
-  "obsidian.emptySearch": "没有匹配的笔记。",
-  "obsidian.emptyVault": "此知识库中没有找到 Markdown 文件。",
-  "obsidian.scanning": "正在扫描知识库...",
-  "obsidian.uncategorized": "未归类",
-  "obsidian.notesCount": "{count} 篇笔记",
-  "obsidian.deleteFailed": "删除失败：{error}",
-  "obsidian.renameFailed": "重命名失败",
-  "obsidian.vaultNotFound": "无法访问知识库",
-  "obsidian.vaultNotFoundDesc": "路径 {path} 不存在或没有读取权限。请检查磁盘是否已连接，或在设置中修改路径。",
-  "obsidian.retry": "重试",
-  "obsidian.trashed": "已移入回收站",
+  // Vault notes
+  "vault.search": "搜索笔记...",
+  "vault.emptySearch": "没有匹配的笔记。",
+  "vault.emptyVault": "此知识库中没有找到 Markdown 文件。",
+  "vault.scanning": "正在扫描知识库...",
+  "vault.uncategorized": "未归类",
+  "vault.notesCount": "{count} 篇笔记",
+  "vault.deleteFailed": "删除失败：{error}",
+  "vault.renameFailed": "重命名失败",
+  "vault.vaultNotFound": "无法访问知识库",
+  "vault.vaultNotFoundDesc": "路径 {path} 不存在或没有读取权限。请检查磁盘是否已连接，或在设置中修改路径。",
+  "vault.retry": "重试",
+  "vault.trashed": "已移入回收站",
 
   // Settings
   "settings.catVaults": "知识库",
   "settings.catExternal": "外部程序",
   "settings.catAppearance": "外观",
-  "settings.vaults": "Obsidian 知识库路径",
-  "settings.vaultsDesc": "配置知识库路径后，可以在 Obsidian 面板中快速切换。",
+  "settings.vaults": "笔记库路径",
+  "settings.vaultsDesc": "配置笔记库（Markdown 文件夹）路径后，可在顶部标签快速切换。",
   "settings.addVault": "添加知识库路径",
   "settings.vaultPath": "路径",
   "settings.vaultNamePlaceholder": "给知识库起个名字...",
@@ -53,11 +53,8 @@ const zh = {
   "settings.externalDesc": "配置用于打开网页和笔记的外部程序。",
   "settings.browserPath": "浏览器路径",
   "settings.browserPathPlaceholder": "留空使用系统默认浏览器...",
-  "settings.obsidianPath": "Obsidian 程序路径",
-  "settings.obsidianPathPlaceholder": "留空使用系统默认程序打开...",
   "settings.selectFile": "选择文件",
   "settings.browserTest": "测试浏览器",
-  "settings.obsidianTest": "测试 Obsidian",
   "settings.appearance": "主题配色",
   "settings.appearanceDesc": "选择你喜欢的主题配色方案。",
   "settings.language": "界面语言",
@@ -86,7 +83,6 @@ const zh = {
   "collections.missing": "(已失效)",
 
   // Context menu
-  "menu.openInObsidian": "在 Obsidian 中打开",
   "menu.showInExplorer": "在文件资源管理器中显示",
   "menu.rename": "重命名",
   "menu.addToCollection": "添加到收藏集",
@@ -100,8 +96,8 @@ const zh = {
   "menu.unfavorite": "取消收藏",
 
   // Rename
-  "obsidian.renameTitle": "新名称...",
-  "obsidian.renamed": "已重命名为 {name}",
+  "vault.renameTitle": "新名称...",
+  "vault.renamed": "已重命名为 {name}",
 
   // Batch
   "batch.selected": "已选择 {count} 项",
@@ -113,18 +109,23 @@ const zh = {
   "batch.deleteFailed": "{count} 个文件删除失败",
 
   // New Note
-  "obsidian.newNote": "新建笔记",
-  "obsidian.newNoteTitle": "笔记名称...",
-  "obsidian.newNoteCreated": "已创建 {name}",
-  "obsidian.newNoteCollection": "收藏集（可选）",
-  "obsidian.newNoteGroup": "分组（可选）",
-  "obsidian.newNoteNoCollection": "不添加到收藏集",
-  "obsidian.newNoteNoGroup": "不分组",
+  "vault.newNote": "新建笔记",
+  "vault.newNoteTitle": "笔记名称...",
+  "vault.newNoteCreated": "已创建 {name}",
+  "vault.newNoteCollection": "收藏集（可选）",
+  "vault.newNoteGroup": "分组（可选）",
+  "vault.newNoteNoCollection": "不添加到收藏集",
+  "vault.newNoteNoGroup": "不分组",
 
   // Default Notes Directory
   "settings.defaultNotesDir": "默认笔记目录",
   "settings.defaultNotesDirDesc": "新建笔记时存放位置（相对于知识库根目录），例如：inbox",
   "settings.defaultNotesDirPlaceholder": "例如：inbox",
+  "settings.imagePathStyle": "图片插入路径",
+  "settings.imagePathStyleDesc": "粘贴图片时插入的链接路径风格。",
+  "settings.imagePathStyleNote": "相对当前笔记",
+  "settings.imagePathStyleVault": "相对笔记库根目录",
+  "settings.imagePathStyleName": "仅文件名",
 
   // Changelog
   "changelog.title": "更新公告",
@@ -193,14 +194,16 @@ const zh = {
   // Note editor
   "editor.edit": "编辑",
   "editor.reading": "阅读",
-  "editor.openExternal": "在 Obsidian 中打开",
   "editor.closeTab": "关闭标签页",
   "editor.savedAt": "已保存 {time}",
   "editor.unsaved": "有未保存的更改",
   "editor.linkNoteCreated": "已创建笔记「{name}」",
   "editor.linkNoteFailed": "创建笔记失败",
   "editor.noteDeleted": "文件不存在或已被删除",
-  "editor.foldedLines": "已折叠 {count} 行",
+  "editor.pasteImageFailed": "图片保存失败",
+  "editor.addQuotePrefix": "添加 > 引用前缀",
+  "editor.removeQuotePrefix": "去除引用前缀",
+  "editor.insertTable": "插入 2×2 表格",
   "editor.outline": "大纲",
   "editor.foldCard": "折叠大纲",
 };

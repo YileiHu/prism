@@ -1,9 +1,10 @@
 import { EditorSelection, EditorState, Extension, Prec } from "@codemirror/state";
-import { EditorView, drawSelection, dropCursor, keymap } from "@codemirror/view";
+import { EditorView, dropCursor, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, type LivePreviewHooks } from "./livePreview";
 
@@ -75,18 +76,30 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.heading4, fontSize: "1.1em", fontWeight: "600", color: "var(--md-h4)" },
   { tag: t.heading5, fontWeight: "600", color: "var(--md-h5)" },
   { tag: t.heading6, fontWeight: "600", color: "var(--md-h6)" },
-  { tag: t.strong, color: "var(--md-bold)" },
-  { tag: [t.heading, t.strong], fontWeight: "700" },
+  // One rule per construct — a later matching rule REPLACES an earlier one
+  // entirely (no per-property merge), so splitting color/weight across two
+  // rules drops the color
+  { tag: t.strong, color: "var(--md-bold)", fontWeight: "700" },
   { tag: t.emphasis, fontStyle: "italic" },
   { tag: t.strikethrough, textDecoration: "line-through", color: "rgb(var(--c-muted))" },
   { tag: t.link, color: "rgb(var(--accent-text))" },
   { tag: t.url, color: "rgb(var(--accent-text))", textDecoration: "underline" },
   { tag: t.monospace, fontFamily: "Consolas, 'Cascadia Code', SFMono-Regular, Menlo, monospace", fontSize: "0.9em", backgroundColor: "rgb(var(--c-tint) / 0.08)", borderRadius: "4px" },
   { tag: t.quote, color: "rgb(var(--c-tertiary))", fontStyle: "italic" },
-  { tag: t.list, color: "rgb(var(--accent-text))" },
+  // No t.list rule — list text inherits the line color (gray inside quotes);
+  // the bullet widget has its own muted style
   { tag: t.contentSeparator, color: "rgb(var(--c-faint))" },
   { tag: t.processingInstruction, color: "rgb(var(--c-muted))" },
   { tag: t.meta, color: "rgb(var(--c-muted))" },
+  // Fenced-code syntax tokens (codeLanguages parses block contents)
+  { tag: t.keyword, color: "var(--md-code-keyword)" },
+  { tag: [t.string, t.special(t.string)], color: "var(--md-code-string)" },
+  { tag: t.comment, color: "var(--md-code-comment)", fontStyle: "italic" },
+  { tag: [t.number, t.bool, t.atom], color: "var(--md-code-number)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--md-code-function)" },
+  { tag: t.typeName, color: "var(--md-code-function)" },
+  { tag: t.propertyName, color: "var(--md-code-property)" },
+  { tag: t.operator, color: "rgb(var(--c-tertiary))" },
 ]);
 
 // Toggle wrap selection in emphasis markers; plain Ctrl+B/Ctrl+I would only
@@ -117,13 +130,19 @@ function wrapInMarkers(marker: string) {
   };
 }
 
-export function buildExtensions(hooks: LivePreviewHooks & { onSave: () => void }): Extension[] {
+export function buildExtensions(hooks: LivePreviewHooks & {
+  onSave: () => void;
+  // Saves the attachment and returns the markdown snippet to insert, or null on failure
+  onPasteImage: (file: File) => Promise<string | null>;
+}): Extension[] {
   return [
     // Tell CM6 the editor sits on a dark surface so every base-theme default
     // (gutters, panels, selection fallbacks) resolves to dark variants
     EditorView.darkTheme.of(true),
     history(),
-    drawSelection(),
+    // No drawSelection() — native ::selection only covers rendered glyphs, so
+    // multi-line highlights align strictly with visible text instead of
+    // extending over the hidden line-start syntax ("- ", "> ", "## ")
     dropCursor(),
     EditorState.allowMultipleSelections.of(true),
     bracketMatching(),
@@ -131,10 +150,59 @@ export function buildExtensions(hooks: LivePreviewHooks & { onSave: () => void }
     EditorView.lineWrapping,
     search({ top: true }),
     highlightSelectionMatches(),
-    markdown(),
+    // markdownLanguage (not the markdown() default commonmarkLanguage!) —
+    // GFM gives us Table/TaskMarker/StrikethroughMark/Autolink nodes.
+    // addKeymap defaults to true: Enter continues lists/quotes/tasks.
+    // pasteURLAsLink defaults to true: URL pasted over a selection wraps it.
+    markdown({ base: markdownLanguage, codeLanguages: languages }),
     syntaxHighlighting(highlightStyle),
     editorTheme,
     livePreview(hooks),
+    // Paste an image from the clipboard: onPasteImage saves it and returns
+    // the ready-to-insert markdown snippet (e.g. a standard ![](path) link)
+    EditorView.domEventHandlers({
+      paste: (event, view) => {
+        const images = Array.from(event.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (images.length > 0) {
+          event.preventDefault();
+          void (async () => {
+            for (const file of images) {
+              const insert = await hooks.onPasteImage(file);
+              if (!insert) continue;
+              const range = view.state.selection.main;
+              view.dispatch({
+                changes: { from: range.from, to: range.to, insert },
+                selection: { anchor: range.from + insert.length },
+                userEvent: "input.paste",
+              });
+            }
+          })();
+          return true;
+        }
+        // (URL pasted over a selection → link is built into markdown() as
+        // pasteURLAsLink; non-image pastes fall through to it)
+        return false;
+      },
+      // Dropping image files into the editor works like pasting them
+      drop: (event, view) => {
+        const images = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (images.length === 0) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head;
+        void (async () => {
+          for (const file of images) {
+            const insert = await hooks.onPasteImage(file);
+            if (!insert) continue;
+            view.dispatch({
+              changes: { from: pos, insert },
+              selection: { anchor: pos + insert.length },
+              userEvent: "input.drop",
+            });
+          }
+        })();
+        return true;
+      },
+    }),
     Prec.highest(keymap.of([
       { key: "Mod-s", preventDefault: true, run: () => { hooks.onSave(); return true; } },
       { key: "Mod-b", preventDefault: true, run: wrapInMarkers("**") },

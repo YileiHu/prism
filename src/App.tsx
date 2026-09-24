@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import WebResources from "./components/WebResources";
-import ObsidianVault, { type NoteOpenRequest } from "./components/ObsidianVault";
+import VaultView, { type NoteOpenRequest } from "./components/VaultView";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
 import HomeView from "./components/home/HomeView";
@@ -150,7 +150,7 @@ export default function App() {
   };
 
   // Home dashboard deep link: open a note in the in-app editor. The matching
-  // ObsidianVault pane consumes the request via openRequest (it also covers
+  // VaultView pane consumes the request via openRequest (it also covers
   // vaults that are not mounted yet).
   useEffect(() => {
     const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -282,7 +282,7 @@ export default function App() {
           if (!isMounted) return null;
           return (
             <div key={v.path} style={paneStyle(activeTab === v.path)} className={activeTab === v.path ? "pane-enter" : ""}>
-              <ObsidianVault
+              <VaultView
                 vaultPath={v.path}
                 onScanComplete={handleScanComplete}
                 openRequest={noteOpenRequest}

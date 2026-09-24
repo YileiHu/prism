@@ -16,7 +16,7 @@ export function toRelativePath(absPath: string, vaultPath: string): string {
   return absPath.replace(/\\/g, "/");
 }
 
-interface ObsidianNote {
+interface VaultNote {
   id: number;
   path: string;
   title: string;
@@ -38,7 +38,7 @@ function collectionHasNote(c: CollectionData, relPath: string): boolean {
 
 interface UseCollectionsOptions {
   vaultPath: string;
-  notes: ObsidianNote[];
+  notes: VaultNote[];
   loadNotes: () => Promise<void>;
 }
 
@@ -326,14 +326,14 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   }, [collections, selectedCollectionId]);
 
   const notesByRelPath = useMemo(() => {
-    const map = new Map<string, ObsidianNote>();
+    const map = new Map<string, VaultNote>();
     for (const n of notes) {
       map.set(toRelativePath(n.path, vaultPath).replace(/\//g, "\\").toLowerCase(), n);
     }
     return map;
   }, [notes, vaultPath]);
 
-  // Auto-heal collection paths after an external (e.g. Obsidian-side) rename/move.
+  // Auto-heal collection paths after an external (e.g. external) rename/move.
   // A missing path is relinked only when exactly one note in the vault shares the
   // same file name — ambiguous or absent matches keep the "missing" marker.
   useEffect(() => {
@@ -351,7 +351,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     }
     if (missing.size === 0) return;
 
-    const notesByTitle = new Map<string, ObsidianNote[]>();
+    const notesByTitle = new Map<string, VaultNote[]>();
     for (const n of notes) {
       const arr = notesByTitle.get(n.title);
       if (arr) arr.push(n);

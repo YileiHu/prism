@@ -12,23 +12,23 @@ const api = {
   fetchPageTitle: (url: string) => ipcRenderer.invoke("fetch:title", url),
   openUrl: (url: string) => ipcRenderer.invoke("resources:open-url", url),
 
-  // Obsidian
-  setVaultPath: (vaultPath: string) => ipcRenderer.invoke("obsidian:set-path", vaultPath),
-  unwatchVault: (vaultPath: string) => ipcRenderer.invoke("obsidian:unwatch-path", vaultPath),
-  getNoteList: (vaultPath: string) => ipcRenderer.invoke("obsidian:list-brief", vaultPath),
-  searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("obsidian:search", vaultPath, query),
-  deleteNotes: (paths: string[]) => ipcRenderer.invoke("obsidian:delete-notes", paths),
-  openInObsidian: (filePath: string) => ipcRenderer.invoke("obsidian:open", filePath),
-  readNote: (filePath: string) => ipcRenderer.invoke("obsidian:read-note", filePath),
-  saveNote: (filePath: string, content: string) => ipcRenderer.invoke("obsidian:save-note", filePath, content),
-  launchObsidian: () => ipcRenderer.invoke("obsidian:launch"),
-  createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("obsidian:create-note", vaultPath, title),
+  // Vault notes
+  setVaultPath: (vaultPath: string) => ipcRenderer.invoke("vault:set-path", vaultPath),
+  unwatchVault: (vaultPath: string) => ipcRenderer.invoke("vault:unwatch-path", vaultPath),
+  getNoteList: (vaultPath: string) => ipcRenderer.invoke("vault:list-brief", vaultPath),
+  searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("vault:search", vaultPath, query),
+  deleteNotes: (paths: string[]) => ipcRenderer.invoke("vault:delete-notes", paths),
+  readNote: (filePath: string) => ipcRenderer.invoke("vault:read-note", filePath),
+  saveNote: (filePath: string, content: string) => ipcRenderer.invoke("vault:save-note", filePath, content),
+  saveAttachment: (vaultPath: string, ext: string, data: ArrayBuffer) =>
+    ipcRenderer.invoke("vault:save-attachment", vaultPath, ext, new Uint8Array(data)) as Promise<string>,
+  createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("vault:create-note", vaultPath, title),
   renameNote: (vaultPath: string, oldPath: string, newTitle: string) =>
-    ipcRenderer.invoke("obsidian:rename-note", vaultPath, oldPath, newTitle),
+    ipcRenderer.invoke("vault:rename-note", vaultPath, oldPath, newTitle),
   onVaultUpdated: (callback: (vaultPath: string) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, vaultPath: string) => callback(vaultPath);
-    ipcRenderer.on("obsidian:vault-updated", handler);
-    return () => { ipcRenderer.removeListener("obsidian:vault-updated", handler); };
+    ipcRenderer.on("vault:updated", handler);
+    return () => { ipcRenderer.removeListener("vault:updated", handler); };
   },
 
   // Settings

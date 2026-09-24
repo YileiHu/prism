@@ -19,8 +19,8 @@ export default function Settings() {
   const [newPath, setNewPath] = useState("");
   const [saved, setSaved] = useState(false);
   const [browserPath, setBrowserPath] = useState("");
-  const [obsidianPath, setObsidianPath] = useState("");
   const [defaultNotesDir, setDefaultNotesDir] = useState("");
+  const [imagePathStyle, setImagePathStyle] = useState("note");
   const [langOpen, setLangOpen] = useState(false);
   const [addError, setAddError] = useState("");
   const langAnchorRef = useRef<HTMLDivElement>(null);
@@ -36,10 +36,10 @@ export default function Settings() {
     }
     const bp = await window.prism.getSetting("browser_path");
     if (bp) setBrowserPath(bp);
-    const op = await window.prism.getSetting("obsidian_path");
-    if (op) setObsidianPath(op);
     const dnd = await window.prism.getSetting("default_notes_dir");
     if (dnd) setDefaultNotesDir(dnd);
+    const ips = await window.prism.getSetting("image_path_style");
+    if (ips) setImagePathStyle(ips);
   };
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
@@ -91,8 +91,6 @@ export default function Settings() {
   };
 
   const handleTestBrowser = () => { window.prism.openUrl("https://example.com"); };
-
-  const handleTestObsidian = () => { window.prism.launchObsidian(); };
 
   const categories: { key: SettingsCategory; label: string; icon: typeof Database }[] = [
     { key: "vaults", label: t["settings.catVaults"], icon: Database },
@@ -174,6 +172,23 @@ export default function Settings() {
               />
             </div>
 
+            <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
+              <div className="flex items-center gap-2 mb-3">
+                <FolderOpen size={14} className="text-[var(--accent-text)]" />
+                <span className="text-sm font-medium text-secondary">{t["settings.imagePathStyle"]}</span>
+              </div>
+              <p className="text-xs text-muted mb-3">{t["settings.imagePathStyleDesc"]}</p>
+              <select
+                value={imagePathStyle}
+                onChange={(e) => { setImagePathStyle(e.target.value); saveSetting("image_path_style", e.target.value); }}
+                className="bg-elevated border border-strong rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)] transition-colors"
+              >
+                <option value="note">{t["settings.imagePathStyleNote"]}</option>
+                <option value="vault">{t["settings.imagePathStyleVault"]}</option>
+                <option value="name">{t["settings.imagePathStyleName"]}</option>
+              </select>
+            </div>
+
             <div className="p-4 bg-surface/30 rounded-lg border border-line/50 space-y-3">
               <p className="text-xs text-tertiary font-medium">{t["settings.addVault"]}</p>
               <div className="flex gap-2">
@@ -234,29 +249,6 @@ export default function Settings() {
                   <Button variant="secondary" size="xs" onClick={handleTestBrowser} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20">
                     <ExternalLink size={12} />
                     {t["settings.browserTest"]}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
-                <div className="flex items-center gap-2 mb-3">
-                  <FolderOpen size={14} className="text-[var(--accent-text)]" />
-                  <span className="text-sm font-medium text-secondary">{t["settings.obsidianPath"]}</span>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    value={obsidianPath}
-                    onChange={(e) => setObsidianPath(e.target.value)}
-                    onBlur={() => saveSetting("obsidian_path", obsidianPath)}
-                    placeholder={t["settings.obsidianPathPlaceholder"]}
-                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-                  />
-                  <Button variant="secondary" size="xs" onClick={() => handleSelectFile(setObsidianPath, "obsidian_path")}>
-                    {t["settings.selectFile"]}
-                  </Button>
-                  <Button variant="secondary" size="xs" onClick={handleTestObsidian} className="text-[var(--accent-text)] bg-[var(--accent-muted)] hover:opacity-80">
-                    <ExternalLink size={12} />
-                    {t["settings.obsidianTest"]}
                   </Button>
                 </div>
               </div>
