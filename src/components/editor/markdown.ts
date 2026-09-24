@@ -1,0 +1,405 @@
+import MarkdownIt from "markdown-it";
+import type { MarkdownIt as MarkdownItType, StateCore, StateInline, Token } from "markdown-it";
+import markPlugin from "markdown-it-mark";
+import taskLists from "markdown-it-task-lists";
+import { load as loadYaml } from "js-yaml";
+import { katex } from "@mdit/plugin-katex";
+import hljs from "highlight.js/lib/core";
+
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import xml from "highlight.js/lib/languages/xml";
+import yamlLang from "highlight.js/lib/languages/yaml";
+import sql from "highlight.js/lib/languages/sql";
+import go from "highlight.js/lib/languages/go";
+import rust from "highlight.js/lib/languages/rust";
+import java from "highlight.js/lib/languages/java";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import markdownLang from "highlight.js/lib/languages/markdown";
+import diff from "highlight.js/lib/languages/diff";
+import ini from "highlight.js/lib/languages/ini";
+
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("shell", bash);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("yaml", yamlLang);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("c", c);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("markdown", markdownLang);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("ini", ini);
+hljs.registerLanguage("toml", ini);
+
+const CODE_HIGHLIGHT_LIMIT = 100_000;
+
+// Obsidian's full callout type list — every alias maps to a canonical family
+// that decides the color and icon (data-callout holds the family name)
+export const CALLOUT_FAMILIES: Record<string, string> = {
+  note: "note",
+  abstract: "abstract", summary: "abstract", tldr: "abstract",
+  info: "info",
+  todo: "todo",
+  tip: "tip", hint: "tip", important: "tip",
+  success: "success", check: "success", done: "success",
+  question: "question", help: "question", faq: "question",
+  warning: "warning", caution: "warning", attention: "warning",
+  failure: "failure", fail: "failure", missing: "failure",
+  danger: "danger",
+  error: "error",
+  bug: "bug",
+  example: "example",
+  quote: "quote", cite: "quote",
+};
+
+const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
+  note: "Note", abstract: "Abstract", summary: "Summary", tldr: "TLDR",
+  info: "Info", todo: "Todo",
+  tip: "Tip", hint: "Hint", important: "Important",
+  success: "Success", check: "Check", done: "Done",
+  question: "Question", help: "Help", faq: "FAQ",
+  warning: "Warning", caution: "Caution", attention: "Attention",
+  failure: "Failure", fail: "Fail", missing: "Missing",
+  danger: "Danger", error: "Error", bug: "Bug",
+  example: "Example", quote: "Quote", cite: "Cite",
+};
+
+const CALLOUT_RE = /^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+const TAG_RE = /^#([\p{L}\p{N}_/-]+)/u;
+
+// ---- Callout: "> [!type] Title" → styled div with a title bar ----
+
+function transformCallouts(state: StateCore): void {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "blockquote_open") continue;
+
+    let depth = 1;
+    let closeIdx = -1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      if (tokens[j].type === "blockquote_open") depth++;
+      else if (tokens[j].type === "blockquote_close" && --depth === 0) {
+        closeIdx = j;
+        break;
+      }
+    }
+    if (closeIdx === -1) continue;
+
+    const pOpen = tokens[i + 1];
+    const inline = tokens[i + 2];
+    const pClose = tokens[i + 3];
+    if (!pOpen || pOpen.type !== "paragraph_open" || !inline || inline.type !== "inline" || !pClose || pClose.type !== "paragraph_close") continue;
+    const firstChild = inline.children?.[0];
+    if (!firstChild || firstChild.type !== "text") continue;
+
+    const m = CALLOUT_RE.exec(firstChild.content);
+    if (!m) continue;
+    const type = m[1].toLowerCase();
+    const family = CALLOUT_FAMILIES[type];
+    if (!family) continue;
+    const title = m[3].trim() || CALLOUT_DEFAULT_TITLES[type] || type;
+
+    tokens[i].tag = "div";
+    tokens[i].attrSet("class", "callout");
+    tokens[i].attrSet("data-callout", family);
+    // The matching close must swap tags too, otherwise the emitted
+    // </blockquote> can't close the <div> and the rest of the document
+    // gets swallowed into the callout
+    tokens[closeIdx].tag = "div";
+
+    pOpen.tag = "div";
+    pOpen.hidden = false;
+    pOpen.attrSet("class", "callout-title");
+    pClose.tag = "div";
+    pClose.hidden = false;
+    firstChild.content = title;
+
+    // Title is only the first line — the rest of the paragraph plus any
+    // following blocks all go into a single callout-content wrapper
+    const children = inline.children ?? [];
+    const softbreakIdx = children.findIndex((child) => child.type === "softbreak");
+    const hasBody = softbreakIdx !== -1 && softbreakIdx < children.length - 1;
+    const hasExtraBlocks = closeIdx > i + 4;
+    if (!hasBody && !hasExtraBlocks) continue;
+
+    const insertions: Token[] = [];
+    if (hasBody) {
+      const bodyChildren = children.slice(softbreakIdx + 1);
+      inline.children = children.slice(0, softbreakIdx);
+      const bodyOpen = new state.Token("paragraph_open", "p", 1);
+      const bodyInline = new state.Token("inline", "", 0);
+      bodyInline.children = bodyChildren;
+      const bodyClose = new state.Token("paragraph_close", "p", -1);
+      insertions.push(bodyOpen, bodyInline, bodyClose);
+    }
+
+    const open = new state.Token("callout_content_open", "div", 1);
+    open.attrSet("class", "callout-content");
+    const close = new state.Token("callout_content_close", "div", -1);
+    tokens.splice(closeIdx, 0, close);
+    tokens.splice(i + 4, 0, open, ...insertions);
+  }
+}
+
+// ---- Wikilink: "[[target|label]]" → clickable internal link ----
+
+function wikilinkRule(state: StateInline, silent: boolean): boolean {
+  const { src, pos } = state;
+  if (src.charCodeAt(pos) !== 0x5b || src.charCodeAt(pos + 1) !== 0x5b) return false;
+  const end = src.indexOf("]]", pos + 2);
+  if (end === -1) return false;
+  const inner = src.slice(pos + 2, end);
+  if (!inner.trim() || inner.includes("\n")) return false;
+  const pipe = inner.indexOf("|");
+  const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+  const label = ((pipe === -1 ? inner : inner.slice(pipe + 1)).trim()) || target;
+  if (!target) return false;
+
+  if (!silent) {
+    const token = state.push("wikilink", "", 0);
+    token.content = label;
+    token.attrSet("data-wikilink", target);
+  }
+  state.pos = end + 2;
+  return true;
+}
+
+// ---- Embed: "![[target|alt]]" → image, or a link for non-image targets ----
+
+function embedRule(state: StateInline, silent: boolean): boolean {
+  const { src, pos } = state;
+  if (src.charCodeAt(pos) !== 0x21 || src.charCodeAt(pos + 1) !== 0x5b || src.charCodeAt(pos + 2) !== 0x5b) return false;
+  const end = src.indexOf("]]", pos + 3);
+  if (end === -1) return false;
+  const inner = src.slice(pos + 3, end);
+  if (!inner.trim() || inner.includes("\n")) return false;
+  const pipe = inner.indexOf("|");
+  const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+  const alt = pipe === -1 ? target : inner.slice(pipe + 1).trim() || target;
+  if (!target) return false;
+
+  if (!silent) {
+    const token = state.push("wikilink_embed", "", 0);
+    token.content = alt;
+    token.attrSet("data-embed-target", target);
+  }
+  state.pos = end + 2;
+  return true;
+}
+
+// ---- Inline tag: "#tag" → styled pill (same semantics as vault scan) ----
+
+const TAG_PRECEDING = /[\s([{'">~*_（【]/;
+
+function tagRule(state: StateInline, silent: boolean): boolean {
+  const { src, pos } = state;
+  if (src.charCodeAt(pos) !== 0x23) return false;
+  const prev = pos > 0 ? src[pos - 1] : "";
+  if (prev && !TAG_PRECEDING.test(prev)) return false;
+  const m = TAG_RE.exec(src.slice(pos, state.posMax));
+  if (!m) return false;
+  const tag = m[1];
+  if (!/\p{L}/u.test(tag) || /^\d+$/.test(tag)) return false;
+
+  if (!silent) {
+    const token = state.push("mdtag", "", 0);
+    token.content = "#" + tag;
+  }
+  state.pos += m[0].length;
+  return true;
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const md: MarkdownItType = new MarkdownIt({
+  // Obsidian treats single newlines as line breaks and blocks raw HTML
+  html: false,
+  linkify: true,
+  breaks: true,
+  highlight: (str: string, lang: string): string => {
+    const safeLang = lang.trim().split(/\s+/)[0].toLowerCase();
+    const cls = safeLang ? ` data-lang="${escapeAttr(safeLang)}"` : "";
+    if (str.length > CODE_HIGHLIGHT_LIMIT) {
+      return `<pre class="md-code"${cls}><code>${md.utils.escapeHtml(str)}</code></pre>`;
+    }
+    if (safeLang && hljs.getLanguage(safeLang)) {
+      try {
+        return `<pre class="md-code"${cls}><code class="hljs">${hljs.highlight(str, { language: safeLang, ignoreIllegals: true }).value}</code></pre>`;
+      } catch { /* fall through to plain */ }
+    }
+    return `<pre class="md-code"${cls}><code>${md.utils.escapeHtml(str)}</code></pre>`;
+  },
+});
+
+md.core.ruler.after("inline", "prism_callouts", transformCallouts);
+md.use(markPlugin);
+md.use(taskLists, { enabled: true, label: true });
+// Obsidian-style $...$ / $$...$$ math (KaTeX options pass through as extras)
+md.use(katex, { throwOnError: false });
+
+md.inline.ruler.before("link", "prism_wikilink", wikilinkRule);
+md.inline.ruler.before("prism_wikilink", "prism_wikilink_embed", embedRule);
+md.inline.ruler.before("prism_wikilink_embed", "prism_tag", tagRule);
+
+md.renderer.rules.wikilink = (tokens, idx) => {
+  const token = tokens[idx];
+  const target = String(token.attrGet("data-wikilink") ?? "");
+  return `<a data-wikilink="${escapeAttr(target)}" class="wikilink">${md.utils.escapeHtml(token.content)}</a>`;
+};
+
+// ---- Local asset URLs ----
+// Images live on disk inside the vault, which the renderer can't fetch
+// directly — they go through the prism-file:// protocol (electron/main.ts),
+// which resolves the ref against the note's folder and the vault root
+
+export const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
+
+export interface AssetContext {
+  vaultPath: string;
+  noteDir: string;
+}
+
+export function prismFileUrl(vaultPath: string, ref: string, noteDir: string): string {
+  return `prism-file:///asset?vault=${encodeURIComponent(vaultPath)}&ref=${encodeURIComponent(ref)}&dir=${encodeURIComponent(noteDir)}`;
+}
+
+// markdown-it renders synchronously; the context is only valid during a call
+let assetCtx: AssetContext | null = null;
+
+md.renderer.rules.wikilink_embed = (tokens, idx) => {
+  const token = tokens[idx];
+  const target = String(token.attrGet("data-embed-target") ?? "");
+  if (IMAGE_EXTS.test(target)) {
+    if (!assetCtx) return `<span class="md-img-missing">${md.utils.escapeHtml(target)}</span>`;
+    return `<img class="md-embed" src="${escapeAttr(prismFileUrl(assetCtx.vaultPath, target, assetCtx.noteDir))}" alt="${escapeAttr(token.content)}" loading="lazy">`;
+  }
+  // .md transcludes (and anything else) degrade to a wikilink
+  return `<a data-wikilink="${escapeAttr(target)}" class="wikilink">${md.utils.escapeHtml(token.content)}</a>`;
+};
+
+const defaultImageRenderer = md.renderer.rules.image;
+md.renderer.rules.image = (tokens, idx, options, env, self) => {
+  const token = tokens[idx];
+  const src = String(token.attrGet("src") ?? "");
+  if (src && !/^(https?:|data:|#|mailto:)/i.test(src)) {
+    if (assetCtx) {
+      token.attrSet("src", prismFileUrl(assetCtx.vaultPath, src.replace(/^[\\/]+/, ""), assetCtx.noteDir));
+    } else {
+      return `<span class="md-img-missing">${md.utils.escapeHtml(token.content || src)}</span>`;
+    }
+  }
+  return defaultImageRenderer ? defaultImageRenderer(tokens, idx, options, env, self) : "";
+};
+
+md.renderer.rules.mdtag = (tokens, idx) => {
+  return `<span class="md-tag">${md.utils.escapeHtml(tokens[idx].content)}</span>`;
+};
+
+// ---- Heading ids + outline extraction ----
+// Runs at the parse level so the outline is independent of DOM mutations
+// (folding moves headings deeper into wrappers)
+
+export interface HeadingOutline {
+  id: string;
+  level: number;
+  text: string;
+}
+
+function inlinePlainText(token: Token): string {
+  let out = "";
+  for (const child of token.children ?? []) {
+    if (child.type === "text" || child.type === "code_inline" || child.type === "math_inline" || child.type === "wikilink" || child.type === "mdtag") {
+      out += child.content;
+    } else if (child.type === "softbreak" || child.type === "hardbreak") {
+      out += " ";
+    }
+  }
+  return out.replace(/[*_~=`$]+/g, "").trim();
+}
+
+md.core.ruler.push("prism_heading_outline", (state) => {
+  const env = (state.env ??= {}) as { outline?: HeadingOutline[] };
+  env.outline = [];
+  let index = 0;
+  for (let i = 0; i < state.tokens.length; i++) {
+    const token = state.tokens[i];
+    if (token.type !== "heading_open") continue;
+    const m = /^h([1-6])$/i.exec(token.tag);
+    if (!m) continue;
+    const id = `hd-${index++}`;
+    token.attrSet("id", id);
+    const inline = state.tokens[i + 1];
+    env.outline.push({
+      id,
+      level: Number(m[1]),
+      text: inline ? inlinePlainText(inline) : "",
+    });
+  }
+});
+
+export interface RenderResult {
+  html: string;
+  frontmatter: Record<string, unknown> | null;
+  outline: HeadingOutline[];
+}
+
+export function stripFrontmatter(src: string): { body: string; frontmatter: Record<string, unknown> | null } {
+  const m = FRONTMATTER_RE.exec(src);
+  if (!m) return { body: src, frontmatter: null };
+  let frontmatter: Record<string, unknown> | null = null;
+  try {
+    const loaded = loadYaml(m[1]);
+    if (loaded && typeof loaded === "object" && !Array.isArray(loaded)) {
+      frontmatter = loaded as Record<string, unknown>;
+    }
+  } catch { /* malformed YAML — show nothing rather than fail the render */ }
+  return { body: src.slice(m[0].length), frontmatter };
+}
+
+export function renderMarkdown(src: string, assetContext?: AssetContext | null): RenderResult {
+  const { body, frontmatter } = stripFrontmatter(src);
+  assetCtx = assetContext ?? null;
+  try {
+    const env: { outline?: HeadingOutline[] } = {};
+    const html = md.render(body, env);
+    return { html, frontmatter, outline: env.outline ?? [] };
+  } finally {
+    assetCtx = null;
+  }
+}
+
+// Flip the nth "[ ]"/"[x]" checkbox in the source document (reading-view
+// checkbox clicks map here by document order)
+export function toggleTaskInSource(src: string, taskIndex: number): string | null {
+  const lines = src.split("\n");
+  const taskLineRe = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/;
+  let seen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = taskLineRe.exec(lines[i]);
+    if (!m) continue;
+    if (seen === taskIndex) {
+      const prefix = m[1];
+      lines[i] = prefix + (m[2] === " " ? "x" : " ") + lines[i].slice(prefix.length + 1);
+      return lines.join("\n");
+    }
+    seen++;
+  }
+  return null;
+}

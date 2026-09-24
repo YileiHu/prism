@@ -179,7 +179,6 @@ const en: Translation = {
   "home.nextActions": "Next Actions",
   "home.recents": "Recent Notes",
   "home.favorites": "Favorites",
-  "home.viewAll": "View all",
   "home.addBlock": "Add Time Block",
   "home.editBlock": "Edit Time Block",
   "home.labelPlaceholder": "e.g. Deep work...",
@@ -188,7 +187,21 @@ const en: Translation = {
   "home.emptyRecents": "No recently opened notes.",
   "home.emptyFavorites": "No favorites yet. Star a note to pin it here.",
   "home.overlapError": "Overlaps an existing time block",
-  "home.timeOrderError": "Start time must be before end time",
+    "home.timeOrderError": "Start time must be before end time",
+
+  // Note editor
+  "editor.edit": "Edit",
+  "editor.reading": "Reading",
+  "editor.openExternal": "Open in Obsidian",
+  "editor.closeTab": "Close tab",
+  "editor.savedAt": "Saved {time}",
+  "editor.unsaved": "Unsaved changes",
+  "editor.linkNoteCreated": "Created note \"{name}\"",
+  "editor.linkNoteFailed": "Failed to create note",
+  "editor.noteDeleted": "File does not exist or was deleted",
+  "editor.foldedLines": "{count} lines folded",
+  "editor.outline": "Outline",
+  "editor.foldCard": "Collapse outline",
 };
 
 export default en;

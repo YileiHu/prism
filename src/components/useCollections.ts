@@ -30,6 +30,12 @@ interface CollectionsFile {
   collections: CollectionData[];
 }
 
+// Invariant: within one collection a note lives in exactly one place —
+// either the root notePaths (ungrouped) or a single group.
+function collectionHasNote(c: CollectionData, relPath: string): boolean {
+  return c.notePaths.includes(relPath) || (c.groups ?? []).some((g) => g.notePaths.includes(relPath));
+}
+
 interface UseCollectionsOptions {
   vaultPath: string;
   notes: ObsidianNote[];
@@ -137,7 +143,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     const relPaths = notePaths.map((p) => toRelativePath(p, vaultPath));
     const target = collections.find((c) => c.id === collectionId);
     if (!target) return;
-    const newOnes = relPaths.filter((np) => !target.notePaths.includes(np));
+    const newOnes = relPaths.filter((np) => !collectionHasNote(target, np));
     showToast(newOnes.length > 0
       ? t["collections.added"].replace("{name}", target.name)
       : t["collections.alreadyExists"]);
@@ -151,7 +157,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   const handleDropNoteDirect = useCallback((collectionId: string, notePaths: string[], silent = false) => {
     const target = collections.find((c) => c.id === collectionId);
     if (!target) return;
-    const newOnes = notePaths.filter((np) => !target.notePaths.includes(np));
+    const newOnes = notePaths.filter((np) => !collectionHasNote(target, np));
     if (!silent) {
       showToast(newOnes.length > 0
         ? t["collections.added"].replace("{name}", target.name)
@@ -165,14 +171,17 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   }, [collections, saveCollections, showToast, t]);
 
   const handleMoveNoteDirect = useCallback((collectionId: string, relPath: string, toGroupId: string) => {
-    updateCollection(collectionId, (c) => ({
-      ...c,
-      groups: (c.groups ?? []).map((g) =>
-        g.id !== toGroupId ? g :
-        g.notePaths.includes(relPath) ? g :
-        { ...g, notePaths: [...g.notePaths, relPath] }
-      ),
-    }));
+    updateCollection(collectionId, (c) => {
+      if (!(c.groups ?? []).some((g) => g.id === toGroupId)) return c;
+      return {
+        ...c,
+        notePaths: c.notePaths.filter((p) => p !== relPath),
+        groups: (c.groups ?? []).map((g) => {
+          const paths = g.notePaths.filter((p) => p !== relPath);
+          return g.id === toGroupId ? { ...g, notePaths: [...paths, relPath] } : { ...g, notePaths: paths };
+        }),
+      };
+    });
   }, [updateCollection]);
 
   // ---- Group operations ----
@@ -246,7 +255,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
         }
         return { ...c, notePaths: c.notePaths.filter((p) => p !== relPath) };
       }
-      if (c.id === toCollId && !c.notePaths.includes(relPath)) {
+      if (c.id === toCollId && !collectionHasNote(c, relPath)) {
         return { ...c, notePaths: [...c.notePaths, relPath] };
       }
       return c;

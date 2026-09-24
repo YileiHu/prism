@@ -24,6 +24,17 @@ import SearchInput from "./SearchInput";
 import EmptyState from "./EmptyState";
 import RenameModal from "./RenameModal";
 import ConfirmDialog from "./ConfirmDialog";
+import NoteTabBar from "./editor/NoteTabBar";
+import NoteEditor from "./editor/NoteEditor";
+import { useNoteTabs } from "./editor/useNoteTabs";
+import { resolveNoteTarget } from "./editor/linkResolver";
+
+export interface NoteOpenRequest {
+  seq: number;
+  vaultPath: string;
+  path: string;
+  title: string;
+}
 
 interface ObsidianNote {
   id: number;
@@ -43,9 +54,10 @@ interface ConfirmState {
 interface Props {
   vaultPath: string;
   onScanComplete?: () => void;
+  openRequest?: NoteOpenRequest | null;
 }
 
-export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
+export default function ObsidianVault({ vaultPath, onScanComplete, openRequest }: Props) {
   const { t } = useT();
 
   const [notes, setNotes] = useState<ObsidianNote[]>([]);
@@ -82,6 +94,22 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
   const showToast = useToast();
   const initialLoadDone = useRef(false);
 
+  // ---- In-app note editor tabs ----
+
+  const {
+    tabs,
+    activePath,
+    setActivePath,
+    restoreFrom,
+    openNote,
+    closeTab,
+    updateNote,
+    removePaths,
+  } = useNoteTabs(vaultPath);
+  const activeNoteTab = activePath ? tabs.find((tab) => tab.path === activePath) : undefined;
+  const editorActive = activeNoteTab !== undefined;
+  const lastOpenSeqRef = useRef(0);
+
   // ---- Vault loading (triggered by vaultPath prop / retry) ----
 
   useEffect(() => {
@@ -106,6 +134,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
           setSelectedCollectionId(lastCollId);
         }
         setNotes(cachedNotes);
+        restoreFrom(cachedNotes);
       } catch {
         // setVaultPath throws when the vault directory is missing/unreadable
         setVaultError(true);
@@ -223,8 +252,44 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
         handleDropNoteDirect(collectionId, [relPath], true);
       }
     }
+    openNote({ path: note.path, title: note.title });
     loadNotes();
   };
+
+  // ---- Wikilink navigation from the reading view ----
+
+  const handleOpenWikilink = async (target: string) => {
+    const all = await window.prism.getNoteList(vaultPath);
+    const found = resolveNoteTarget(target, vaultPath, all);
+    if (found) {
+      openNote({ path: found.path, title: found.title });
+      return;
+    }
+    const title = target.split("#")[0].trim().replace(/\.md$/i, "");
+    if (!title) return;
+    // Images/attachments may still surface as links (non-image embeds
+    // degrade to wikilinks) — they must never create notes
+    if (/\.\w{1,5}$/i.test(target) && !/\.md$/i.test(target)) return;
+    try {
+      const created = await window.prism.createNote(vaultPath, title);
+      openNote({ path: created.path, title: created.title });
+      showToast(t["editor.linkNoteCreated"].replace("{name}", created.title));
+      loadNotes();
+    } catch {
+      showToast(t["editor.linkNoteFailed"]);
+    }
+  };
+
+  // Deep link from the Home dashboard (App switches to this vault's tab)
+  useEffect(() => {
+    if (!openRequest || openRequest.seq === lastOpenSeqRef.current) return;
+    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const vNorm = norm(vaultPath);
+    const pNorm = norm(openRequest.path);
+    if (pNorm !== vNorm && !pNorm.startsWith(vNorm + "/")) return;
+    lastOpenSeqRef.current = openRequest.seq;
+    openNote({ path: openRequest.path, title: openRequest.title });
+  }, [openRequest, vaultPath, openNote]);
 
   // ---- Rename note ----
 
@@ -235,6 +300,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
       const result = await window.prism.renameNote(vaultPath, renameNoteTarget.path, newTitle);
       const newRelPath = toRelativePath(result.path, vaultPath);
       updateNotePaths(oldRelPath, newRelPath);
+      updateNote(renameNoteTarget.path, { path: result.path, title: newTitle });
       showToast(t["obsidian.renamed"].replace("{name}", newTitle));
       loadNotes();
     } catch {
@@ -269,7 +335,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
     const addToCollectionSubmenu: MenuItem[] = collections.length > 0
       ? collections.map((c) => ({
         label: c.name,
-        checked: c.notePaths.includes(relPath),
+        checked: c.notePaths.includes(relPath) || (c.groups ?? []).some((g) => g.notePaths.includes(relPath)),
         onClick: () => handleDropNoteDirect(c.id, [relPath]),
       }))
       : [{ label: t["collections.none"], onClick: () => {} }];
@@ -342,6 +408,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
             // Remove the DB row too, otherwise the next loadNotes() resurrects it
             await window.prism.deleteNotes([note.path]);
             removeNotePaths([relPath]);
+            removePaths([note.path]);
             setNotes((prev) => prev.filter((n) => n.path !== note.path));
             showToast(t["obsidian.trashed"]);
           } else {
@@ -407,6 +474,9 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
         selectedId={selectedCollectionId}
         allNotesCount={sortedNotes.length}
         onSelect={(id) => {
+          // Browsing collections / all notes always leaves the note editor —
+          // the open tab stays in the tab bar (inactive) and can be re-opened
+          setActivePath(null);
           setSelectedCollectionId(id);
           setSelectMode(false);
           setSelectedPaths(new Set());
@@ -438,7 +508,18 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {!selectedCollectionId && (
+        {tabs.length > 0 && (
+          <NoteTabBar
+            tabs={tabs}
+            activePath={activePath}
+            newLabel={t["obsidian.newNote"]}
+            closeLabel={t["editor.closeTab"]}
+            onSelect={setActivePath}
+            onClose={closeTab}
+            onNewNote={() => setShowNewNoteModal(true)}
+          />
+        )}
+        {!selectedCollectionId && !editorActive && (
           <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
             <SearchInput
               value={searchQuery}
@@ -456,8 +537,22 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
         )}
 
         <div className="flex-1 overflow-hidden flex flex-col relative">
+          {editorActive && activeNoteTab && (
+            <NoteEditor
+              key={activeNoteTab.path}
+              vaultPath={vaultPath}
+              notePath={activeNoteTab.path}
+              title={activeNoteTab.title}
+              onNoteGone={closeTab}
+              onOpenWikilink={handleOpenWikilink}
+            />
+          )}
           {selectedCollection && selectedCollectionId && (
-            <div key={selectedCollectionId} className="flex-1 flex flex-col overflow-hidden relative z-10 anim-fade-in">
+            <div
+              key={selectedCollectionId}
+              style={editorActive ? { position: "absolute", inset: 0, visibility: "hidden" } : undefined}
+              className={`flex-1 flex flex-col overflow-hidden relative z-10 ${editorActive ? "" : "anim-fade-in"}`}
+            >
               <div className="px-4 h-11 border-b border-line/50 flex-shrink-0 flex items-center gap-2 glass bg-tint/[0.04]">
                 <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
                 <span className="text-xs text-muted">{t["obsidian.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
@@ -492,12 +587,13 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
                     onRemove: () => handleRemoveNote(selectedCollectionId!, note.relativePath, groupId),
                   },
                 ))}
+                onOpenNote={(note) => openNote({ path: note.path, title: note.title })}
               />
             </div>
           )}
           <div
-            style={!selectedCollectionId ? {} : { position: "absolute", visibility: "hidden" }}
-            className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId ? "anim-fade-in" : ""}`}
+            style={!selectedCollectionId && !editorActive ? {} : { position: "absolute", visibility: "hidden" }}
+            className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId && !editorActive ? "anim-fade-in" : ""}`}
             ref={notesScrollRef}
           >
               {sortedNotes.length === 0 && (
@@ -535,7 +631,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
                           menuItems={getContextMenuItems(note)}
                           onPrimaryClick={() => {
                             if (selectMode) toggleSelectPath(note.path);
-                            else window.prism.openInObsidian(note.path);
+                            else openNote(note);
                           }}
                           selected={isSelected}
                           tooltip={note.path}
@@ -600,6 +696,7 @@ export default function ObsidianVault({ vaultPath, onScanComplete }: Props) {
               onDelete={async () => {
                 const { onConfirm } = handleBatchDelete(Array.from(selectedPaths));
                 await onConfirm();
+                removePaths(Array.from(selectedPaths));
                 setSelectedPaths(new Set());
               }}
             />

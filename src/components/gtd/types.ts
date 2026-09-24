@@ -29,6 +29,17 @@ export interface GtdNextList {
 
 export type GtdListKey = GtdStatus | "next";
 
+export interface GtdFocusRequest {
+  list: "waiting" | "project";
+  itemId?: number;
+  projectId?: number;
+  actionId?: number;
+}
+
+export interface GtdFocus extends GtdFocusRequest {
+  seq: number;
+}
+
 export function formatGtdDate(value: string): string {
   return new Date(value + "Z").toLocaleDateString();
 }

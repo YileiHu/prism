@@ -211,3 +211,356 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- Markdown note editor & reading view ---- */
+
+/* Heading/bold colors — soft pastel palette (creamy, easy on the eyes on the
+   dark surfaces). Tweak these vars to taste; both the editor (CodeMirror)
+   and the reading view use them */
+:root {
+  --md-h1: #e58080;  /* rose red */
+  --md-h2: #7fc87f;  /* green */
+  --md-h3: #85b6ee;  /* blue */
+  --md-h4: #ab98f0;  /* lavender */
+  --md-h5: #6fcdcd;  /* teal */
+  --md-h6: #eda05c;  /* apricot */
+  --md-bold: #f6d968; /* butter yellow */
+}
+
+/* Rendered preview typography (markdown-it output) */
+.markdown-preview {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: rgb(var(--c-primary));
+  overflow-wrap: break-word;
+}
+.markdown-preview > :first-child { margin-top: 0; }
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3,
+.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  color: rgb(var(--c-primary));
+  margin: 1.2em 0 0.45em;
+  scroll-margin-top: 12px;
+}
+.markdown-preview h1 { font-size: 1.6em; color: var(--md-h1); }
+.markdown-preview h2 { font-size: 1.4em; color: var(--md-h2); }
+.markdown-preview h3 { font-size: 1.22em; color: var(--md-h3); }
+.markdown-preview h4 { font-size: 1.1em; color: var(--md-h4); }
+.markdown-preview h5 { font-size: 1em; color: var(--md-h5); }
+.markdown-preview h6 { font-size: 1em; color: var(--md-h6); }
+.markdown-preview strong, .markdown-preview b { color: var(--md-bold); }
+.markdown-preview p { margin: 0.55em 0; }
+.markdown-preview ul, .markdown-preview ol { padding-left: 1.5em; margin: 0.4em 0; }
+.markdown-preview ul { list-style: disc; }
+.markdown-preview ul ul { list-style: circle; }
+.markdown-preview ul ul ul { list-style: square; }
+.markdown-preview ol { list-style: decimal; }
+.markdown-preview li { margin: 0.15em 0; }
+.markdown-preview ul.contains-task-list { padding-left: 0.4em; list-style: none; }
+.markdown-preview li.task-list-item { list-style: none; }
+.markdown-preview input.task-list-item-checkbox {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  margin-right: 0.45em;
+  vertical-align: -2px;
+  cursor: pointer;
+}
+.markdown-preview blockquote {
+  border-left: 3px solid rgb(var(--c-strong));
+  padding: 0.1em 0 0.1em 0.9em;
+  margin: 0.6em 0;
+  color: rgb(var(--c-tertiary));
+}
+.markdown-preview code {
+  background: rgb(var(--c-tint) / 0.08);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-family: Consolas, "Cascadia Code", SFMono-Regular, Menlo, monospace;
+}
+.markdown-preview pre.md-code {
+  position: relative;
+  background: rgba(30, 30, 30, 0.92);
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0.7em 0;
+  overflow-x: auto;
+}
+.markdown-preview pre.md-code code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d4d4d4;
+}
+.markdown-preview pre.md-code[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(var(--c-faint));
+  pointer-events: none;
+}
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 0.7em 0;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-preview th, .markdown-preview td {
+  border: 1px solid rgb(var(--c-strong));
+  padding: 5px 12px;
+}
+.markdown-preview th { background: rgb(var(--c-tint) / 0.05); font-weight: 600; }
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid rgb(var(--c-strong));
+  margin: 1.2em 0;
+}
+.markdown-preview img { max-width: 100%; border-radius: 8px; }
+.markdown-preview a[href] { color: var(--accent-text); }
+
+/* ==highlight== (markdown-it-mark) */
+.markdown-preview mark {
+  background: rgba(250, 204, 21, 0.28);
+  color: inherit;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+/* ![[image]] embeds and local images */
+.markdown-preview .md-embed {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.3em 0;
+}
+.markdown-preview .md-img-missing {
+  display: inline-block;
+  padding: 0 0.5em;
+  border-radius: 4px;
+  border: 1px dashed rgb(var(--c-strong));
+  color: rgb(var(--c-muted));
+  font-size: 0.85em;
+}
+
+/* KaTeX display math scroll + spacing */
+.markdown-preview .katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ---- Editor live preview decorations (CodeMirror) ---- */
+
+.cm-md-checkbox {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  margin-right: 0.4em;
+  cursor: pointer;
+}
+.cm-md-bullet {
+  color: rgb(var(--c-tertiary));
+}
+.cm-md-wikilink {
+  color: var(--accent-text);
+  border-bottom: 1px dashed rgb(var(--accent-rgb) / 0.5);
+  cursor: pointer;
+}
+.cm-md-wikilink:hover { border-bottom-style: solid; }
+.cm-md-highlight {
+  background: rgba(250, 204, 21, 0.28);
+  border-radius: 3px;
+}
+.cm-md-tag {
+  background: var(--accent-muted);
+  color: var(--accent-text);
+  border-radius: 4px;
+  padding: 0 0.5em;
+  font-size: 0.85em;
+}
+.cm-md-blockquote {
+  border-left: 3px solid rgb(var(--c-strong));
+  padding-left: 10px;
+  margin-left: 2px;
+}
+.cm-md-image {
+  max-width: 100%;
+  border-radius: 8px;
+  vertical-align: top;
+}
+.cm-md-math { color: rgb(var(--c-primary)); }
+.cm-md-math-display {
+  display: block;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.cm-md-table {
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+.cm-md-table table {
+  border-collapse: collapse;
+}
+.cm-md-table th, .cm-md-table td {
+  border: 1px solid rgb(var(--c-strong));
+  padding: 4px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.cm-md-table th {
+  background: rgb(var(--c-tint) / 0.05);
+  font-weight: 600;
+  color: rgb(var(--c-primary));
+}
+
+/* Heading fold controls — editor (CodeMirror widgets) */
+.cm-md-fold-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  border-radius: 4px;
+  color: rgb(var(--c-faint));
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.cm-md-fold-chevron:hover {
+  background: rgb(var(--c-tint) / 0.08);
+  color: rgb(var(--c-secondary));
+}
+.cm-md-fold-placeholder {
+  display: inline-block;
+  padding: 1px 10px;
+  margin: 2px 0;
+  border-radius: 999px;
+  background: rgb(var(--c-tint) / 0.06);
+  border: 1px dashed rgb(var(--c-strong));
+  color: rgb(var(--c-muted));
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.cm-md-fold-placeholder:hover {
+  color: rgb(var(--c-secondary));
+}
+
+/* Heading fold controls — reading view */
+.markdown-preview .md-foldable {
+  position: relative;
+}
+.markdown-preview .md-fold-btn {
+  /* Positioned left of the heading text so headings stay flush with body */
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: rgb(var(--c-faint));
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+.markdown-preview .md-fold-btn:hover {
+  background: rgb(var(--c-tint) / 0.08);
+  color: rgb(var(--c-secondary));
+}
+.markdown-preview .md-fold-btn.md-folded {
+  transform: translateY(-50%) rotate(-90deg);
+}
+.markdown-preview .md-foldable.md-folded {
+  border-bottom: 1px dashed rgb(var(--c-strong));
+  padding-bottom: 10px;
+}
+
+/* [[wikilink]] and #tag */
+.wikilink {
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed rgb(var(--accent-rgb) / 0.5);
+}
+.wikilink:hover { border-bottom-style: solid; }
+.md-tag {
+  display: inline-block;
+  font-size: 0.85em;
+  padding: 0 0.5em;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: var(--accent-muted);
+  color: var(--accent-text);
+  cursor: default;
+}
+
+/* Callouts (> [!type]) — per-type hue as an --callout-rgb triplet */
+.callout {
+  --callout-rgb: var(--accent-rgb);
+  border: 1px solid rgb(var(--callout-rgb) / 0.25);
+  border-left: 3px solid rgb(var(--callout-rgb));
+  background: rgb(var(--callout-rgb) / 0.08);
+  border-radius: 8px;
+  margin: 0.7em 0;
+  overflow: hidden;
+}
+/* Families follow Obsidian's official callout colors */
+.callout[data-callout="info"],
+.callout[data-callout="todo"]    { --callout-rgb: 14 165 233; }  /* blue */
+.callout[data-callout="abstract"],
+.callout[data-callout="tip"]     { --callout-rgb: 20 184 166; }  /* teal/cyan */
+.callout[data-callout="success"] { --callout-rgb: 34 197 94; }   /* green */
+.callout[data-callout="question"]{ --callout-rgb: 234 179 8; }   /* yellow */
+.callout[data-callout="warning"] { --callout-rgb: 249 115 22; }  /* orange */
+.callout[data-callout="failure"],
+.callout[data-callout="danger"],
+.callout[data-callout="error"],
+.callout[data-callout="bug"]     { --callout-rgb: 239 68 68; }   /* red */
+.callout[data-callout="example"] { --callout-rgb: 168 85 247; }  /* purple */
+.callout[data-callout="quote"]   { --callout-rgb: 156 163 175; } /* grey */
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.95em;
+  font-weight: 600;
+  color: rgb(var(--callout-rgb));
+}
+.callout-title-icon { display: inline-flex; }
+.callout-content { padding: 2px 12px 8px; }
+.callout-content > :first-child { margin-top: 0.15em; }
+.callout-content > :last-child { margin-bottom: 0.1em; }
+
+/* highlight.js tokens — VS Code Dark+ palette */
+.hljs-comment, .hljs-quote { color: #6a9955; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-name { color: #569cd6; }
+.hljs-string, .hljs-regexp, .hljs-addition { color: #ce9178; }
+.hljs-number { color: #b5cea8; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: #dcdcaa; }
+.hljs-built_in, .hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: #4ec9b0; }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable { color: #9cdcfe; }
+.hljs-tag { color: #569cd6; }
+.hljs-symbol, .hljs-bullet { color: #d4d4d4; }
+.hljs-meta { color: #9cdcfe; }
+.hljs-link { color: #569cd6; text-decoration: underline; }
+.hljs-deletion { color: #f14c4c; background: rgba(241, 76, 76, 0.15); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+

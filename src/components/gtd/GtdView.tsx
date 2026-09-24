@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Inbox, Zap, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
 import Sidebar from "../Sidebar";
 import { useT } from "../../i18n";
@@ -7,9 +7,13 @@ import GtdItemList from "./GtdItemList";
 import GtdProjects from "./GtdProjects";
 import GtdNextList from "./GtdNextList";
 import GtdProcessDialog from "./GtdProcessDialog";
-import type { GtdItem, GtdListKey, GtdStatus } from "./types";
+import type { GtdFocus, GtdItem, GtdListKey, GtdStatus } from "./types";
 
-export default function GtdView() {
+interface Props {
+  focus: GtdFocus | null;
+}
+
+export default function GtdView({ focus }: Props) {
   const { t } = useT();
   const [list, setList] = useState<GtdListKey>("next");
   const [counts, setCounts] = useState<Record<GtdStatus, number>>({
@@ -21,6 +25,17 @@ export default function GtdView() {
   });
   const [processing, setProcessing] = useState<GtdItem | null>(null);
   const [version, setVersion] = useState(0);
+  const [activeFocus, setActiveFocus] = useState<GtdFocus | null>(null);
+  const focusSeqRef = useRef(0);
+
+  // Apply incoming navigation requests from Home exactly once (seq-guarded so
+  // repeat clicks on the same item still re-trigger)
+  useEffect(() => {
+    if (!focus || focus.seq === focusSeqRef.current) return;
+    focusSeqRef.current = focus.seq;
+    setActiveFocus(focus);
+    setList(focus.list);
+  }, [focus]);
 
   const reloadCounts = useCallback(async () => {
     setCounts(await window.prism.getGtdCounts());
@@ -78,9 +93,24 @@ export default function GtdView() {
             version={version}
             onProcess={setProcessing}
             onChanged={handleChanged}
+            focusItem={
+              activeFocus?.list === "waiting" && activeFocus.itemId
+                ? { id: activeFocus.itemId, seq: activeFocus.seq }
+                : null
+            }
           />
         )}
-        {list === "project" && <GtdProjects version={version} onChanged={handleChanged} />}
+        {list === "project" && (
+          <GtdProjects
+            version={version}
+            onChanged={handleChanged}
+            focusAction={
+              activeFocus?.list === "project" && activeFocus.projectId
+                ? { projectId: activeFocus.projectId, actionId: activeFocus.actionId ?? 0, seq: activeFocus.seq }
+                : null
+            }
+          />
+        )}
       </div>
 
       <GtdProcessDialog

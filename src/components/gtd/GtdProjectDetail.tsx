@@ -13,9 +13,10 @@ interface Props {
   project: GtdItem;
   version: number;
   onChanged: () => void;
+  focusAction?: { projectId: number; actionId: number; seq: number } | null;
 }
 
-export default function GtdProjectDetail({ project, version, onChanged }: Props) {
+export default function GtdProjectDetail({ project, version, onChanged, focusAction }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const [actions, setActions] = useState<GtdAction[]>([]);
@@ -23,11 +24,25 @@ export default function GtdProjectDetail({ project, version, onChanged }: Props)
   const [renaming, setRenaming] = useState<GtdAction | null>(null);
   const [deleting, setDeleting] = useState<GtdAction | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
+  const handledSeqRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     window.prism.getGtdActions(project.id).then(setActions);
   }, [project.id, version]);
+
+  // Scroll to and flash the action targeted by a Home navigation once loaded
+  useEffect(() => {
+    if (!focusAction || focusAction.projectId !== project.id) return;
+    if (handledSeqRef.current === focusAction.seq) return;
+    if (!actions.some((a) => a.id === focusAction.actionId)) return;
+    handledSeqRef.current = focusAction.seq;
+    document.getElementById(`gtd-action-${focusAction.actionId}`)?.scrollIntoView({ block: "center" });
+    setHighlightId(focusAction.actionId);
+    // No cleanup — same reason as GtdItemList
+    setTimeout(() => setHighlightId(null), 1600);
+  }, [focusAction, actions, project.id]);
 
   const allDone = actions.length > 0 && actions.every((a) => a.is_done === 1);
 
@@ -96,8 +111,9 @@ export default function GtdProjectDetail({ project, version, onChanged }: Props)
         {actions.map((action) => (
           <ItemRow
             key={action.id}
+            id={`gtd-action-${action.id}`}
             variant="list"
-            className="border-b border-line/30"
+            className={`border-b border-line/30 ${highlightId === action.id ? "bg-[var(--accent-muted)]" : ""}`}
             menuItems={[
               { label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(action) },
               { label: "", divider: true },

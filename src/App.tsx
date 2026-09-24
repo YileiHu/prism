@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import WebResources from "./components/WebResources";
-import ObsidianVault from "./components/ObsidianVault";
+import ObsidianVault, { type NoteOpenRequest } from "./components/ObsidianVault";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
 import HomeView from "./components/home/HomeView";
@@ -13,6 +13,7 @@ import { ContextMenuProvider } from "./lib/useContextMenu";
 import { ToastProvider } from "./lib/toast";
 import ChangelogModal from "./components/ChangelogModal";
 import { type VaultEntry } from "./types";
+import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
 import "./lib/api";
 
 type SpecialTab = "home" | "resources" | "gtd" | "settings";
@@ -28,6 +29,8 @@ export default function App() {
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [gtdFocus, setGtdFocus] = useState<GtdFocus | null>(null);
+  const [noteOpenRequest, setNoteOpenRequest] = useState<NoteOpenRequest | null>(null);
   const splashHidden = useRef(false);
 
   useEffect(() => {
@@ -141,6 +144,38 @@ export default function App() {
     }
   };
 
+  const handleNavigateToGtd = (req: GtdFocusRequest) => {
+    setGtdFocus({ ...req, seq: Date.now() });
+    handleTabClick("gtd");
+  };
+
+  // Home dashboard deep link: open a note in the in-app editor. The matching
+  // ObsidianVault pane consumes the request via openRequest (it also covers
+  // vaults that are not mounted yet).
+  useEffect(() => {
+    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ path: string; title?: string }>).detail;
+      if (!detail?.path) return;
+      const pNorm = norm(detail.path);
+      const target = vaultsRef.current.find((v) => {
+        const vNorm = norm(v.path);
+        return pNorm === vNorm || pNorm.startsWith(vNorm + "/");
+      });
+      if (!target) return;
+      const fallbackTitle = detail.path.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ?? detail.path;
+      setNoteOpenRequest({
+        seq: Date.now(),
+        vaultPath: target.path,
+        path: detail.path,
+        title: detail.title || fallbackTitle,
+      });
+      handleTabClick(target.path);
+    };
+    window.addEventListener("prism:open-note", handler);
+    return () => window.removeEventListener("prism:open-note", handler);
+  }, []);
+
   const vaultTabs = vaults.map((v) => ({
     key: v.path,
     label: v.name,
@@ -231,13 +266,13 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden relative">
         <div style={paneStyle(activeTab === "home")} className={activeTab === "home" ? "pane-enter" : ""}>
-          <HomeView active={activeTab === "home"} onNavigateToGtd={() => handleTabClick("gtd")} />
+          <HomeView active={activeTab === "home"} onNavigateToGtd={handleNavigateToGtd} />
         </div>
         <div style={paneStyle(activeTab === "resources")} className={activeTab === "resources" ? "pane-enter" : ""}>
           <WebResources onReady={handleContentReady} />
         </div>
         <div style={paneStyle(activeTab === "gtd")} className={activeTab === "gtd" ? "pane-enter" : ""}>
-          <GtdView />
+          <GtdView focus={gtdFocus} />
         </div>
         <div style={paneStyle(activeTab === "settings")} className={activeTab === "settings" ? "pane-enter" : ""}>
           <Settings />
@@ -250,6 +285,7 @@ export default function App() {
               <ObsidianVault
                 vaultPath={v.path}
                 onScanComplete={handleScanComplete}
+                openRequest={noteOpenRequest}
               />
             </div>
           );

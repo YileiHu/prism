@@ -49,6 +49,7 @@ interface Props {
   onRemoveNote: (noteRelPath: string, groupId: string | null) => void;
   onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
+  onOpenNote: (note: NoteInfo) => void;
 }
 
 // Returns the group containing the note, null for ungrouped, undefined when absent
@@ -78,6 +79,7 @@ function SortableGroupCard({
   onRemoveNote,
   onReorderNotes,
   onNoteContextMenu,
+  onOpenNote,
 }: {
   group: GroupView;
   collapsed: boolean;
@@ -89,6 +91,7 @@ function SortableGroupCard({
   onRemoveNote: (relPath: string, groupId: string | null) => void;
   onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
+  onOpenNote: (note: NoteInfo) => void;
 }) {
   const { t } = useT();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -191,6 +194,7 @@ function SortableGroupCard({
                     onRemoveNote={onRemoveNote}
                     onReorderNotes={onReorderNotes}
                     onNoteContextMenu={onNoteContextMenu}
+                    onOpenNote={onOpenNote}
                   />
                 ))}
               </SortableContext>
@@ -210,12 +214,14 @@ function SortableNoteRow({
   onRemoveNote,
   onReorderNotes,
   onNoteContextMenu,
+  onOpenNote,
 }: {
   note: NoteInfo;
   groupId: string | null;
   onRemoveNote: (relPath: string, groupId: string | null) => void;
   onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
+  onOpenNote: (note: NoteInfo) => void;
 }) {
   const { t } = useT();
   const {
@@ -242,7 +248,7 @@ function SortableNoteRow({
       className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
         note.missing ? "opacity-50" : "hover:bg-hover/30"
       }`}
-      onClick={() => { if (!note.missing) window.prism.openInObsidian(note.path); }}
+      onClick={() => { if (!note.missing) onOpenNote(note); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onNoteContextMenu(e, note, groupId); }}
     >
       <span className={`flex-1 text-sm truncate ${note.missing ? "text-faint line-through" : "text-primary"}`}>
@@ -298,6 +304,7 @@ export default function CollectionDetail({
   onRemoveNote,
   onReorderNotes,
   onNoteContextMenu,
+  onOpenNote,
 }: Props) {
   const { t } = useT();
   const [addingGroup, setAddingGroup] = useState(false);
@@ -430,6 +437,7 @@ export default function CollectionDetail({
               onRemoveNote={onRemoveNote}
               onReorderNotes={onReorderNotes}
               onNoteContextMenu={onNoteContextMenu}
+              onOpenNote={onOpenNote}
             />
           ))}
         </SortableContext>
@@ -467,6 +475,7 @@ export default function CollectionDetail({
                         onRemoveNote={onRemoveNote}
                         onReorderNotes={onReorderNotes}
                         onNoteContextMenu={onNoteContextMenu}
+                        onOpenNote={onOpenNote}
                       />
                     ))}
                   </SortableContext>

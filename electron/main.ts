@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol } from "electron";
 import path from "path";
 import fs from "fs";
 import { spawn } from "child_process";
@@ -48,6 +48,12 @@ import {
 } from "./database";
 
 let mainWindow: BrowserWindow | null = null;
+
+// Must run before app ready — lets <img src="prism-file://..."> work from the
+// renderer for markdown note images (the renderer can't fetch file:// directly)
+protocol.registerSchemesAsPrivileged([
+  { scheme: "prism-file", privileges: { supportFetchAPI: true, stream: true } },
+]);
 
 // ---- Window state persistence ----
 
@@ -454,6 +460,25 @@ function watchVault(vaultPath: string): void {
   vaultWatchers.set(vaultPath, watchers);
 }
 
+// Resolve which registered vault contains filePath. Longest prefix wins so
+// nested vault roots resolve to the tighter scope. Returns null when the file
+// is outside every registered vault — read/write IPC must refuse such paths.
+function findOwningVault(filePath: string): string | null {
+  let vaults: string[] = [];
+  try {
+    const raw = getSetting("vault_paths");
+    if (raw) vaults = (JSON.parse(raw) as { path: string }[]).map((v) => v.path);
+  } catch { /* malformed setting — treat as no vaults */ }
+  const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const target = norm(filePath);
+  const owned = vaults.filter((v) => {
+    const vNorm = norm(v);
+    return target === vNorm || target.startsWith(vNorm + "/");
+  });
+  if (owned.length === 0) return null;
+  return owned.sort((a, b) => b.length - a.length)[0];
+}
+
 // ---- IPC Handlers ----
 
 function registerIpcHandlers(): void {
@@ -556,6 +581,37 @@ function registerIpcHandlers(): void {
     } else {
       shell.openExternal(uri);
     }
+  });
+
+  ipcMain.handle("obsidian:read-note", async (_e, filePath: string) => {
+    if (!findOwningVault(filePath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    const stat = await fs.promises.stat(filePath);
+    return {
+      path: filePath,
+      title: path.basename(filePath).replace(/\.md$/i, ""),
+      content,
+      modified_at: stat.mtime.toISOString(),
+    };
+  });
+
+  ipcMain.handle("obsidian:save-note", async (_e, filePath: string, content: string) => {
+    const vaultPath = findOwningVault(filePath);
+    if (!vaultPath) throw new Error("NOTE_OUTSIDE_VAULT");
+    await fs.promises.writeFile(filePath, content, "utf-8");
+    // Store the file's real mtime so the watcher's incremental scan compares
+    // equal and skips re-reading — no save→rescan→vault-updated loop
+    const stat = await fs.promises.stat(filePath);
+    const modified_at = stat.mtime.toISOString();
+    const tags = Array.from(extractTags(content)).join(" ");
+    syncVaultNotes(vaultPath, [{
+      path: filePath,
+      title: path.basename(filePath).replace(/\.md$/i, ""),
+      content,
+      tags,
+      modified_at,
+    }], []);
+    return { modified_at };
   });
 
   // Launch Obsidian without a target file (Settings "test" button)
@@ -715,9 +771,84 @@ function registerIpcHandlers(): void {
 
 // ---- App lifecycle ----
 
+const ASSET_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", avif: "image/avif",
+  ico: "image/x-icon", mp4: "video/mp4", webm: "video/webm", mp3: "audio/mpeg",
+  wav: "audio/wav", ogg: "audio/ogg", pdf: "application/pdf",
+};
+
+async function findAssetByBasename(vaultPath: string, basename: string): Promise<string | null> {
+  const wanted = basename.toLowerCase();
+  const queue: string[] = [vaultPath];
+  while (queue.length > 0) {
+    const dir = queue.shift()!;
+    let entries: fs.Dirent[];
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith(".")) queue.push(full);
+      } else if (entry.name.toLowerCase() === wanted) {
+        return full;
+      }
+    }
+  }
+  return null;
+}
+
+// prism-file:///asset?vault=<vault>&ref=<image ref>&dir=<note folder> —
+// resolves the ref the way Obsidian does: note-relative, then vault-root,
+// then (bare filenames only) a basename scan of the vault. Only registered
+// vaults and known media extensions are served.
+function registerAssetProtocol(): void {
+  protocol.handle("prism-file", async (request) => {
+    try {
+      const url = new URL(request.url);
+      const vault = decodeURIComponent(url.searchParams.get("vault") ?? "");
+      const ref = decodeURIComponent(url.searchParams.get("ref") ?? "");
+      const dir = decodeURIComponent(url.searchParams.get("dir") ?? "");
+      if (!vault || !ref || !findOwningVault(vault)) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const ext = path.extname(ref).replace(".", "").toLowerCase();
+      const mime = ASSET_MIME[ext];
+      if (!mime) return new Response("unsupported type", { status: 415 });
+
+      const cleanRef = ref.replace(/^[\\/]+/, "");
+      const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+      const vaultNorm = norm(vault);
+      const inside = (p: string) => {
+        const n = norm(p);
+        return n === vaultNorm || n.startsWith(vaultNorm + "/");
+      };
+
+      const candidates = [
+        dir ? path.join(vault, dir, cleanRef) : null,
+        path.join(vault, cleanRef),
+      ].filter((p): p is string => Boolean(p));
+      let target = candidates.find((p) => {
+        try { return inside(p) && fs.statSync(p).isFile(); } catch { return false; }
+      });
+
+      if (!target && !cleanRef.includes("/")) {
+        const found = await findAssetByBasename(vault, path.basename(cleanRef));
+        if (found && inside(found)) target = found;
+      }
+      if (!target) return new Response("not found", { status: 404 });
+
+      const data = await fs.promises.readFile(target);
+      return new Response(new Uint8Array(data), { headers: { "content-type": mime } });
+    } catch {
+      return new Response("error", { status: 500 });
+    }
+  });
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   initDatabase();
+  registerAssetProtocol();
   registerIpcHandlers();
   createWindow();
 

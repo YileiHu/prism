@@ -180,7 +180,6 @@ const zh = {
   "home.nextActions": "下一步",
   "home.recents": "最近打开",
   "home.favorites": "收藏",
-  "home.viewAll": "查看全部",
   "home.addBlock": "添加时间段",
   "home.editBlock": "编辑时间段",
   "home.labelPlaceholder": "例如：深度工作...",
@@ -189,7 +188,21 @@ const zh = {
   "home.emptyRecents": "暂无最近打开的笔记。",
   "home.emptyFavorites": "暂无收藏，在笔记上点星标即可收藏。",
   "home.overlapError": "与已有时间段重叠",
-  "home.timeOrderError": "开始时间必须早于结束时间",
+    "home.timeOrderError": "开始时间必须早于结束时间",
+
+  // Note editor
+  "editor.edit": "编辑",
+  "editor.reading": "阅读",
+  "editor.openExternal": "在 Obsidian 中打开",
+  "editor.closeTab": "关闭标签页",
+  "editor.savedAt": "已保存 {time}",
+  "editor.unsaved": "有未保存的更改",
+  "editor.linkNoteCreated": "已创建笔记「{name}」",
+  "editor.linkNoteFailed": "创建笔记失败",
+  "editor.noteDeleted": "文件不存在或已被删除",
+  "editor.foldedLines": "已折叠 {count} 行",
+  "editor.outline": "大纲",
+  "editor.foldCard": "折叠大纲",
 };
 
 export default zh;

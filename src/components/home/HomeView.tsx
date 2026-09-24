@@ -5,10 +5,11 @@ import ScheduleTimeline from "./ScheduleTimeline";
 import HomeNextActions from "./HomeNextActions";
 import NoteListCard, { type NoteRow } from "./NoteListCard";
 import { formatRecentTime, type FavoriteNote, type RecentNote } from "./types";
+import type { GtdFocusRequest } from "../gtd/types";
 
 interface Props {
   active: boolean;
-  onNavigateToGtd: () => void;
+  onNavigateToGtd: (req: GtdFocusRequest) => void;
 }
 
 export default function HomeView({ active, onNavigateToGtd }: Props) {
@@ -64,11 +65,13 @@ export default function HomeView({ active, onNavigateToGtd }: Props) {
       <div className="w-[320px] flex-shrink-0 min-h-0">
         <ScheduleTimeline version={version} onChanged={bump} />
       </div>
-      <div className="flex-1 min-w-0 flex flex-col gap-3 overflow-y-auto">
-        <HomeNextActions version={version} onChanged={bump} onNavigateToGtd={onNavigateToGtd} />
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="flex-1 min-w-0 flex gap-3 overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0">
+          <HomeNextActions version={version} onChanged={bump} onNavigateToGtd={onNavigateToGtd} />
+        </div>
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
           <NoteListCard title={t["home.recents"]} icon={History} rows={recentRows} emptyText={t["home.emptyRecents"]} />
-          <NoteListCard title={t["home.favorites"]} icon={Star} rows={favoriteRows} emptyText={t["home.emptyFavorites"]} onUnstar={unstar} />
+          <NoteListCard title={t["home.favorites"]} icon={Star} rows={favoriteRows} emptyText={t["home.emptyFavorites"]} accent onUnstar={unstar} />
         </div>
       </div>
     </div>

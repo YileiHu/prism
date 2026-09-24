@@ -17,10 +17,11 @@ interface Props {
   icon: LucideIcon;
   rows: NoteRow[];
   emptyText: string;
+  accent?: boolean;
   onUnstar?: (row: NoteRow) => void;
 }
 
-export default function NoteListCard({ title, icon, rows, emptyText, onUnstar }: Props) {
+export default function NoteListCard({ title, icon, rows, emptyText, accent, onUnstar }: Props) {
   const { t } = useT();
 
   return (
@@ -28,8 +29,9 @@ export default function NoteListCard({ title, icon, rows, emptyText, onUnstar }:
       icon={icon}
       title={title}
       count={rows.length}
-      className="flex flex-col min-h-0"
-      bodyClassName="p-1.5 overflow-y-auto max-h-[260px]"
+      accent={accent}
+      className="flex-1 min-h-0 flex flex-col"
+      bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >
       {rows.length === 0 && <EmptyState size="card" text={emptyText} />}
       {rows.map((row) => (
@@ -37,7 +39,11 @@ export default function NoteListCard({ title, icon, rows, emptyText, onUnstar }:
           key={row.path}
           variant="dense"
           className={row.missing ? "opacity-50" : ""}
-          onPrimaryClick={row.missing ? undefined : () => window.prism.openInObsidian(row.path)}
+          onPrimaryClick={
+            row.missing
+              ? undefined
+              : () => window.dispatchEvent(new CustomEvent("prism:open-note", { detail: { path: row.path, title: row.title } }))
+          }
           title={row.missing ? <span className="text-faint line-through">{row.title}</span> : row.title}
           meta={
             row.missing ? (

@@ -13,9 +13,10 @@ import type { GtdItem } from "./types";
 interface Props {
   version: number;
   onChanged: () => void;
+  focusAction?: { projectId: number; actionId: number; seq: number } | null;
 }
 
-export default function GtdProjects({ version, onChanged }: Props) {
+export default function GtdProjects({ version, onChanged, focusAction }: Props) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
   const showToast = useToast();
@@ -27,6 +28,11 @@ export default function GtdProjects({ version, onChanged }: Props) {
   useEffect(() => {
     window.prism.getGtdItems("project").then(setProjects);
   }, [version]);
+
+  // Select the project targeted by a Home navigation
+  useEffect(() => {
+    if (focusAction) setSelectedId(focusAction.projectId);
+  }, [focusAction]);
 
   // Fall back to the first project when nothing (valid) is selected — e.g. the
   // current one was completed or deleted
@@ -104,6 +110,7 @@ export default function GtdProjects({ version, onChanged }: Props) {
                 project={selected}
                 version={version}
                 onChanged={onChanged}
+                focusAction={focusAction}
               />
             </div>
           )}

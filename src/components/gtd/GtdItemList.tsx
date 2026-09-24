@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Star, Check, ListChecks, Trash2, Pencil } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
@@ -14,18 +14,33 @@ interface Props {
   version: number;
   onProcess: (item: GtdItem) => void;
   onChanged: () => void;
+  focusItem?: { id: number; seq: number } | null;
 }
 
-export default function GtdItemList({ status, version, onProcess, onChanged }: Props) {
+export default function GtdItemList({ status, version, onProcess, onChanged, focusItem }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const [items, setItems] = useState<GtdItem[]>([]);
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [deleting, setDeleting] = useState<GtdItem | null>(null);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
+  const handledSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
     window.prism.getGtdItems(status).then(setItems);
   }, [status, version]);
+
+  // Scroll to and flash the item targeted by a Home navigation once it's loaded
+  useEffect(() => {
+    if (!focusItem || handledSeqRef.current === focusItem.seq) return;
+    if (!items.some((i) => i.id === focusItem.id)) return;
+    handledSeqRef.current = focusItem.seq;
+    document.getElementById(`gtd-item-${focusItem.id}`)?.scrollIntoView({ block: "center" });
+    setHighlightId(focusItem.id);
+    // No cleanup: items reloads (version bump) would cancel the timer and leave
+    // the highlight stuck; a late setState after unmount is a harmless no-op
+    setTimeout(() => setHighlightId(null), 1600);
+  }, [focusItem, items]);
 
   const toggleNext = async (item: GtdItem) => {
     await window.prism.setGtdItemNext(item.id, !item.is_next);
@@ -71,8 +86,9 @@ export default function GtdItemList({ status, version, onProcess, onChanged }: P
       {items.map((item) => (
         <ItemRow
           key={item.id}
+          id={`gtd-item-${item.id}`}
           variant="list"
-          className="border-b border-line/30"
+          className={`border-b border-line/30 ${highlightId === item.id ? "bg-[var(--accent-muted)]" : ""}`}
           menuItems={menuFor(item)}
           leading={
             status === "waiting" ? (
