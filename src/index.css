@@ -418,6 +418,26 @@ body {
   overflow-y: hidden;
 }
 
+/* Edit-mode image preview: block widget below the raw ![]()/![[ ]] line */
+.cm-md-image-preview {
+  padding: 4px 0 2px;
+  cursor: default;
+}
+.cm-md-image-preview img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--c-line));
+}
+.cm-md-image-missing {
+  display: inline-block;
+  padding: 0 0.5em;
+  border-radius: 4px;
+  border: 1px dashed rgb(var(--c-strong));
+  color: rgb(var(--c-muted));
+  font-size: 0.85em;
+}
+
 /* Fenced code blocks in the editor: continuous tinted block, monospace */
 .cm-line.cm-md-codeblock {
   background: rgb(var(--c-tint) / 0.055);

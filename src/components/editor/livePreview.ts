@@ -3,10 +3,14 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/v
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import { renderToString } from "katex";
+import { IMAGE_EXTS, prismFileUrl, type AssetContext } from "./markdown";
 
 export interface LivePreviewHooks {
   onOpenWikilink: (target: string) => void;
   onOpenLink: (url: string) => void;
+  // Resolves vault-relative image refs to prism-file:// URLs for the
+  // edit-mode image preview widgets
+  assetCtx: AssetContext;
 }
 
 // Nodes whose marker text hides while the selection is outside their parent
@@ -69,6 +73,42 @@ class BulletWidget extends WidgetType {
   }
 }
 
+// Non-editable image preview rendered as a block widget below the line that
+// holds the raw ![]()/![[ ]] syntax (edit mode keeps the link visible)
+class ImagePreviewWidget extends WidgetType {
+  constructor(readonly images: { src: string; alt: string }[]) { super(); }
+
+  override eq(other: this): boolean {
+    return other.images.length === this.images.length &&
+      other.images.every((im, i) => im.src === this.images[i].src && im.alt === this.images[i].alt);
+  }
+
+  override toDOM(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-md-image-preview";
+    for (const { src, alt } of this.images) {
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = alt;
+      img.draggable = false;
+      img.loading = "lazy";
+      img.addEventListener("error", () => {
+        const missing = document.createElement("span");
+        missing.className = "cm-md-image-missing";
+        missing.textContent = alt || src;
+        img.replaceWith(missing);
+      });
+      wrap.appendChild(img);
+    }
+    return wrap;
+  }
+}
+
+function imageSrc(ref: string, assetCtx: AssetContext): string {
+  if (/^(https?:|data:)/i.test(ref)) return ref;
+  return prismFileUrl(assetCtx.vaultPath, ref.replace(/^[\\/]+/, ""), assetCtx.noteDir);
+}
+
 // ---- Helpers ----
 
 function isActiveLine(activeLines: Set<number>, state: EditorState, pos: number): boolean {
@@ -121,12 +161,16 @@ function wikilinkParts(inner: string): { target: string; hiddenHead: number } {
 }
 
 // Regex-based inline decorations for syntax the lezer grammar doesn't model
-// (wikilinks, ==highlight==, #tags, $math$, ![[embeds]])
+// (wikilinks, ==highlight==, #tags, $math$, ![[embeds]]). Also COLLECTS the
+// line's images (![](url) and image ![[embeds]]) into `images` — the caller
+// renders them in a block widget below the line; their syntax stays raw.
 function collectRegexDecorations(
   state: EditorState,
   line: { from: number; text: string },
   ranges: Range<Decoration>[],
   builder: DecorationsBuilder,
+  assetCtx: AssetContext,
+  images: { src: string; alt: string }[],
 ): void {
   // Per-match construct granularity: a construct stays raw only while the
   // selection overlaps its own range
@@ -141,14 +185,37 @@ function collectRegexDecorations(
     }
   };
 
-  // ![[embeds]] — shown as a plain wikilink (edit mode doesn't render media)
+  // ![[embeds]] — image embeds stay raw and get a preview below the line;
+  // anything else (note transcludes) degrades to a plain wikilink
   tryAdd(/!\[\[([^\[\]\n]+)\]\]/g, (m, from, to) => {
     const { target, hiddenHead } = wikilinkParts(m[1]);
+    if (IMAGE_EXTS.test(target)) return;
     const headTo = from + 3 + hiddenHead;
     if (!builder.markReplace(ranges, from, headTo, { class: "cm-md-hidden" })) return;
     builder.markReplace(ranges, to - 2, to, { class: "cm-md-hidden" });
     ranges.push(Decoration.mark({ class: "cm-md-wikilink", attributes: { "data-wikilink": target } }).range(headTo, to - 2));
   });
+
+  // Image embeds are collected WITHOUT the tryAdd selection check: the
+  // preview stays rendered even while the cursor sits on the link
+  {
+    const re = /!\[\[([^\[\]\n]+)\]\]/g;
+    for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
+      if (isInCode(state, line.from + m.index)) continue;
+      const { target } = wikilinkParts(m[1]);
+      if (!IMAGE_EXTS.test(target)) continue;
+      images.push({ src: imageSrc(target, assetCtx), alt: target });
+    }
+  }
+
+  // ![alt](url) — standard image syntax, local ref or remote URL
+  {
+    const re = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))[^)]*\)/g;
+    for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
+      if (isInCode(state, line.from + m.index)) continue;
+      images.push({ src: imageSrc(m[2] ?? m[3], assetCtx), alt: m[1] });
+    }
+  }
 
   // [[wikilinks]] — hide "[[target|" + "]]" so only the alias shows.
   // (?<!!) excludes the inner "[[...]]" of an embed — the embed branch owns it
@@ -195,7 +262,7 @@ function collectRegexDecorations(
 // be specified via plugins" — so this lives in a StateField provided through
 // EditorView.decorations.from. Notes are small enough that whole-doc
 // decoration per transaction is fine, and it removes any viewport tracking.
-function buildDecorations(state: EditorState): DecorationSet {
+function buildDecorations(state: EditorState, assetCtx: AssetContext): DecorationSet {
   const activeLines = new Set<number>();
   for (const range of state.selection.ranges) {
     const from = state.doc.lineAt(range.from).number;
@@ -290,18 +357,21 @@ function buildDecorations(state: EditorState): DecorationSet {
 
       if (HIDDEN_MARK_NODES.has(node.name)) {
         const parent = node.node.parent;
-        // Wikilinks/embeds ([[...]] / ![[...]]) parse as Link/Image nodes —
-        // their marks are handled by the regex pass below, so don't let the
-        // grammar pass claim (and fragment) those ranges first
-        if (parent && (parent.name === "Link" || parent.name === "Image")) {
-          // Lezer parses "[[x]]" as "[" + Link("[x]") + "]" and "![[x]]" as
-          // Image with label "[x]" — detect the wikilink/embed by the
-          // brackets surrounding the construct and leave those marks to the
-          // regex pass below, so it can decorate the whole construct at once
+        // Image syntax (![alt](url)) always stays raw and editable — a
+        // non-editable preview renders below the line instead
+        if (parent?.name === "Image") return false;
+        // Wikilinks ([[...]]) parse as Link nodes — their marks are handled
+        // by the regex pass below, so don't let the grammar pass claim (and
+        // fragment) those ranges first
+        if (parent && parent.name === "Link") {
+          // Lezer parses "[[x]]" as "[" + Link("[x]") + "]" — detect the
+          // wikilink by the brackets surrounding the construct and leave
+          // those marks to the regex pass below, so it can decorate the
+          // whole construct at once
           const head = state.doc.sliceString(parent.from, Math.min(parent.from + 3, parent.to));
           const before = state.doc.sliceString(Math.max(0, parent.from - 1), parent.from);
           const after = state.doc.sliceString(parent.to, Math.min(state.doc.length, parent.to + 1));
-          if (head.startsWith("[[") || head.startsWith("![[") || (before === "[" && after === "]")) return false;
+          if (head.startsWith("[[") || (before === "[" && after === "]")) return false;
         }
         // Reveal at construct granularity: the mark stays visible only
         // while the selection overlaps its parent construct (the whole
@@ -358,10 +428,19 @@ function buildDecorations(state: EditorState): DecorationSet {
     }
   }
 
-  // 4) Regex-driven decorations, line by line
+  // 4) Regex-driven decorations, line by line; lines that hold image syntax
+  // also get a non-editable preview widget directly below them
   for (let n = 1; n <= state.doc.lines; n++) {
     const line = state.doc.line(n);
-    collectRegexDecorations(state, line, ranges, builder);
+    const images: { src: string; alt: string }[] = [];
+    collectRegexDecorations(state, line, ranges, builder, assetCtx, images);
+    if (images.length > 0) {
+      ranges.push(Decoration.widget({
+        widget: new ImagePreviewWidget(images),
+        block: true,
+        side: 1,
+      }).range(line.to));
+    }
   }
 
   // Line decorations must come first in the sorted set
@@ -370,10 +449,10 @@ function buildDecorations(state: EditorState): DecorationSet {
 
 export function livePreview(hooks: LivePreviewHooks) {
   const decorationsField = StateField.define<DecorationSet>({
-    create: (state) => buildDecorations(state),
+    create: (state) => buildDecorations(state, hooks.assetCtx),
     update: (deco, tr) => {
       if (!tr.docChanged && !tr.selection) return deco;
-      return buildDecorations(tr.state);
+      return buildDecorations(tr.state, hooks.assetCtx);
     },
     provide: (field) => EditorView.decorations.from(field),
   });

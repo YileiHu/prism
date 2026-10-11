@@ -62,6 +62,8 @@ const zh = {
 
   // Collections
   "collections.new": "新建收藏集",
+  "collections.collapseSidebar": "收起侧栏",
+  "collections.expandSidebar": "展开侧栏",
   "collections.namePlaceholder": "收藏集名称...",
   "collections.rename": "重命名",
   "collections.delete": "删除收藏集",

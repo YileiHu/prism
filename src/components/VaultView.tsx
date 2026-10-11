@@ -73,6 +73,17 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
   const [showNewNoteModal, setShowNewNoteModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CollectionData | null>(null);
 
+  // Collections sidebar collapse (global UI pref, like the sidebar width)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("prism_vault_sidebar_collapsed") === "1",
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      localStorage.setItem("prism_vault_sidebar_collapsed", prev ? "0" : "1");
+      return !prev;
+    });
+  }, []);
+
   // Rename note state
   const [renameNoteTarget, setRenameNoteTarget] = useState<VaultNote | null>(null);
 
@@ -105,6 +116,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     closeTab,
     updateNote,
     removePaths,
+    moveTab,
   } = useNoteTabs(vaultPath);
   const activeNoteTab = activePath ? tabs.find((tab) => tab.path === activePath) : undefined;
   const editorActive = activeNoteTab !== undefined;
@@ -463,57 +475,68 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
         </div>
       ) : (
       <>
-      {/* Collections Sidebar */}
-      <CollectionsSidebar
-        collections={collections}
-        selectedId={selectedCollectionId}
-        allNotesCount={sortedNotes.length}
-        onSelect={(id) => {
-          // Browsing collections / all notes always leaves the note editor —
-          // the open tab stays in the tab bar (inactive) and can be re-opened
-          setActivePath(null);
-          setSelectedCollectionId(id);
-          setSelectMode(false);
-          setSelectedPaths(new Set());
-          setCollapsedGroups(new Set());
-          setUngroupedCollapsed(false);
-          if (id !== null) setSearchQuery("");
-          window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
-        }}
-        onCreate={() => setShowCreateModal(true)}
-        onRename={(id) => {
-          const coll = collections.find((c) => c.id === id);
-          if (coll) setRenameTarget(coll);
-        }}
-        onDelete={(id) => {
-          const { collName, onConfirm } = handleDeleteCollection(id);
-          setConfirm({
-            message: t["collections.deleteConfirm"],
-            confirmLabel: t["collections.delete"],
-            onConfirm: () => {
-              onConfirm();
-              setConfirm(null);
-              showToast(t["collections.removed"].replace("{name}", collName));
-            },
-          });
-        }}
-        onReorder={handleReorderCollections}
-        onDropNote={handleDropNote}
-      />
+      {/* Collections Sidebar — collapsible. The grid-template-columns 0fr↔1fr
+          transition animates the collapse; the sidebar stays MOUNTED while
+          collapsed so its scroll/selection state survives */}
+      <div
+        className={`h-full flex-shrink-0 grid transition-[grid-template-columns] duration-200 ease-out ${
+          sidebarCollapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
+        }`}
+      >
+        <div className="overflow-hidden min-w-0 h-full flex">
+          <CollectionsSidebar
+            collections={collections}
+            selectedId={selectedCollectionId}
+            allNotesCount={sortedNotes.length}
+            onSelect={(id) => {
+              // Browsing collections / all notes always leaves the note editor —
+              // the open tab stays in the tab bar (inactive) and can be re-opened
+              setActivePath(null);
+              setSelectedCollectionId(id);
+              setSelectMode(false);
+              setSelectedPaths(new Set());
+              setCollapsedGroups(new Set());
+              setUngroupedCollapsed(false);
+              if (id !== null) setSearchQuery("");
+              window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
+            }}
+            onRename={(id) => {
+              const coll = collections.find((c) => c.id === id);
+              if (coll) setRenameTarget(coll);
+            }}
+            onDelete={(id) => {
+              const { collName, onConfirm } = handleDeleteCollection(id);
+              setConfirm({
+                message: t["collections.deleteConfirm"],
+                confirmLabel: t["collections.delete"],
+                onConfirm: () => {
+                  onConfirm();
+                  setConfirm(null);
+                  showToast(t["collections.removed"].replace("{name}", collName));
+                },
+              });
+            }}
+            onReorder={handleReorderCollections}
+            onDropNote={handleDropNote}
+          />
+        </div>
+      </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {tabs.length > 0 && (
-          <NoteTabBar
-            tabs={tabs}
-            activePath={activePath}
-            newLabel={t["vault.newNote"]}
-            closeLabel={t["editor.closeTab"]}
-            onSelect={setActivePath}
-            onClose={closeTab}
-            onNewNote={() => setShowNewNoteModal(true)}
-          />
-        )}
+        <NoteTabBar
+          tabs={tabs}
+          activePath={activePath}
+          newLabel={t["vault.newNote"]}
+          closeLabel={t["editor.closeTab"]}
+          sidebarCollapsed={sidebarCollapsed}
+          onSelect={setActivePath}
+          onClose={closeTab}
+          onNewNote={() => setShowNewNoteModal(true)}
+          onNewCollection={() => setShowCreateModal(true)}
+          onToggleSidebar={toggleSidebar}
+          onReorder={moveTab}
+        />
         {!selectedCollectionId && !editorActive && (
           <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
             <SearchInput
@@ -522,9 +545,6 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
               placeholder={t["vault.search"]}
               wrapperClassName="flex-1"
             />
-            <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["vault.newNote"]}>
-              <Plus size={16} />
-            </Button>
             <Button variant="ghost" size="icon-md" active={selectMode} onClick={toggleSelectMode} title={selectMode ? t["batch.cancelSelect"] : t["batch.selectMode"]}>
               <CheckSquare size={16} />
             </Button>
@@ -552,9 +572,6 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                 <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
                 <span className="text-xs text-muted">{t["vault.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
                 <div className="flex-1" />
-                <Button variant="ghost" size="icon-md" onClick={() => setShowNewNoteModal(true)} title={t["vault.newNote"]}>
-                  <Plus size={16} />
-                </Button>
                 <Button variant="ghost" size="icon-md" onClick={handleToggleAll} title={allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}>
                   <Maximize2 size={16} />
                 </Button>

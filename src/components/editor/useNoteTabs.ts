@@ -102,6 +102,19 @@ export function useNoteTabs(vaultPath: string) {
     });
   }, []);
 
+  // Drag-to-reorder: insert the tab at toIndex (index in the array AFTER
+  // removal); the persist effect above saves the new order automatically
+  const moveTab = useCallback((path: string, toIndex: number) => {
+    setTabs((prev) => {
+      const from = prev.findIndex((t) => t.path === path);
+      if (from === -1) return prev;
+      const next = [...prev];
+      const [tab] = next.splice(from, 1);
+      next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, tab);
+      return next;
+    });
+  }, []);
+
   return {
     tabs,
     activePath,
@@ -112,5 +125,6 @@ export function useNoteTabs(vaultPath: string) {
     closeAll,
     updateNote,
     removePaths,
+    moveTab,
   };
 }

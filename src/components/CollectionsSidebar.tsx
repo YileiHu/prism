@@ -1,7 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus } from "lucide-react";
 import { useT } from "../i18n";
-import Button from "./Button";
 import Sidebar from "./Sidebar";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
@@ -40,7 +38,6 @@ interface Props {
   selectedId: string | null;
   allNotesCount: number;
   onSelect: (id: string | null) => void;
-  onCreate: () => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -143,7 +140,6 @@ export default function CollectionsSidebar({
   selectedId,
   allNotesCount,
   onSelect,
-  onCreate,
   onRename,
   onDelete,
   onReorder,
@@ -182,21 +178,7 @@ export default function CollectionsSidebar({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <Sidebar
-        storageKey="vault"
-        footer={
-          <div className="flex items-center justify-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-md"
-              onClick={onCreate}
-              title={t["collections.new"]}
-            >
-              <Plus size={16} />
-            </Button>
-          </div>
-        }
-      >
+      <Sidebar storageKey="vault">
         <div
           onClick={() => onSelect(null)}
           className={`w-full flex items-center gap-1.5 px-3 py-2 text-sm transition-colors rounded-lg cursor-pointer mb-1 pb-2 border-b border-line/50 ${

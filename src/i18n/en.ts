@@ -61,6 +61,8 @@ const en: Translation = {
 
   // Collections
   "collections.new": "New Collection",
+  "collections.collapseSidebar": "Collapse sidebar",
+  "collections.expandSidebar": "Expand sidebar",
   "collections.namePlaceholder": "Collection name...",
   "collections.rename": "Rename",
   "collections.delete": "Delete Collection",

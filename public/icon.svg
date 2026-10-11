@@ -1,103 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <!-- Tile clip so glows never bleed past the rounded corners -->
-    <clipPath id="tile">
-      <rect x="16" y="16" width="480" height="480" rx="112"/>
-    </clipPath>
-
-    <!-- Tile base: deep navy with a faint top light -->
-    <linearGradient id="tileShade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.05"/>
-      <stop offset="25%" stop-color="#ffffff" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.28"/>
+    <!-- Solid color blocks: cyan → violet, white front page -->
+    <linearGradient id="blockCyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#0ea5b7"/>
+    </linearGradient>
+    <linearGradient id="blockViolet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="pageWhite" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e9eefb"/>
     </linearGradient>
 
-    <!-- Ambient glow behind the prism -->
-    <radialGradient id="ambient">
-      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
-    </radialGradient>
-
-    <!-- Incoming white beam: brightens toward the prism -->
-    <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.95"/>
-    </linearGradient>
-
-    <!-- Spectrum bands: alpha fades slightly outward for depth -->
-    <linearGradient id="bandCyan" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.68"/>
-    </linearGradient>
-    <linearGradient id="bandBlue" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.68"/>
-    </linearGradient>
-    <linearGradient id="bandViolet" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.68"/>
-    </linearGradient>
-    <linearGradient id="bandPink" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#e879f9" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#e879f9" stop-opacity="0.68"/>
-    </linearGradient>
-
-    <!-- Glass faces -->
-    <linearGradient id="faceLeft" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0%" stop-color="#c8f0ff" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#8cbeff" stop-opacity="0.08"/>
-    </linearGradient>
-    <linearGradient id="faceRight" x1="1" y1="0" x2="0.4" y2="1">
-      <stop offset="0%" stop-color="#7ba4f0" stop-opacity="0.10"/>
-      <stop offset="100%" stop-color="#4a5fc8" stop-opacity="0.05"/>
-    </linearGradient>
-    <linearGradient id="edgeStroke" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#67e8f9" stop-opacity="0.25"/>
-    </linearGradient>
-
-    <!-- Soft glow: blur merged under the sharp source -->
-    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="cardShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
 
-  <g clip-path="url(#tile)">
-    <!-- Tile -->
-    <rect x="16" y="16" width="480" height="480" rx="112" fill="#050b18"/>
-    <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#tileShade)"/>
+  <!-- Fanned stack of solid color blocks on a transparent background -->
+  <g transform="translate(240 263) scale(1.58) translate(-256 -256)">
+    <g transform="translate(6,-4)">
+      <rect x="146" y="120" width="204" height="248" rx="30"
+            fill="url(#blockCyan)" filter="url(#cardShadow)"
+            transform="rotate(-8 262 288)"/>
+      <rect x="170" y="140" width="204" height="248" rx="30"
+            fill="url(#blockViolet)" filter="url(#cardShadow)"
+            transform="rotate(-3 262 288)"/>
+      <g transform="rotate(3 262 288)">
+        <rect x="194" y="160" width="204" height="248" rx="30"
+              fill="url(#pageWhite)" filter="url(#cardShadow)"/>
 
-    <!-- Ambient halo -->
-    <ellipse cx="300" cy="272" rx="210" ry="175" fill="url(#ambient)"/>
-
-    <!-- Incoming beam (horizontal, centered on the y=260 axis, slight taper) -->
-    <polygon points="48,252 48,268 224,264 224,256" fill="url(#beamGrad)" filter="url(#softGlow)"/>
-
-    <!-- Spectrum fan (symmetric around the y=260 axis: cyan/pink outer, blue/violet inner) -->
-    <g filter="url(#softGlow)">
-      <polygon points="328,260 458,212 458,236" fill="url(#bandCyan)"/>
-      <polygon points="328,260 458,236 458,260" fill="url(#bandBlue)"/>
-      <polygon points="328,260 458,260 458,284" fill="url(#bandViolet)"/>
-      <polygon points="328,260 458,284 458,308" fill="url(#bandPink)"/>
+        <!-- Text lines + accent block on the white page -->
+        <rect x="224" y="206" width="116" height="17" rx="8.5" fill="#0f172a" fill-opacity="0.78"/>
+        <rect x="224" y="236" width="80" height="17" rx="8.5" fill="#0f172a" fill-opacity="0.45"/>
+        <rect x="224" y="272" width="42" height="17" rx="8.5" fill="#f472b6"/>
+      </g>
     </g>
-
-    <!-- Prism: two-tone glass + ridge + edge light -->
-    <polygon points="276,170 181,334 276,334" fill="url(#faceLeft)"/>
-    <polygon points="276,170 276,334 371,334" fill="url(#faceRight)"/>
-    <line x1="276" y1="170" x2="276" y2="334" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
-    <polygon points="276,170 181,334 371,334" fill="none" stroke="url(#edgeStroke)" stroke-width="2" stroke-linejoin="round"/>
-
-    <!-- Refraction hint inside the glass -->
-    <line x1="224" y1="260" x2="328" y2="260" stroke="#a5f3fc" stroke-opacity="0.3" stroke-width="2.5"/>
-
-    <!-- Entry point sparkle -->
-    <circle cx="224" cy="260" r="4" fill="#ffffff" fill-opacity="0.9" filter="url(#softGlow)"/>
-
-    <!-- Inner tile border -->
-    <rect x="17" y="17" width="478" height="478" rx="111" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1.5"/>
   </g>
 </svg>
