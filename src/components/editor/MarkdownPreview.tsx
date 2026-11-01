@@ -67,9 +67,30 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
   const containerRef = useRef<HTMLDivElement>(null);
   const { html, frontmatter, outline } = useMemo(() => renderMarkdown(content, assetContext), [content, assetContext]);
   const foldsRef = useRef<Set<string>>(new Set());
+  // Per fold-body element: callback that expands it (owned by the fold effect
+  // below). Outline jumps use these to reveal headings hidden inside
+  // collapsed sections. Rebuilt whenever the rendered html/foldScope changes.
+  const unfoldRef = useRef(new Map<Element, () => void>());
+  const foldBuildKeyRef = useRef("");
 
   const jumpToHeading = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const root = containerRef.current;
+    // Scope the lookup to THIS preview: heading ids (hd-0..N) restart per
+    // render, and other vault panes stay mounted (visibility:hidden) with
+    // their own previews — a document-wide getElementById can hit a hidden
+    // pane's heading and scroll the wrong container
+    const el = root?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (!root || !el) return;
+    // scrollIntoView is a no-op inside display:none fold bodies — expand any
+    // collapsed sections wrapping the target first
+    let p = el.parentElement;
+    while (p && p !== root.parentElement) {
+      if (p.classList.contains("md-fold-body") && p.style.display === "none") {
+        unfoldRef.current.get(p)?.();
+      }
+      p = p.parentElement;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   useEffect(() => {
@@ -82,6 +103,14 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
   useEffect(() => {
     const root = containerRef.current;
     if (!root || !foldScope) return;
+    // Rebuild the unfold map only when the content actually changed — React
+    // StrictMode re-runs this effect on the same DOM in dev, and clearing it
+    // then would drop the callbacks registered on the first run
+    const buildKey = `${foldScope}|${html}`;
+    if (foldBuildKeyRef.current !== buildKey) {
+      unfoldRef.current.clear();
+      foldBuildKeyRef.current = buildKey;
+    }
     const folds = foldsRef.current;
     const keyCounter = new FoldKeyCounter();
 
@@ -126,6 +155,7 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
         apply(!folds.has(key));
       });
       heading.prepend(btn);
+      unfoldRef.current.set(body, () => apply(false));
 
       if (folds.has(key)) {
         body.style.display = "none";

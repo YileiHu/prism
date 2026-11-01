@@ -55,7 +55,7 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
       {projects.length === 0 ? (
         <EmptyState size="module" text={t["gtd.emptyList"]} />
       ) : (
-        <div className="flex-1 flex min-w-0">
+        <div className="flex-1 flex min-w-0 min-h-0">
           <Sidebar storageKey="gtd-projects">
             {projects.map((p) => {
               const progress = t["gtd.projectProgress"]
@@ -104,7 +104,7 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
             })}
           </Sidebar>
           {selected && (
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 min-h-0">
               <GtdProjectDetail
                 key={selected.id}
                 project={selected}

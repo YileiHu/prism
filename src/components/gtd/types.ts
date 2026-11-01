@@ -5,6 +5,7 @@ export interface GtdItem {
   title: string;
   status: GtdStatus;
   is_next: number;
+  description: string;
   created_at: string;
   done_at: string | null;
   action_count: number;
@@ -27,7 +28,7 @@ export interface GtdNextList {
   projects: { project: GtdItem; action: GtdAction }[];
 }
 
-export type GtdListKey = GtdStatus | "next";
+export type GtdListKey = GtdStatus;
 
 export interface GtdFocusRequest {
   list: "waiting" | "project";

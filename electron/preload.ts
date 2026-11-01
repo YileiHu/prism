@@ -2,13 +2,14 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const api = {
   // Resources
-  addResource: (url: string, title: string, tags: string[]) =>
-    ipcRenderer.invoke("resources:add", url, title, tags),
+  addResource: (url: string, title: string, tags: string[], notes: string) =>
+    ipcRenderer.invoke("resources:add", url, title, tags, notes),
   getResources: () => ipcRenderer.invoke("resources:list"),
-  updateResource: (id: number, url: string, title: string, tags: string[]) =>
-    ipcRenderer.invoke("resources:update", id, url, title, tags),
+  updateResource: (id: number, url: string, title: string, tags: string[], notes: string) =>
+    ipcRenderer.invoke("resources:update", id, url, title, tags, notes),
   deleteResource: (id: number) => ipcRenderer.invoke("resources:delete", id),
   searchResources: (query: string) => ipcRenderer.invoke("resources:search", query),
+  reorderResources: (orderedIds: number[]) => ipcRenderer.invoke("resources:reorder", orderedIds),
   fetchPageTitle: (url: string) => ipcRenderer.invoke("fetch:title", url),
   openUrl: (url: string) => ipcRenderer.invoke("resources:open-url", url),
 
@@ -37,6 +38,10 @@ const api = {
 
   // Tags
   getAllTags: () => ipcRenderer.invoke("tags:list"),
+  reorderTags: (orderedNames: string[]) => ipcRenderer.invoke("tags:reorder", orderedNames),
+  setTagColor: (name: string, color: string) => ipcRenderer.invoke("tags:set-color", name, color),
+  renameTag: (oldName: string, newName: string) => ipcRenderer.invoke("tags:rename", oldName, newName),
+  deleteTag: (name: string) => ipcRenderer.invoke("tags:delete", name),
 
   // GTD
   addGtdItem: (title: string) => ipcRenderer.invoke("gtd:add", title),
@@ -44,23 +49,17 @@ const api = {
   getGtdCounts: () => ipcRenderer.invoke("gtd:counts"),
   setGtdItemStatus: (id: number, status: string) => ipcRenderer.invoke("gtd:set-status", id, status),
   renameGtdItem: (id: number, title: string) => ipcRenderer.invoke("gtd:rename", id, title),
+  setGtdItemDescription: (id: number, description: string) => ipcRenderer.invoke("gtd:set-description", id, description),
   deleteGtdItem: (id: number) => ipcRenderer.invoke("gtd:delete", id),
   setGtdItemNext: (id: number, isNext: boolean) => ipcRenderer.invoke("gtd:set-next", id, isNext),
   getGtdActions: (projectId: number) => ipcRenderer.invoke("gtd:list-actions", projectId),
   addGtdAction: (projectId: number, title: string) => ipcRenderer.invoke("gtd:add-action", projectId, title),
   renameGtdAction: (id: number, title: string) => ipcRenderer.invoke("gtd:rename-action", id, title),
   toggleGtdAction: (id: number) => ipcRenderer.invoke("gtd:toggle-action", id),
+  reorderGtdActions: (projectId: number, orderedIds: number[]) => ipcRenderer.invoke("gtd:reorder-actions", projectId, orderedIds),
   deleteGtdAction: (id: number) => ipcRenderer.invoke("gtd:delete-action", id),
   setGtdActionNext: (projectId: number, actionId: number | null) => ipcRenderer.invoke("gtd:set-action-next", projectId, actionId),
   getGtdNextList: () => ipcRenderer.invoke("gtd:next-list"),
-
-  // Schedule template
-  getScheduleBlocks: () => ipcRenderer.invoke("schedule:list"),
-  addScheduleBlock: (block: { label: string; start: string; end: string; color: string }) =>
-    ipcRenderer.invoke("schedule:add", block),
-  updateScheduleBlock: (id: number, block: { label: string; start: string; end: string; color: string }) =>
-    ipcRenderer.invoke("schedule:update", id, block),
-  deleteScheduleBlock: (id: number) => ipcRenderer.invoke("schedule:delete", id),
 
   // Favorite / recent notes
   toggleFavoriteNote: (notePath: string, title: string) => ipcRenderer.invoke("notes:toggle-favorite", notePath, title),

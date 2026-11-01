@@ -44,20 +44,22 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
 
   return (
     <div>
-      <div className="flex flex-wrap gap-1.5 mb-2 min-h-[24px]">
-        {tags.map((tag) => {
-          const c = colorForTag(tag);
-          return (
-            <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
-              <Tag size={10} />
-              {tag}
-              <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="hover:text-red-400 ml-0.5">
-                <X size={12} />
-              </button>
-            </span>
-          );
-        })}
-      </div>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {tags.map((tag) => {
+            const c = colorForTag(tag);
+            return (
+              <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
+                <Tag size={10} />
+                {tag}
+                <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="hover:text-red-400 ml-0.5">
+                  <X size={12} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="relative">
         <input
           type="text"

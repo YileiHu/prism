@@ -11,6 +11,8 @@ const zh = {
   "resources.addTitle": "新建资源",
   "resources.editTitle": "编辑资源",
   "resources.title": "标题（可选，留空则自动获取）...",
+  "resources.notes": "备注",
+  "resources.notesPlaceholder": "写点备注，说明这个资源（可选）...",
   "resources.tags": "输入标签，回车添加...",
   "resources.search": "搜索资源...",
   "resources.empty": '暂无资源，点击上方"添加资源"开始使用。',
@@ -22,6 +24,20 @@ const zh = {
   "resources.added": "已添加",
   "resources.updated": "已更新",
   "resources.deleteConfirm": "确定要删除这个资源吗？此操作无法撤销。",
+  "resources.tagColor": "标签颜色",
+  "resources.tagColorAuto": "自动",
+  "resources.tagRenameTitle": "重命名标签",
+  "resources.tagRenamed": "标签已重命名",
+  "resources.tagDeleted": "标签已删除",
+  "resources.tagDeleteConfirm": "删除标签「{name}」？它会从所有资源上移除，资源本身不受影响。",
+  "tagColor.brick": "砖红",
+  "tagColor.gold": "金黄",
+  "tagColor.blue": "蓝色",
+  "tagColor.green": "绿色",
+  "tagColor.violet": "紫色",
+  "tagColor.teal": "青色",
+  "tagColor.pink": "粉色",
+  "tagColor.slate": "灰蓝",
 
   // Vault notes
   "vault.search": "搜索笔记...",
@@ -139,7 +155,6 @@ const zh = {
 
   // GTD
   "gtd.inbox": "收集箱",
-  "gtd.next": "下一步",
   "gtd.waiting": "等待清单",
   "gtd.projects": "项目清单",
   "gtd.someday": "未来清单",
@@ -169,6 +184,8 @@ const zh = {
   "gtd.doNowHint": "做完后点击下方按钮确认；若中途关闭弹窗，条目仍保留在收集箱。",
   "gtd.doNowConfirm": "我已完成",
   "gtd.addAction": "添加行动，回车保存...",
+  "gtd.projectDescription": "项目介绍",
+  "gtd.projectDescriptionPlaceholder": "点击填写项目介绍，可记录背景、目标或参考资料...",
   "gtd.projectProgress": "{done}/{total}",
   "gtd.pendingRefine": "待细化",
   "gtd.projectCompletePrompt": "所有行动已完成，将项目标记为已完成吗？",
@@ -179,19 +196,11 @@ const zh = {
   "gtd.deleteActionConfirm": "确定要删除该行动吗？",
 
   // Home
-  "home.schedule": "日程模板",
   "home.nextActions": "下一步",
   "home.recents": "最近打开",
   "home.favorites": "收藏",
-  "home.addBlock": "添加时间段",
-  "home.editBlock": "编辑时间段",
-  "home.labelPlaceholder": "例如：深度工作...",
-  "home.deleteBlock": "删除",
-  "home.deleteBlockConfirm": "确认删除？",
   "home.emptyRecents": "暂无最近打开的笔记。",
   "home.emptyFavorites": "暂无收藏，在笔记上点星标即可收藏。",
-  "home.overlapError": "与已有时间段重叠",
-    "home.timeOrderError": "开始时间必须早于结束时间",
 
   // Note editor
   "editor.edit": "编辑",

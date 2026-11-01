@@ -11,9 +11,10 @@ interface Props {
   title?: string;
   icon?: ReactNode;
   placeholder?: string;
+  multiline?: boolean;
 }
 
-export default function RenameModal({ open, initialValue, onClose, onSubmit, title, icon, placeholder }: Props) {
+export default function RenameModal({ open, initialValue, onClose, onSubmit, title, icon, placeholder, multiline }: Props) {
   const { t } = useT();
   const [draft, setDraft] = useState(initialValue);
 
@@ -45,15 +46,32 @@ export default function RenameModal({ open, initialValue, onClose, onSubmit, tit
         </>
       }
     >
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-        placeholder={placeholder}
-        autoFocus
-        className="w-full bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-      />
+      {multiline ? (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={placeholder}
+          autoFocus
+          rows={4}
+          className="w-full max-h-[50vh] min-h-[96px] resize-y overflow-y-auto bg-elevated border border-strong rounded-lg px-3 py-2 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+        />
+      ) : (
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder={placeholder}
+          autoFocus
+          className="w-full bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+        />
+      )}
     </Modal>
   );
 }

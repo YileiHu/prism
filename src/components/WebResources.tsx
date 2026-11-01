@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus, Trash2, Edit3, ExternalLink, Link2 } from "lucide-react";
+import { Plus, Trash2, Edit3, ExternalLink, Link2, Palette, Pencil } from "lucide-react";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useToast } from "../lib/toast";
-import { hashColor } from "../lib/colors";
+import { hashColor, resolveTagColor, TAG_COLORS, type PaletteColor } from "../lib/colors";
+import { useContextMenu } from "../lib/useContextMenu";
+import RenameModal from "./RenameModal";
 import Button from "./Button";
 import Modal from "./Modal";
 import Sidebar from "./Sidebar";
@@ -15,11 +17,14 @@ import SearchInput from "./SearchInput";
 import EmptyState from "./EmptyState";
 import ConfirmDialog from "./ConfirmDialog";
 import { useSetToggle } from "../lib/useToggleSet";
+import { arrayMove } from "@dnd-kit/sortable";
+import SortableList from "./SortableList";
 
 interface Resource {
   id: number;
   url: string;
   title: string;
+  notes: string;
   created_at: string;
   tags: string[];
 }
@@ -27,6 +32,7 @@ interface Resource {
 interface TagInfo {
   name: string;
   count: number;
+  color: string;
 }
 
 function extractDomain(url: string) {
@@ -48,12 +54,14 @@ function ResourceRowView({
   onOpenTag,
   onStartEdit,
   onDelete,
+  colorForTag,
   flat,
 }: {
   r: Resource;
   onOpenTag: (tag: string) => void;
   onStartEdit: () => void;
   onDelete: () => void;
+  colorForTag: (name: string) => PaletteColor;
   flat?: boolean;
 }) {
   const { t } = useT();
@@ -72,8 +80,13 @@ function ResourceRowView({
       className={flat ? "border-b border-line/30" : "rounded-lg"}
       onPrimaryClick={() => window.prism.openUrl(r.url)}
       menuItems={menuItems}
-      tooltip={r.url}
-      title={r.title}
+      tooltip={r.notes ? `${r.title}\n${r.notes}\n${r.url}` : r.url}
+      title={
+        <>
+          {r.title}
+          {r.notes && <span className="ml-2 font-normal text-faint">{r.notes}</span>}
+        </>
+      }
       meta={
         <>
           <button
@@ -86,7 +99,7 @@ function ResourceRowView({
           {r.tags.length > 0 && (
             <span className="hidden md:flex items-center gap-1 flex-shrink-0 max-w-[240px] overflow-hidden">
               {r.tags.slice(0, 3).map((tag) => {
-                const c = hashColor(tag);
+                const c = colorForTag(tag);
                 return (
                   <span
                     key={tag}
@@ -103,10 +116,48 @@ function ResourceRowView({
           )}
         </>
       }
-      hoverActions={[
-        { icon: <ExternalLink size={13} />, label: t["menu.openInBrowser"], onClick: () => window.prism.openUrl(r.url) },
-        { icon: <Edit3 size={13} />, label: t["menu.edit"], onClick: onStartEdit },
-      ]}
+    />
+  );
+}
+
+function ResourceList({
+  items,
+  flat,
+  onReorder,
+  onOpenTag,
+  onStartEdit,
+  onDelete,
+  colorForTag,
+}: {
+  items: Resource[];
+  flat?: boolean;
+  onReorder: (next: Resource[]) => void;
+  onOpenTag: (tag: string) => void;
+  onStartEdit: (r: Resource) => void;
+  onDelete: (r: Resource) => void;
+  colorForTag: (name: string) => PaletteColor;
+}) {
+  return (
+    <SortableList
+      items={items}
+      itemId={(r) => String(r.id)}
+      onReorder={(from, to) => onReorder(arrayMove(items, from, to))}
+      renderItem={(r) => (
+        <ResourceRowView
+          r={r}
+          flat={flat}
+          onOpenTag={onOpenTag}
+          onStartEdit={() => onStartEdit(r)}
+          onDelete={() => onDelete(r)}
+          colorForTag={colorForTag}
+        />
+      )}
+      renderOverlay={(r) => (
+        <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-primary">
+          <span className="truncate">{r.title}</span>
+          <span className="ml-auto text-xs text-faint flex-shrink-0">{extractDomain(r.url)}</span>
+        </div>
+      )}
     />
   );
 }
@@ -114,6 +165,7 @@ function ResourceRowView({
 export default function WebResources({ onReady }: { onReady?: () => void }) {
   const { t } = useT();
   const showToast = useToast();
+  const { onContextMenu } = useContextMenu();
   const readyFired = useRef(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
@@ -126,6 +178,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const [showModal, setShowModal] = useState(false);
   const [modalUrl, setModalUrl] = useState("");
   const [modalTitle, setModalTitle] = useState("");
+  const [modalNotes, setModalNotes] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalError, setModalError] = useState("");
 
@@ -133,11 +186,16 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const [editResource, setEditResource] = useState<Resource | null>(null);
   const [editUrl, setEditUrl] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
   const [editError, setEditError] = useState("");
 
   // Delete confirm state
   const [deleting, setDeleting] = useState<Resource | null>(null);
+
+  // Tag management state
+  const [renamingTag, setRenamingTag] = useState<string | null>(null);
+  const [deletingTag, setDeletingTag] = useState<string | null>(null);
 
   // Card collapse state
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
@@ -173,13 +231,24 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     loadTags();
   }, []);
 
+  const tagColorMap = useMemo(() => {
+    const map = new Map<string, PaletteColor>();
+    for (const tag of allTags) map.set(tag.name, resolveTagColor(tag.name, tag.color));
+    return map;
+  }, [allTags]);
+
+  const colorForTag = useCallback(
+    (name: string) => tagColorMap.get(name) ?? hashColor(name),
+    [tagColorMap],
+  );
+
   const handleSaveNew = async () => {
     if (!modalUrl.trim()) return;
     const trimmed = modalUrl.trim();
     const normalizedUrl = HAS_SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`;
     const title = modalTitle.trim() || (await window.prism.fetchPageTitle(normalizedUrl));
     try {
-      await window.prism.addResource(normalizedUrl, title, modalTags);
+      await window.prism.addResource(normalizedUrl, title, modalTags, modalNotes.trim());
     } catch (e) {
       setModalError(isUniqueViolation(e) ? t["resources.urlExists"] : String((e as Error)?.message ?? e));
       return;
@@ -194,6 +263,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setShowModal(false);
     setModalUrl("");
     setModalTitle("");
+    setModalNotes("");
     setModalTags([]);
     setModalError("");
   };
@@ -210,6 +280,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setEditResource(r);
     setEditUrl(r.url);
     setEditTitle(r.title);
+    setEditNotes(r.notes);
     setEditTags([...r.tags]);
     setEditError("");
   };
@@ -218,6 +289,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     setEditResource(null);
     setEditUrl("");
     setEditTitle("");
+    setEditNotes("");
     setEditTags([]);
     setEditError("");
   };
@@ -225,7 +297,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const handleSaveEdit = async () => {
     if (!editResource || !editUrl.trim()) return;
     try {
-      await window.prism.updateResource(editResource.id, editUrl.trim(), editTitle.trim() || editUrl, editTags);
+      await window.prism.updateResource(editResource.id, editUrl.trim(), editTitle.trim() || editUrl, editTags, editNotes.trim());
     } catch (e) {
       setEditError(isUniqueViolation(e) ? t["resources.urlExists"] : String((e as Error)?.message ?? e));
       return;
@@ -236,8 +308,66 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     loadTags();
   };
 
+  const applyTagColor = async (name: string, color: string) => {
+    await window.prism.setTagColor(name, color);
+    loadTags();
+  };
 
-  // Group resources by tag for card view, sorted by tag count desc
+  const openTagMenu = (e: React.MouseEvent, tag: TagInfo) => {
+    onContextMenu(e, [
+      {
+        label: t["resources.tagColor"],
+        icon: <Palette size={14} />,
+        children: [
+          {
+            label: t["resources.tagColorAuto"],
+            icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: hashColor(tag.name).bar }} />,
+            checked: !tag.color,
+            onClick: () => applyTagColor(tag.name, ""),
+          },
+          { label: "", divider: true },
+          ...TAG_COLORS.map((c) => ({
+            label: t[`tagColor.${c.key}`],
+            icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.bar }} />,
+            checked: tag.color.toLowerCase() === c.bar,
+            onClick: () => applyTagColor(tag.name, c.bar),
+          })),
+        ],
+      },
+      { label: "", divider: true },
+      { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenamingTag(tag.name) },
+      { label: "", divider: true },
+      { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeletingTag(tag.name) },
+    ]);
+  };
+
+  const handleRenameTag = async (newName: string) => {
+    if (!renamingTag) return;
+    await window.prism.renameTag(renamingTag, newName);
+    if (activeTag === renamingTag) setActiveTag(newName);
+    setRenamingTag(null);
+    showToast(t["resources.tagRenamed"]);
+    loadResources();
+    loadTags();
+  };
+
+  const handleDeleteTag = async () => {
+    if (!deletingTag) return;
+    await window.prism.deleteTag(deletingTag);
+    if (activeTag === deletingTag) setActiveTag(null);
+    setDeletingTag(null);
+    showToast(t["resources.tagDeleted"]);
+    loadResources();
+    loadTags();
+  };
+
+  const reorderTagList = (from: number, to: number) => {
+    const next = arrayMove(allTags, from, to);
+    setAllTags(next);
+    void window.prism.reorderTags(next.map((tag) => tag.name));
+  };
+
+  // Group resources by tag for card view, following the sidebar's tag order
   const tagGroups = useMemo(() => {
     if (activeTag) return { groups: [], untagged: [] as Resource[] };
     const grouped = new Map<string, Resource[]>();
@@ -254,39 +384,31 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       }
     }
 
+    const order = new Map(allTags.map((tag, index) => [tag.name, index]));
     const groups = Array.from(grouped.entries())
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([tag, items]) => ({ tag, resources: items, color: hashColor(tag) }));
+      .sort((a, b) => (order.get(a[0]) ?? Number.MAX_SAFE_INTEGER) - (order.get(b[0]) ?? Number.MAX_SAFE_INTEGER))
+      .map(([tag, items]) => ({ tag, resources: items, color: colorForTag(tag) }));
 
     return { groups, untagged };
-  }, [resources, activeTag]);
+  }, [resources, activeTag, allTags, colorForTag]);
 
   const toggleCollapse = useSetToggle(setCollapsedTags);
 
-  const renderRow = (r: Resource, flat?: boolean) => (
-    <ResourceRowView
-      key={r.id}
-      r={r}
-      flat={flat}
-      onOpenTag={setActiveTag}
-      onStartEdit={() => openEditModal(r)}
-      onDelete={() => setDeleting(r)}
-    />
-  );
+  // Only the dragged list's rows are reordered; they keep the slots they
+  // already occupy in the global order.
+  const handleReorder = async (next: Resource[]) => {
+    const subset = new Set(next.map((r) => r.id));
+    setResources((prev) => {
+      let i = 0;
+      return prev.map((r) => (subset.has(r.id) ? next[i++] : r));
+    });
+    await window.prism.reorderResources(next.map((r) => r.id));
+  };
 
   return (
     <div className="h-full flex">
       {/* Tag sidebar */}
-      <Sidebar
-        storageKey="resources"
-        footer={
-          <div className="flex items-center justify-center gap-1">
-            <Button variant="ghost" size="icon-md" onClick={() => setShowModal(true)} title={t["resources.add"]}>
-              <Plus size={16} />
-            </Button>
-          </div>
-        }
-      >
+      <Sidebar storageKey="resources">
           <button
             onClick={() => setActiveTag(null)}
             className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1 pb-2 border-b border-line/50 ${
@@ -298,29 +420,44 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             <span className="flex-1 text-left truncate">{t["resources.allTags"]}</span>
             <span className="text-xs text-muted">{totalCount}</span>
           </button>
-          {allTags.map((tag, i) => {
-            const c = hashColor(tag.name);
-            const isActive = activeTag === tag.name;
-            return (
-              <button
-                key={tag.name}
-                onClick={() => setActiveTag(isActive ? null : tag.name)}
-                style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors stagger-in ${
-                  isActive
-                    ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                    : "text-tertiary hover:text-primary hover:bg-elevated/50"
-                }`}
-              >
+          <SortableList
+            items={allTags}
+            itemId={(tag) => tag.name}
+            onReorder={reorderTagList}
+            renderItem={(tag, i) => {
+              const c = colorForTag(tag.name);
+              const isActive = activeTag === tag.name;
+              return (
+                <button
+                  onClick={() => setActiveTag(isActive ? null : tag.name)}
+                  onContextMenu={(e) => openTagMenu(e, tag)}
+                  style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors stagger-in ${
+                    isActive
+                      ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+                      : "text-tertiary hover:text-primary hover:bg-elevated/50"
+                  }`}
+                >
+                  <div
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: c.bar }}
+                  />
+                  <span className="flex-1 text-left truncate">{tag.name}</span>
+                  <span className="text-xs text-muted">{tag.count}</span>
+                </button>
+              );
+            }}
+            renderOverlay={(tag) => (
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-primary">
                 <div
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: c.bar }}
+                  style={{ backgroundColor: colorForTag(tag.name).bar }}
                 />
-                <span className="flex-1 text-left truncate">{tag.name}</span>
+                <span className="flex-1 truncate">{tag.name}</span>
                 <span className="text-xs text-muted">{tag.count}</span>
-              </button>
-            );
-          })}
+              </div>
+            )}
+          />
           {allTags.length === 0 && (
             <p className="px-3 py-8 text-center text-xs text-muted leading-relaxed">{t["resources.empty"]}</p>
           )}
@@ -336,6 +473,9 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             placeholder={t["resources.search"]}
             wrapperClassName="flex-1"
           />
+          <Button variant="ghost" size="icon-md" onClick={() => setShowModal(true)} title={t["resources.add"]}>
+            <Plus size={16} />
+          </Button>
         </div>
 
         {/* Content area */}
@@ -369,7 +509,14 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
                     </button>
                   }
                 >
-                  {items.map((r) => renderRow(r))}
+                  <ResourceList
+                    items={items}
+                    onReorder={handleReorder}
+                    onOpenTag={setActiveTag}
+                    onStartEdit={openEditModal}
+                    onDelete={setDeleting}
+                    colorForTag={colorForTag}
+                  />
                 </SectionCard>
               ))}
               {tagGroups.untagged.length > 0 && (
@@ -380,14 +527,31 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
                   collapsed={collapsedTags.has("__untagged__")}
                   onToggle={() => toggleCollapse("__untagged__")}
                 >
-                  {tagGroups.untagged.map((r) => renderRow(r))}
+                  <ResourceList
+                    items={tagGroups.untagged}
+                    onReorder={handleReorder}
+                    onOpenTag={setActiveTag}
+                    onStartEdit={openEditModal}
+                    onDelete={setDeleting}
+                    colorForTag={colorForTag}
+                  />
                 </SectionCard>
               )}
             </div>
           )}
 
           {/* Flat list (tag filtered) */}
-          {activeTag && resources.map((r) => renderRow(r, true))}
+          {activeTag && (
+            <ResourceList
+              items={resources}
+              flat
+              onReorder={handleReorder}
+              onOpenTag={setActiveTag}
+              onStartEdit={openEditModal}
+              onDelete={setDeleting}
+              colorForTag={colorForTag}
+            />
+          )}
         </div>
       </div>
 
@@ -427,6 +591,15 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               className="w-full bg-elevated border border-strong rounded-lg px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
+          <div>
+            <textarea
+              value={modalNotes}
+              onChange={(e) => setModalNotes(e.target.value)}
+              placeholder={t["resources.notesPlaceholder"]}
+              rows={3}
+              className="w-full resize-none bg-elevated border border-strong rounded-lg px-4 py-2 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
 
           {/* Tags */}
           <TagInput
@@ -434,7 +607,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             onChange={setModalTags}
             suggestions={allTags}
             placeholder={t["resources.tags"]}
-            colorForTag={hashColor}
+            colorForTag={colorForTag}
           />
           {modalError && <p className="text-xs text-red-400">{modalError}</p>}
         </div>
@@ -478,6 +651,16 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
+          <div>
+            <label className="block text-xs text-muted mb-1">{t["resources.notes"]}</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder={t["resources.notesPlaceholder"]}
+              rows={4}
+              className="w-full resize-none bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
 
           {/* Tags */}
           <TagInput
@@ -485,7 +668,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             onChange={setEditTags}
             suggestions={allTags}
             placeholder={t["resources.tags"]}
-            colorForTag={hashColor}
+            colorForTag={colorForTag}
           />
           {editError && <p className="text-xs text-red-400">{editError}</p>}
         </div>
@@ -497,6 +680,23 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
         message={t["resources.deleteConfirm"]}
         onConfirm={handleDelete}
         onClose={() => setDeleting(null)}
+      />
+
+      {/* Tag rename */}
+      <RenameModal
+        open={renamingTag !== null}
+        initialValue={renamingTag ?? ""}
+        title={t["resources.tagRenameTitle"]}
+        onClose={() => setRenamingTag(null)}
+        onSubmit={handleRenameTag}
+      />
+
+      {/* Tag delete confirm */}
+      <ConfirmDialog
+        open={deletingTag !== null}
+        message={t["resources.tagDeleteConfirm"].replace("{name}", deletingTag ?? "")}
+        onConfirm={handleDeleteTag}
+        onClose={() => setDeletingTag(null)}
       />
     </div>
   );

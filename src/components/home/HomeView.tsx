@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { History, Star } from "lucide-react";
 import { useT } from "../../i18n";
-import ScheduleTimeline from "./ScheduleTimeline";
+import HomeClock from "./HomeClock";
 import HomeNextActions from "./HomeNextActions";
 import NoteListCard, { type NoteRow } from "./NoteListCard";
 import { formatRecentTime, type FavoriteNote, type RecentNote } from "./types";
@@ -61,17 +61,17 @@ export default function HomeView({ active, onNavigateToGtd }: Props) {
   }));
 
   return (
-    <div className="h-full flex gap-3 p-3 overflow-hidden">
-      <div className="w-[320px] flex-shrink-0 min-h-0">
-        <ScheduleTimeline version={version} onChanged={bump} />
-      </div>
-      <div className="flex-1 min-w-0 flex gap-3 overflow-hidden">
-        <div className="flex-1 min-w-0 min-h-0">
-          <HomeNextActions version={version} onChanged={bump} onNavigateToGtd={onNavigateToGtd} />
+    <div className="h-full flex flex-col gap-3 p-3 overflow-hidden">
+      <div className="flex-1 min-h-0 flex gap-3 overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
+          <HomeClock />
+          <div className="flex-1 min-h-0">
+            <HomeNextActions version={version} onChanged={bump} onNavigateToGtd={onNavigateToGtd} />
+          </div>
         </div>
         <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
-          <NoteListCard title={t["home.recents"]} icon={History} rows={recentRows} emptyText={t["home.emptyRecents"]} />
           <NoteListCard title={t["home.favorites"]} icon={Star} rows={favoriteRows} emptyText={t["home.emptyFavorites"]} accent onUnstar={unstar} />
+          <NoteListCard title={t["home.recents"]} icon={History} rows={recentRows} emptyText={t["home.emptyRecents"]} />
         </div>
       </div>
     </div>

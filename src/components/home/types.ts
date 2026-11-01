@@ -1,12 +1,3 @@
-export interface ScheduleBlock {
-  id: number;
-  label: string;
-  start: string;
-  end: string;
-  color: string;
-  sort_order: number;
-}
-
 export interface FavoriteNote {
   path: string;
   title: string;

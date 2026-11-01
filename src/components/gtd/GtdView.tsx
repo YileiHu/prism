@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Inbox, Zap, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
+import { Inbox, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
 import Sidebar from "../Sidebar";
 import { useT } from "../../i18n";
 import GtdInbox from "./GtdInbox";
 import GtdItemList from "./GtdItemList";
 import GtdProjects from "./GtdProjects";
-import GtdNextList from "./GtdNextList";
 import GtdProcessDialog from "./GtdProcessDialog";
 import type { GtdFocus, GtdItem, GtdListKey, GtdStatus } from "./types";
 
@@ -15,7 +14,7 @@ interface Props {
 
 export default function GtdView({ focus }: Props) {
   const { t } = useT();
-  const [list, setList] = useState<GtdListKey>("next");
+  const [list, setList] = useState<GtdListKey>("inbox");
   const [counts, setCounts] = useState<Record<GtdStatus, number>>({
     inbox: 0,
     someday: 0,
@@ -51,7 +50,6 @@ export default function GtdView({ focus }: Props) {
   }, [reloadCounts]);
 
   const nav: { key: GtdListKey; icon: LucideIcon; label: string; count?: number }[] = [
-    { key: "next", icon: Zap, label: t["gtd.next"] },
     { key: "inbox", icon: Inbox, label: t["gtd.inbox"], count: counts.inbox },
     { key: "waiting", icon: Clock, label: t["gtd.waiting"], count: counts.waiting },
     { key: "project", icon: FolderKanban, label: t["gtd.projects"], count: counts.project },
@@ -81,11 +79,10 @@ export default function GtdView({ focus }: Props) {
         ))}
       </Sidebar>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {list === "inbox" && (
           <GtdInbox version={version} onProcess={setProcessing} onChanged={handleChanged} />
         )}
-        {list === "next" && <GtdNextList version={version} onChanged={handleChanged} />}
         {(list === "waiting" || list === "someday" || list === "done") && (
           <GtdItemList
             key={list}

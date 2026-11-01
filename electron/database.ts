@@ -29,12 +29,16 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       url TEXT NOT NULL UNIQUE,
       title TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE
+      name TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      color TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS resource_tags (
@@ -66,6 +70,7 @@ export function initDatabase(): void {
       title TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'inbox',
       is_next INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       done_at TEXT
     );
@@ -83,15 +88,6 @@ export function initDatabase(): void {
       FOREIGN KEY (project_id) REFERENCES gtd_items(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_gtd_actions_project ON gtd_actions(project_id, sort_order);
-
-    CREATE TABLE IF NOT EXISTS schedule_blocks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      label TEXT NOT NULL DEFAULT '',
-      start TEXT NOT NULL,
-      end TEXT NOT NULL,
-      color TEXT NOT NULL DEFAULT '#6366f1',
-      sort_order INTEGER NOT NULL DEFAULT 0
-    );
 
     CREATE TABLE IF NOT EXISTS favorite_notes (
       path TEXT PRIMARY KEY,
@@ -128,6 +124,43 @@ export function initDatabase(): void {
     `);
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_notes_vault ON notes(vault_path)");
+
+  // Migration: project descriptions were added after gtd_items shipped
+  const gtdItemCols = db.prepare("PRAGMA table_info(gtd_items)").all() as { name: string }[];
+  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "description")) {
+    db.exec("ALTER TABLE gtd_items ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+
+  // Migration: resource ordering was added after resources shipped — seed it
+  // from id so the existing newest-first display order is preserved.
+  const resourceCols = db.prepare("PRAGMA table_info(resources)").all() as { name: string }[];
+  if (resourceCols.length > 0 && !resourceCols.some((c) => c.name === "sort_order")) {
+    db.exec("ALTER TABLE resources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE resources SET sort_order = -id");
+  }
+  if (resourceCols.length > 0 && !resourceCols.some((c) => c.name === "notes")) {
+    db.exec("ALTER TABLE resources ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_resources_sort ON resources(sort_order)");
+
+  // Migration: tag ordering and color were added after tags shipped — seed the
+  // order from the previous count-desc display so the sidebar looks unchanged.
+  const tagCols = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[];
+  if (tagCols.length > 0 && !tagCols.some((c) => c.name === "sort_order")) {
+    db.exec("ALTER TABLE tags ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+    const ordered = db.prepare(`
+      SELECT t.id FROM tags t
+      LEFT JOIN resource_tags rt ON rt.tag_id = t.id
+      GROUP BY t.id
+      ORDER BY COUNT(rt.resource_id) DESC, t.id ASC
+    `).all() as { id: number }[];
+    const update = db.prepare("UPDATE tags SET sort_order = ? WHERE id = ?");
+    ordered.forEach((row, index) => update.run(index, row.id));
+  }
+  if (tagCols.length > 0 && !tagCols.some((c) => c.name === "color")) {
+    db.exec("ALTER TABLE tags ADD COLUMN color TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tags_sort ON tags(sort_order)");
 }
 
 // ---- Resource operations ----
@@ -136,6 +169,7 @@ interface ResourceRow {
   id: number;
   url: string;
   title: string;
+  notes: string;
   created_at: string;
   tag_names: string | null;
 }
@@ -144,14 +178,16 @@ export interface Resource {
   id: number;
   url: string;
   title: string;
+  notes: string;
   created_at: string;
   tags: string[];
 }
 
-export function addResource(url: string, title: string, tags: string[]): Resource {
-  const insertResource = db.prepare("INSERT INTO resources (url, title) VALUES (?, ?)");
+export function addResource(url: string, title: string, tags: string[], notes: string): Resource {
+  const insertResource = db.prepare("INSERT INTO resources (url, title, notes, sort_order) VALUES (?, ?, ?, ?)");
   const id = db.transaction(() => {
-    const resourceId = insertResource.run(url, title).lastInsertRowid as number;
+    const { next } = db.prepare("SELECT COALESCE(MIN(sort_order), 0) - 1 AS next FROM resources").get() as { next: number };
+    const resourceId = insertResource.run(url, title, notes, next).lastInsertRowid as number;
     linkTags(resourceId, tags);
     return resourceId;
   })();
@@ -160,7 +196,9 @@ export function addResource(url: string, title: string, tags: string[]): Resourc
 }
 
 function linkTags(resourceId: number, tags: string[]): void {
-  const insertTag = db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)");
+  const insertTag = db.prepare(
+    "INSERT OR IGNORE INTO tags (name, sort_order) VALUES (?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM tags))"
+  );
   const getTag = db.prepare("SELECT id FROM tags WHERE name = ?");
   const link = db.prepare("INSERT INTO resource_tags (resource_id, tag_id) VALUES (?, ?)");
   for (const tagName of tags) {
@@ -187,8 +225,27 @@ const RESOURCE_SELECT = `
 `;
 
 export function getResources(): Resource[] {
-  const rows = db.prepare(`${RESOURCE_SELECT} ORDER BY r.created_at DESC`).all() as ResourceRow[];
+  const rows = db.prepare(`${RESOURCE_SELECT} ORDER BY r.sort_order ASC, r.id ASC`).all() as ResourceRow[];
   return rows.map(rowToResource);
+}
+
+// Reorders only the given resources, leaving them in the slots they already
+// occupy in the global order so the other rows keep their relative positions.
+export function reorderResources(orderedIds: number[]): void {
+  if (orderedIds.length === 0) return;
+  db.transaction(() => {
+    const all = db.prepare("SELECT id FROM resources ORDER BY sort_order ASC, id ASC").all() as { id: number }[];
+    const wanted = new Set(orderedIds);
+    const slots: number[] = [];
+    all.forEach((row, index) => {
+      if (wanted.has(row.id)) slots.push(index);
+    });
+    if (new Set(orderedIds).size !== orderedIds.length || slots.length !== orderedIds.length) return;
+    const next = all.map((row) => row.id);
+    slots.forEach((slot, i) => { next[slot] = orderedIds[i]; });
+    const update = db.prepare("UPDATE resources SET sort_order = ? WHERE id = ?");
+    next.forEach((id, index) => update.run(index, id));
+  })();
 }
 
 export function getResource(id: number): Resource | null {
@@ -197,9 +254,9 @@ export function getResource(id: number): Resource | null {
   return rowToResource(row);
 }
 
-export function updateResource(id: number, url: string, title: string, tags: string[]): Resource | null {
+export function updateResource(id: number, url: string, title: string, tags: string[], notes: string): Resource | null {
   db.transaction(() => {
-    db.prepare("UPDATE resources SET url = ?, title = ? WHERE id = ?").run(url, title, id);
+    db.prepare("UPDATE resources SET url = ?, title = ?, notes = ? WHERE id = ?").run(url, title, notes, id);
     db.prepare("DELETE FROM resource_tags WHERE resource_id = ?").run(id);
     linkTags(id, tags);
     pruneOrphanTags();
@@ -228,7 +285,7 @@ export function searchResources(query: string): Resource[] {
   const clauses = terms.map(() => "r.title LIKE ? ESCAPE '\\'").join(" AND ");
   const params = terms.map((t) => `%${escapeLike(t)}%`);
 
-  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.created_at DESC`).all(...params) as ResourceRow[];
+  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.sort_order ASC, r.id ASC`).all(...params) as ResourceRow[];
   return rows.map(rowToResource);
 }
 
@@ -237,6 +294,7 @@ function rowToResource(row: ResourceRow): Resource {
     id: row.id,
     url: row.url,
     title: row.title,
+    notes: row.notes,
     created_at: row.created_at,
     tags: row.tag_names ? row.tag_names.split("\x1f") : [],
   };
@@ -365,14 +423,57 @@ export function setSetting(key: string, value: string): void {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
 }
 
-export function getAllTags(): { name: string; count: number }[] {
+export interface TagInfo {
+  name: string;
+  count: number;
+  color: string;
+}
+
+export function getAllTags(): TagInfo[] {
   return db.prepare(`
-    SELECT t.name, COUNT(rt.resource_id) as count
+    SELECT t.name, COUNT(rt.resource_id) as count, t.color
     FROM tags t
     JOIN resource_tags rt ON t.id = rt.tag_id
     GROUP BY t.id
-    ORDER BY count DESC
-  `).all() as { name: string; count: number }[];
+    ORDER BY t.sort_order ASC, t.id ASC
+  `).all() as TagInfo[];
+}
+
+export function reorderTags(orderedNames: string[]): void {
+  const update = db.prepare("UPDATE tags SET sort_order = ? WHERE name = ?");
+  db.transaction(() => {
+    orderedNames.forEach((name, index) => update.run(index, name));
+  })();
+}
+
+export function setTagColor(name: string, color: string): void {
+  db.prepare("UPDATE tags SET color = ? WHERE name = ?").run(color, name);
+}
+
+// Renaming onto an existing tag merges the two: links are unioned into the
+// target and the old row is deleted.
+export function renameTag(oldName: string, newName: string): void {
+  if (oldName === newName) return;
+  db.transaction(() => {
+    const oldTag = db.prepare("SELECT id, color FROM tags WHERE name = ?").get(oldName) as { id: number; color: string } | undefined;
+    if (!oldTag) return;
+    const target = db.prepare("SELECT id, color FROM tags WHERE name = ?").get(newName) as { id: number; color: string } | undefined;
+    if (!target) {
+      db.prepare("UPDATE tags SET name = ? WHERE id = ?").run(newName, oldTag.id);
+      return;
+    }
+    db.prepare(
+      "INSERT OR IGNORE INTO resource_tags (resource_id, tag_id) SELECT resource_id, ? FROM resource_tags WHERE tag_id = ?"
+    ).run(target.id, oldTag.id);
+    db.prepare("DELETE FROM tags WHERE id = ?").run(oldTag.id);
+    if (!target.color && oldTag.color) {
+      db.prepare("UPDATE tags SET color = ? WHERE id = ?").run(oldTag.color, target.id);
+    }
+  })();
+}
+
+export function deleteTag(name: string): void {
+  db.prepare("DELETE FROM tags WHERE name = ?").run(name);
 }
 
 // ---- GTD operations ----
@@ -384,6 +485,7 @@ export interface GtdItem {
   title: string;
   status: GtdStatus;
   is_next: number;
+  description: string;
   created_at: string;
   done_at: string | null;
   action_count: number;
@@ -454,6 +556,10 @@ export function renameGtdItem(id: number, title: string): void {
   db.prepare("UPDATE gtd_items SET title = ? WHERE id = ?").run(title, id);
 }
 
+export function setGtdItemDescription(id: number, description: string): void {
+  db.prepare("UPDATE gtd_items SET description = ? WHERE id = ?").run(description, id);
+}
+
 export function deleteGtdItem(id: number): boolean {
   return db.prepare("DELETE FROM gtd_items WHERE id = ?").run(id).changes > 0;
 }
@@ -483,15 +589,37 @@ export function renameGtdAction(id: number, title: string): void {
   db.prepare("UPDATE gtd_actions SET title = ? WHERE id = ?").run(title, id);
 }
 
+function promoteFrontmostAction(projectId: number): void {
+  const first = db.prepare(
+    "SELECT id FROM gtd_actions WHERE project_id = ? AND is_done = 0 ORDER BY sort_order ASC, id ASC LIMIT 1"
+  ).get(projectId) as { id: number } | undefined;
+  db.prepare("UPDATE gtd_actions SET is_next = 0 WHERE project_id = ?").run(projectId);
+  if (first) db.prepare("UPDATE gtd_actions SET is_next = 1 WHERE id = ?").run(first.id);
+}
+
 export function toggleGtdAction(id: number): void {
-  // SET expressions read the pre-update is_done, so all three stay consistent
-  db.prepare(`
-    UPDATE gtd_actions SET
-      is_done = 1 - is_done,
-      done_at = CASE WHEN is_done = 0 THEN datetime('now') ELSE NULL END,
-      is_next = CASE WHEN is_done = 0 THEN 0 ELSE is_next END
-    WHERE id = ?
-  `).run(id);
+  db.transaction(() => {
+    const row = db.prepare("SELECT project_id, is_done FROM gtd_actions WHERE id = ?").get(id) as
+      { project_id: number; is_done: number } | undefined;
+    if (!row) return;
+    // SET expressions read the pre-update is_done, so all three stay consistent
+    db.prepare(`
+      UPDATE gtd_actions SET
+        is_done = 1 - is_done,
+        done_at = CASE WHEN is_done = 0 THEN datetime('now') ELSE NULL END,
+        is_next = CASE WHEN is_done = 0 THEN 0 ELSE is_next END
+      WHERE id = ?
+    `).run(id);
+    // Newly completed → hand "next" to the frontmost remaining action
+    if (row.is_done === 0) promoteFrontmostAction(row.project_id);
+  })();
+}
+
+export function reorderGtdActions(projectId: number, orderedIds: number[]): void {
+  db.transaction(() => {
+    const update = db.prepare("UPDATE gtd_actions SET sort_order = ? WHERE id = ? AND project_id = ?");
+    orderedIds.forEach((actionId, index) => update.run(index, actionId, projectId));
+  })();
 }
 
 export function deleteGtdAction(id: number): void {
@@ -512,6 +640,7 @@ interface GtdNextProjectRow {
   title: string;
   status: GtdStatus;
   is_next: number;
+  description: string;
   created_at: string;
   done_at: string | null;
   action_count: number;
@@ -552,6 +681,7 @@ export function getGtdNextList(): GtdNextList {
         title: row.title,
         status: row.status,
         is_next: row.is_next,
+        description: row.description,
         created_at: row.created_at,
         done_at: row.done_at,
         action_count: row.action_count,
@@ -569,47 +699,6 @@ export function getGtdNextList(): GtdNextList {
       },
     })),
   };
-}
-
-// ---- Schedule template operations ----
-
-export interface ScheduleBlock {
-  id: number;
-  label: string;
-  start: string;
-  end: string;
-  color: string;
-  sort_order: number;
-}
-
-export interface ScheduleBlockInput {
-  label: string;
-  start: string;
-  end: string;
-  color: string;
-}
-
-export function listScheduleBlocks(): ScheduleBlock[] {
-  return db.prepare("SELECT * FROM schedule_blocks ORDER BY start ASC, sort_order ASC, id ASC").all() as ScheduleBlock[];
-}
-
-export function addScheduleBlock(block: ScheduleBlockInput): ScheduleBlock {
-  const id = db
-    .prepare("INSERT INTO schedule_blocks (label, start, end, color) VALUES (?, ?, ?, ?)")
-    .run(block.label, block.start, block.end, block.color).lastInsertRowid as number;
-  return db.prepare("SELECT * FROM schedule_blocks WHERE id = ?").get(id) as ScheduleBlock;
-}
-
-export function updateScheduleBlock(id: number, block: ScheduleBlockInput): ScheduleBlock | null {
-  const changes = db
-    .prepare("UPDATE schedule_blocks SET label = ?, start = ?, end = ?, color = ? WHERE id = ?")
-    .run(block.label, block.start, block.end, block.color, id).changes;
-  if (changes === 0) return null;
-  return db.prepare("SELECT * FROM schedule_blocks WHERE id = ?").get(id) as ScheduleBlock;
-}
-
-export function deleteScheduleBlock(id: number): boolean {
-  return db.prepare("DELETE FROM schedule_blocks WHERE id = ?").run(id).changes > 0;
 }
 
 // ---- Favorite / recent notes ----

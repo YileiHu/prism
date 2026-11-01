@@ -8,6 +8,7 @@ import {
   getResources,
   updateResource,
   deleteResource,
+  reorderResources,
   searchResources,
   syncVaultNotes,
   insertNote,
@@ -19,24 +20,26 @@ import {
   getSetting,
   setSetting,
   getAllTags,
+  reorderTags,
+  setTagColor,
+  renameTag,
+  deleteTag,
   addGtdItem,
   getGtdItems,
   getGtdCounts,
   setGtdItemStatus,
   renameGtdItem,
+  setGtdItemDescription,
   deleteGtdItem,
   setGtdItemNext,
   getGtdActions,
   addGtdAction,
   renameGtdAction,
   toggleGtdAction,
+  reorderGtdActions,
   deleteGtdAction,
   setGtdActionNext,
   getGtdNextList,
-  listScheduleBlocks,
-  addScheduleBlock,
-  updateScheduleBlock,
-  deleteScheduleBlock,
   toggleFavoriteNote,
   getFavoriteNotes,
   getFavoriteStatus,
@@ -44,7 +47,6 @@ import {
   recordRecentOpen,
   renameNoteEntry,
   type GtdStatus,
-  type ScheduleBlockInput,
 } from "./database";
 
 let mainWindow: BrowserWindow | null = null;
@@ -483,19 +485,21 @@ function findOwningVault(filePath: string): string | null {
 
 function registerIpcHandlers(): void {
   // Resources
-  ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[]) => {
-    return addResource(url, title, tags);
+  ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[], notes: string) => {
+    return addResource(url, title, tags, notes);
   });
 
   ipcMain.handle("resources:list", () => getResources());
 
-  ipcMain.handle("resources:update", (_e, id: number, url: string, title: string, tags: string[]) => {
-    return updateResource(id, url, title, tags);
+  ipcMain.handle("resources:update", (_e, id: number, url: string, title: string, tags: string[], notes: string) => {
+    return updateResource(id, url, title, tags, notes);
   });
 
   ipcMain.handle("resources:delete", (_e, id: number) => deleteResource(id));
 
   ipcMain.handle("resources:search", (_e, query: string) => searchResources(query));
+
+  ipcMain.handle("resources:reorder", (_e, orderedIds: number[]) => reorderResources(orderedIds));
 
   ipcMain.handle("fetch:title", async (_e, url: string) => fetchPageTitle(url));
 
@@ -644,6 +648,10 @@ function registerIpcHandlers(): void {
 
   // Tags
   ipcMain.handle("tags:list", () => getAllTags());
+  ipcMain.handle("tags:reorder", (_e, orderedNames: string[]) => reorderTags(orderedNames));
+  ipcMain.handle("tags:set-color", (_e, name: string, color: string) => setTagColor(name, color));
+  ipcMain.handle("tags:rename", (_e, oldName: string, newName: string) => renameTag(oldName, newName));
+  ipcMain.handle("tags:delete", (_e, name: string) => deleteTag(name));
 
   // GTD
   ipcMain.handle("gtd:add", (_e, title: string) => addGtdItem(title));
@@ -651,41 +659,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:counts", () => getGtdCounts());
   ipcMain.handle("gtd:set-status", (_e, id: number, status: GtdStatus) => setGtdItemStatus(id, status));
   ipcMain.handle("gtd:rename", (_e, id: number, title: string) => renameGtdItem(id, title));
+  ipcMain.handle("gtd:set-description", (_e, id: number, description: string) => setGtdItemDescription(id, description));
   ipcMain.handle("gtd:delete", (_e, id: number) => deleteGtdItem(id));
   ipcMain.handle("gtd:set-next", (_e, id: number, isNext: boolean) => setGtdItemNext(id, isNext));
   ipcMain.handle("gtd:list-actions", (_e, projectId: number) => getGtdActions(projectId));
   ipcMain.handle("gtd:add-action", (_e, projectId: number, title: string) => addGtdAction(projectId, title));
   ipcMain.handle("gtd:rename-action", (_e, id: number, title: string) => renameGtdAction(id, title));
   ipcMain.handle("gtd:toggle-action", (_e, id: number) => toggleGtdAction(id));
+  ipcMain.handle("gtd:reorder-actions", (_e, projectId: number, orderedIds: number[]) => reorderGtdActions(projectId, orderedIds));
   ipcMain.handle("gtd:delete-action", (_e, id: number) => deleteGtdAction(id));
   ipcMain.handle("gtd:set-action-next", (_e, projectId: number, actionId: number | null) => setGtdActionNext(projectId, actionId));
   ipcMain.handle("gtd:next-list", () => getGtdNextList());
-
-  // Schedule template (one-day time-block division)
-  const isTime = (s: string) => /^\d{2}:\d{2}$/.test(s) && +s.slice(0, 2) <= 23 && +s.slice(3) <= 59;
-  const validateBlock = (block: ScheduleBlockInput, excludeId?: number): { error?: string } => {
-    if (!isTime(block.start) || !isTime(block.end)) return { error: "format" };
-    if (block.start >= block.end) return { error: "order" };
-    const overlap = listScheduleBlocks().some((b) => b.id !== excludeId && block.start < b.end && b.start < block.end);
-    if (overlap) return { error: "overlap" };
-    return {};
-  };
-
-  ipcMain.handle("schedule:list", () => listScheduleBlocks());
-
-  ipcMain.handle("schedule:add", (_e, block: ScheduleBlockInput) => {
-    const v = validateBlock(block);
-    if (v.error) return v;
-    return { block: addScheduleBlock(block) };
-  });
-
-  ipcMain.handle("schedule:update", (_e, id: number, block: ScheduleBlockInput) => {
-    const v = validateBlock(block, id);
-    if (v.error) return v;
-    return { block: updateScheduleBlock(id, block) };
-  });
-
-  ipcMain.handle("schedule:delete", (_e, id: number) => deleteScheduleBlock(id));
 
   // Favorite / recent notes
   ipcMain.handle("notes:toggle-favorite", (_e, notePath: string, title: string) => toggleFavoriteNote(notePath, title));
