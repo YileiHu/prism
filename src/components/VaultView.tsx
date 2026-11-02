@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   FileText,
   FolderOpen, FolderX, CheckSquare, Maximize2,
   Trash2, Plus, Pencil, RefreshCw,
-  ArrowRightLeft, Star,
+  ArrowRightLeft, Star, Search,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useToast } from "../lib/toast";
+import { resolveTagColor, type PaletteColor } from "../lib/colors";
 import CollectionsSidebar, { type CollectionData, type NoteGroup } from "./CollectionsSidebar";
+import ContentSearchView from "./ContentSearchView";
 import CollectionDetail from "./CollectionDetail";
 import CreateCollectionModal from "./CreateCollectionModal";
 import CreateNoteModal from "./CreateNoteModal";
@@ -62,6 +64,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
 
   const [notes, setNotes] = useState<VaultNote[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchScope, setSearchScope] = useState<"title" | "content">("title");
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [scanning, setScanning] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -90,6 +93,23 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
   // Select mode
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`prism_note_search_scope_${vaultPath}`);
+    setSearchScope(saved === "content" ? "content" : "title");
+  }, [vaultPath]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const changeSearchScope = useCallback((scope: "title" | "content") => {
+    setSearchScope(scope);
+    localStorage.setItem(`prism_note_search_scope_${vaultPath}`, scope);
+    if (scope === "content") {
+      setSelectMode(false);
+      setSelectedPaths(new Set());
+    }
+    searchInputRef.current?.focus();
+  }, [vaultPath]);
 
   // Collapse state
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -228,6 +248,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     handleRenameCollection,
     handleDeleteCollection,
     handleReorderCollections,
+    handleSetCollectionColor,
     handleDropNote,
     handleDropNoteDirect,
     handleMoveNoteDirect,
@@ -250,6 +271,14 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     noteCollections,
     sortedNotes,
   } = useCollections({ vaultPath, notes, loadNotes });
+
+  const collectionColorByName = useMemo(() => {
+    const map = new Map<string, PaletteColor>();
+    for (const c of collections) map.set(c.name, resolveTagColor(c.name, c.color));
+    return map;
+  }, [collections]);
+
+  const contentResultsVisible = searchScope === "content" && searchQuery.trim() !== "" && !selectedCollectionId;
 
   // ---- Create note callback ----
 
@@ -398,13 +427,11 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     }
 
     items.push(
-      { label: "", divider: true },
       {
         label: t["menu.rename"],
         icon: <Pencil size={14} />,
         onClick: () => setRenameNoteTarget(note as VaultNote),
       },
-      { label: "", divider: true },
       {
         label: t["menu.moveToTrash"],
         icon: <Trash2 size={14} />,
@@ -517,6 +544,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
               });
             }}
             onReorder={handleReorderCollections}
+            onSetColor={handleSetCollectionColor}
             onDropNote={handleDropNote}
           />
         </div>
@@ -540,14 +568,43 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
         {!selectedCollectionId && !editorActive && (
           <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
             <SearchInput
+              ref={searchInputRef}
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder={t["vault.search"]}
+              placeholder={searchScope === "title" ? t["vault.search"] : t["vault.contentSearchPlaceholder"]}
               wrapperClassName="flex-1"
             />
-            <Button variant="ghost" size="icon-md" active={selectMode} onClick={toggleSelectMode} title={selectMode ? t["batch.cancelSelect"] : t["batch.selectMode"]}>
-              <CheckSquare size={16} />
-            </Button>
+            <div className="flex items-center rounded-lg border border-strong bg-elevated/60 p-0.5 flex-shrink-0">
+              <button
+                type="button"
+                aria-pressed={searchScope === "title"}
+                onClick={() => changeSearchScope("title")}
+                className={`px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                  searchScope === "title"
+                    ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
+                    : "text-muted hover:text-secondary"
+                }`}
+              >
+                {t["vault.scopeTitle"]}
+              </button>
+              <button
+                type="button"
+                aria-pressed={searchScope === "content"}
+                onClick={() => changeSearchScope("content")}
+                className={`px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                  searchScope === "content"
+                    ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
+                    : "text-muted hover:text-secondary"
+                }`}
+              >
+                {t["vault.scopeContent"]}
+              </button>
+            </div>
+            {searchScope === "title" && (
+              <Button variant="ghost" size="icon-md" active={selectMode} onClick={toggleSelectMode} title={selectMode ? t["batch.cancelSelect"] : t["batch.selectMode"]}>
+                <CheckSquare size={16} />
+              </Button>
+            )}
           </div>
         )}
 
@@ -569,6 +626,10 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
               className={`flex-1 flex flex-col overflow-hidden relative z-10 ${editorActive ? "" : "anim-fade-in"}`}
             >
               <div className="px-4 h-11 border-b border-line/50 flex-shrink-0 flex items-center gap-2 glass bg-tint/[0.04]">
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: resolveTagColor(selectedCollection.name, selectedCollection.color).bar }}
+                />
                 <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
                 <span className="text-xs text-muted">{t["vault.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
                 <div className="flex-1" />
@@ -603,16 +664,35 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
               />
             </div>
           )}
+          {contentResultsVisible && (
+            <div
+              style={editorActive ? { position: "absolute", inset: 0, visibility: "hidden" } : undefined}
+              className={`flex-1 flex flex-col overflow-hidden relative z-10 ${editorActive ? "" : "anim-fade-in"}`}
+            >
+              <ContentSearchView
+                vaultPath={vaultPath}
+                collections={collections}
+                query={searchQuery}
+                onOpenNote={(note) => openNote(note)}
+              />
+            </div>
+          )}
           <div
-            style={!selectedCollectionId && !editorActive ? {} : { position: "absolute", visibility: "hidden" }}
-            className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId && !editorActive ? "anim-fade-in" : ""}`}
+            style={!selectedCollectionId && !contentResultsVisible && !editorActive ? {} : { position: "absolute", visibility: "hidden" }}
+            className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId && !contentResultsVisible && !editorActive ? "anim-fade-in" : ""}`}
             ref={notesScrollRef}
           >
               {sortedNotes.length === 0 && (
                 <EmptyState
                   size="module"
                   text={scanning ? t["vault.scanning"] : (searchQuery ? t["vault.emptySearch"] : t["vault.emptyVault"])}
-                  cta={!scanning && !searchQuery ? { label: t["vault.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> } : undefined}
+                  cta={
+                    !scanning
+                      ? searchQuery
+                        ? { label: t["vault.contentSearch"], onClick: () => changeSearchScope("content"), icon: <Search size={14} /> }
+                        : { label: t["vault.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> }
+                      : undefined
+                  }
                 />
               )}
               {sortedNotes.length > 0 && (
@@ -666,9 +746,18 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                                 }
                                 return (
                                   <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
-                                    {noteColls.slice(0, 3).map((name) => (
-                                      <span key={name} className="text-[10px] px-1.5 py-0.5 rounded bg-hover/60 text-tertiary whitespace-nowrap">{name}</span>
-                                    ))}
+                                    {noteColls.slice(0, 3).map((name) => {
+                                      const color = collectionColorByName.get(name);
+                                      return (
+                                        <span
+                                          key={name}
+                                          className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
+                                          style={color ? { color: color.name, backgroundColor: color.bg } : undefined}
+                                        >
+                                          {name}
+                                        </span>
+                                      );
+                                    })}
                                     {noteColls.length > 3 && <span className="text-[10px] text-faint">+{noteColls.length - 3}</span>}
                                   </span>
                                 );
@@ -682,13 +771,6 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                               )}
                             </>
                           ) : undefined}
-                          hoverActions={!selectMode ? [{
-                            icon: <Star size={13} fill={favorites.has(note.path) ? "currentColor" : "none"} />,
-                            label: favorites.has(note.path) ? t["menu.unfavorite"] : t["menu.favorite"],
-                            onClick: () => toggleFavorite(note),
-                            active: favorites.has(note.path),
-                            className: favorites.has(note.path) ? "text-[var(--accent)]" : undefined,
-                          }] : []}
                         />
                       </div>
                     );

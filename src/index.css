@@ -292,7 +292,7 @@ body {
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
   padding: 12px 14px;
-  margin: 0.7em 0;
+  margin: 1.7em 0;
   overflow-x: auto;
 }
 .markdown-preview pre.md-code code {
@@ -313,24 +313,49 @@ body {
   color: rgb(var(--c-faint));
   pointer-events: none;
 }
+.md-table-wrap {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1.7em 0;
+  overflow-x: auto;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  background: rgb(var(--c-surface) / 0.25);
+}
 .markdown-preview table {
   border-collapse: collapse;
-  margin: 0.7em 0;
-  max-width: 100%;
-  display: block;
-  overflow-x: auto;
+  font-size: 0.95em;
 }
 .markdown-preview th, .markdown-preview td {
-  border: 1px solid rgb(var(--c-strong));
-  padding: 5px 12px;
+  padding: 7px 14px;
+  border-bottom: 1px solid rgb(var(--c-line));
+  text-align: left;
+  vertical-align: top;
 }
-.markdown-preview th { background: rgb(var(--c-tint) / 0.05); font-weight: 600; }
+.markdown-preview th {
+  background: rgb(var(--c-tint) / 0.05);
+  color: rgb(var(--c-secondary));
+  font-weight: 600;
+}
+.markdown-preview th.md-cell-nowrap,
+.markdown-preview td.md-cell-nowrap { white-space: nowrap; }
+.markdown-preview tbody tr:last-child td { border-bottom: none; }
+.markdown-preview tbody tr:nth-child(even) { background: rgb(var(--c-tint) / 0.02); }
+.markdown-preview tbody tr:hover { background: rgb(var(--c-tint) / 0.04); }
 .markdown-preview hr {
   border: none;
   border-top: 1px solid rgb(var(--c-strong));
   margin: 1.2em 0;
 }
 .markdown-preview img { max-width: 100%; border-radius: 8px; }
+/* Images alone on their own line are centered; inline images stay in text flow.
+   Vertical margin = one line (1.7em line-height). Margin rather than padding:
+   padding would shrink an image that has an explicit height under border-box. */
+.markdown-preview img.md-img-standalone {
+  display: block;
+  margin: 1.7em auto;
+}
 .markdown-preview a[href] { color: var(--accent-text); }
 
 /* ==highlight== (markdown-it-mark) */
@@ -358,7 +383,7 @@ body {
 
 /* KaTeX display math scroll + spacing */
 .markdown-preview .katex-display {
-  margin: 0.8em 0;
+  margin: 1.7em 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -420,14 +445,145 @@ body {
 
 /* Edit-mode image preview: block widget below the raw ![]()/![[ ]] line */
 .cm-md-image-preview {
-  padding: 4px 0 2px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 6px;
   cursor: default;
+}
+.cm-md-image-item {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
 }
 .cm-md-image-preview img {
   max-width: 100%;
   max-height: 400px;
   border-radius: 8px;
   border: 1px solid rgb(var(--c-line));
+}
+/* Explicitly sized images keep their aspect ratio instead of being clipped
+   by the edit-mode max-height (width attr + auto height must stay in ratio) */
+.cm-md-image-preview img.cm-md-image-sized {
+  max-height: none;
+}
+.cm-md-image-toolbar {
+  /* Center-anchored: the image grows symmetrically around its center while
+     the slider is dragged, so the toolbar stays under the pointer */
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Size to content: a small image must not squeeze the controls into
+     wrapping (width: max-content lets the bar overflow the image box) */
+  width: max-content;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-surface) / 0.94);
+  box-shadow: 0 2px 12px rgb(var(--c-overlay) / 0.3);
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+.cm-md-image-item:hover .cm-md-image-toolbar,
+.cm-md-image-toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cm-md-image-toolbar button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgb(var(--c-tertiary));
+  cursor: pointer;
+  line-height: 1.4;
+}
+.cm-md-image-toolbar button:hover {
+  background: rgb(var(--c-hover) / 0.7);
+  color: rgb(var(--c-primary));
+}
+.cm-md-image-toolbar button.is-active {
+  background: var(--accent-muted);
+  color: var(--accent-text);
+}
+.cm-md-image-size-slider {
+  /* --slider-progress is written by the toolbar's syncProgress() */
+  --slider-progress: 50%;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 120px;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+.cm-md-image-size-slider:focus {
+  outline: none;
+}
+.cm-md-image-size-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) var(--slider-progress),
+    rgb(var(--c-strong) / 0.55) var(--slider-progress),
+    rgb(var(--c-strong) / 0.55) 100%
+  );
+}
+.cm-md-image-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 2px solid rgb(var(--c-surface));
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.cm-md-image-size-slider:hover::-webkit-slider-thumb,
+.cm-md-image-size-slider:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow:
+    0 0 0 3px rgb(var(--accent-rgb) / 0.18),
+    0 1px 4px rgb(var(--c-overlay) / 0.45);
+}
+.cm-md-image-size-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--c-strong) / 0.55);
+}
+.cm-md-image-size-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.cm-md-image-size-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgb(var(--c-surface));
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
+}
+.cm-md-image-size-value {
+  min-width: 44px;
+  text-align: right;
+  font-size: 10px;
+  color: rgb(var(--c-tertiary));
+  font-variant-numeric: tabular-nums;
 }
 .cm-md-image-missing {
   display: inline-block;
@@ -502,11 +658,10 @@ body {
 /* Callouts (> [!type]) — per-type hue as an --callout-rgb triplet */
 .callout {
   --callout-rgb: var(--accent-rgb);
-  border: 1px solid rgb(var(--callout-rgb) / 0.25);
-  border-left: 3px solid rgb(var(--callout-rgb));
+  border: 2px solid rgb(var(--callout-rgb) / 0.3);
   background: rgb(var(--callout-rgb) / 0.08);
   border-radius: 8px;
-  margin: 0.7em 0;
+  margin: 1.7em 0;
   overflow: hidden;
 }
 /* Families follow Obsidian's official callout colors */

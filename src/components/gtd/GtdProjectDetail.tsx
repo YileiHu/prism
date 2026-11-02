@@ -175,9 +175,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
               className={`border-b border-line/30 ${highlightId === action.id ? "bg-[var(--accent-muted)]" : ""}`}
               menuItems={[
                 { label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(action) },
-                { label: "", divider: true },
                 { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(action) },
-                { label: "", divider: true },
                 { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(action) },
               ]}
               leading={

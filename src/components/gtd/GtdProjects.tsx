@@ -69,9 +69,7 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
                   onContextMenu={(e) =>
                     onContextMenu(e, [
                       { label: t["gtd.completeProject"], icon: <Check size={14} />, onClick: () => completeProject(p) },
-                      { label: "", divider: true },
                       { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
-                      { label: "", divider: true },
                       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
                     ])
                   }

@@ -125,6 +125,10 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     };
   }, [collections, saveCollections, selectedCollectionId, vaultPath]);
 
+  const handleSetCollectionColor = useCallback((collId: string, color: string) => {
+    updateCollection(collId, (c) => ({ ...c, color }));
+  }, [updateCollection]);
+
   const handleReorderCollections = useCallback((from: number, to: number) => {
     setCollections((prev) => {
       const updated = [...prev];
@@ -480,6 +484,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     handleCreateCollection,
     handleRenameCollection,
     handleDeleteCollection,
+    handleSetCollectionColor,
     handleReorderCollections,
     // Notes in collections
     handleDropNote,

@@ -3,6 +3,8 @@ import { useT } from "../i18n";
 import Sidebar from "./Sidebar";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
+import { Palette, Pencil, Trash2 } from "lucide-react";
+import { hashColor, resolveTagColor, TAG_COLORS } from "../lib/colors";
 import {
   DndContext,
   DragOverlay,
@@ -31,6 +33,8 @@ export interface CollectionData {
   name: string;
   notePaths: string[];
   groups?: NoteGroup[];
+  // Palette `bar` hex from TAG_COLORS; empty/undefined falls back to hashColor(name)
+  color?: string;
 }
 
 interface Props {
@@ -42,6 +46,7 @@ interface Props {
   onDelete: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onDropNote: (collectionId: string, notePaths: string[]) => void;
+  onSetColor: (id: string, color: string) => void;
 }
 
 function makeCollId(id: string) { return `coll-${id}`; }
@@ -53,6 +58,7 @@ function SortableCollectionItem({
   onSelect,
   onRename,
   onDelete,
+  onSetColor,
   onDropNote,
 }: {
   coll: CollectionData;
@@ -61,14 +67,33 @@ function SortableCollectionItem({
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onSetColor: (id: string, color: string) => void;
   onDropNote: (collectionId: string, notePaths: string[]) => void;
 }) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
 
   const menuItems: MenuItem[] = [
-    { label: t["collections.rename"], onClick: onRename },
-    { label: t["collections.delete"], onClick: onDelete, danger: true },
+    {
+      label: t["collections.color"],
+      icon: <Palette size={14} />,
+      children: [
+        {
+          label: t["collections.colorAuto"],
+          icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: hashColor(coll.name).bar }} />,
+          checked: !coll.color,
+          onClick: () => onSetColor(coll.id, ""),
+        },
+        ...TAG_COLORS.map((c) => ({
+          label: t[`tagColor.${c.key}`],
+          icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.bar }} />,
+          checked: coll.color?.toLowerCase() === c.bar,
+          onClick: () => onSetColor(coll.id, c.bar),
+        })),
+      ],
+    },
+    { label: t["collections.rename"], icon: <Pencil size={14} />, onClick: onRename },
+    { label: t["collections.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
 
   const {
@@ -119,6 +144,10 @@ function SortableCollectionItem({
       }}
       onContextMenu={(e) => onContextMenu(e, menuItems)}
     >
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ backgroundColor: resolveTagColor(coll.name, coll.color).bar }}
+      />
       <span className="flex-1 text-sm truncate">{coll.name}</span>
       <span className="text-xs text-faint flex-shrink-0">{totalNotes}</span>
     </div>
@@ -129,6 +158,10 @@ function DragOverlayCollection({ coll }: { coll: CollectionData }) {
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-elevated border border-[var(--accent)] shadow-xl opacity-90">
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ backgroundColor: resolveTagColor(coll.name, coll.color).bar }}
+      />
       <span className="flex-1 text-sm text-primary">{coll.name}</span>
       <span className="text-xs text-muted">{totalNotes}</span>
     </div>
@@ -144,6 +177,7 @@ export default function CollectionsSidebar({
   onDelete,
   onReorder,
   onDropNote,
+  onSetColor,
 }: Props) {
   const { t } = useT();
   const [activeDrag, setActiveDrag] = useState<CollectionData | null>(null);
@@ -207,6 +241,7 @@ export default function CollectionsSidebar({
               onSelect={() => onSelect(coll.id)}
               onRename={() => onRename(coll.id)}
               onDelete={() => onDelete(coll.id)}
+              onSetColor={onSetColor}
               onDropNote={onDropNote}
             />
           ))}

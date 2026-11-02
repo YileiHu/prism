@@ -5,6 +5,7 @@ import taskLists from "markdown-it-task-lists";
 import { load as loadYaml } from "js-yaml";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/core";
+import { imageSizeAttrs, parseEmbedInner, parseImageAlt, type ImageSize } from "./imageSize";
 
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -81,6 +82,7 @@ const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
 const CALLOUT_RE = /^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const TAG_RE = /^#([\p{L}\p{N}_/-]+)/u;
+export const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
 
 // ---- Callout: "> [!type] Title" → styled div with a title bar ----
 
@@ -190,13 +192,19 @@ function embedRule(state: StateInline, silent: boolean): boolean {
   if (!inner.trim() || inner.includes("\n")) return false;
   const pipe = inner.indexOf("|");
   const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
-  const alt = pipe === -1 ? target : inner.slice(pipe + 1).trim() || target;
   if (!target) return false;
+
+  const isImage = IMAGE_EXTS.test(target);
+  // Size syntax only applies to images; non-image embeds keep the first-pipe
+  // alias semantics (so "![[note|400]]" doesn't lose its label)
+  const parsed = isImage ? parseEmbedInner(inner) : null;
+  const alt = parsed ? parsed.alt : pipe === -1 ? target : inner.slice(pipe + 1).trim() || target;
 
   if (!silent) {
     const token = state.push("wikilink_embed", "", 0);
     token.content = alt;
     token.attrSet("data-embed-target", target);
+    if (parsed?.size) token.meta = { imageSize: parsed.size };
   }
   state.pos = end + 2;
   return true;
@@ -249,6 +257,63 @@ const md: MarkdownItType = new MarkdownIt({
 });
 
 md.core.ruler.after("inline", "prism_callouts", transformCallouts);
+// Images that sit alone in their paragraph render as centered blocks; images
+// mixed with text keep the inline flow
+md.core.ruler.after("inline", "prism_standalone_images", (state) => {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "paragraph_open") continue;
+    const inline = tokens[i + 1];
+    if (inline?.type !== "inline") continue;
+    const children = inline.children ?? [];
+    let images = 0;
+    let standalone = true;
+    for (const child of children) {
+      if (child.type === "image") {
+        images++;
+      } else if (child.type === "wikilink_embed") {
+        if (!IMAGE_EXTS.test(String(child.attrGet("data-embed-target") ?? ""))) {
+          standalone = false;
+          break;
+        }
+        images++;
+      } else if (child.type === "text") {
+        if (child.content.trim()) {
+          standalone = false;
+          break;
+        }
+      } else if (
+        child.type !== "softbreak" &&
+        child.type !== "hardbreak" &&
+        child.type !== "link_open" &&
+        child.type !== "link_close"
+      ) {
+        standalone = false;
+        break;
+      }
+    }
+    if (!standalone || images === 0) continue;
+    for (const child of children) {
+      if (child.type === "image") child.attrJoin("class", "md-img-standalone");
+      else if (child.type === "wikilink_embed") child.attrJoin("class", "md-embed md-img-standalone");
+    }
+  }
+});
+// Short table cells (dates, numbers, short labels) shouldn't wrap; longer
+// descriptive cells keep normal wrapping. Wide tables scroll inside the frame.
+const TABLE_NOWRAP_MAX = 12;
+md.core.ruler.after("inline", "prism_table_nowrap", (state) => {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const type = tokens[i].type;
+    if (type !== "th_open" && type !== "td_open") continue;
+    const inline = tokens[i + 1];
+    if (inline.type !== "inline") continue;
+    const text = inline.content.trim();
+    if (!text || text.length > TABLE_NOWRAP_MAX) continue;
+    tokens[i].attrJoin("class", "md-cell-nowrap");
+  }
+});
 md.use(markPlugin);
 md.use(taskLists, { enabled: true, label: true });
 // Obsidian-style $...$ / $$...$$ math (KaTeX options pass through as extras)
@@ -269,8 +334,6 @@ md.renderer.rules.wikilink = (tokens, idx) => {
 // directly — they go through the prism-file:// protocol (electron/main.ts),
 // which resolves the ref against the note's folder and the vault root
 
-export const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
-
 export interface AssetContext {
   vaultPath: string;
   noteDir: string;
@@ -288,29 +351,43 @@ md.renderer.rules.wikilink_embed = (tokens, idx) => {
   const target = String(token.attrGet("data-embed-target") ?? "");
   if (IMAGE_EXTS.test(target)) {
     if (!assetCtx) return `<span class="md-img-missing">${md.utils.escapeHtml(target)}</span>`;
-    return `<img class="md-embed" src="${escapeAttr(prismFileUrl(assetCtx.vaultPath, target, assetCtx.noteDir))}" alt="${escapeAttr(token.content)}" loading="lazy">`;
+    const size = (token.meta as { imageSize?: ImageSize } | null)?.imageSize ?? null;
+    const cls = String(token.attrGet("class") ?? "md-embed");
+    return `<img class="${escapeAttr(cls)}" src="${escapeAttr(prismFileUrl(assetCtx.vaultPath, target, assetCtx.noteDir))}" alt="${escapeAttr(token.content)}"${imageSizeAttrs(size)} loading="lazy">`;
   }
   // .md transcludes (and anything else) degrade to a wikilink
   return `<a data-wikilink="${escapeAttr(target)}" class="wikilink">${md.utils.escapeHtml(token.content)}</a>`;
 };
 
-const defaultImageRenderer = md.renderer.rules.image;
-md.renderer.rules.image = (tokens, idx, options, env, self) => {
+md.renderer.rules.image = (tokens, idx, options, env) => {
   const token = tokens[idx];
-  const src = String(token.attrGet("src") ?? "");
+  const rawAlt = String(token.content ?? "");
+  const { size } = parseImageAlt(rawAlt);
+  // Alt text is rendered from children (strips **/_/etc.), then the trailing
+  // size token is removed from whichever form carried it
+  const inlineText = md.renderer.renderInlineAsText(token.children ?? [], options, env);
+  const alt = parseImageAlt(inlineText || rawAlt).alt;
+  let src = String(token.attrGet("src") ?? "");
   if (src && !/^(https?:|data:|#|mailto:)/i.test(src)) {
     if (assetCtx) {
-      token.attrSet("src", prismFileUrl(assetCtx.vaultPath, src.replace(/^[\\/]+/, ""), assetCtx.noteDir));
+      src = prismFileUrl(assetCtx.vaultPath, src.replace(/^[\\/]+/, ""), assetCtx.noteDir);
     } else {
-      return `<span class="md-img-missing">${md.utils.escapeHtml(token.content || src)}</span>`;
+      return `<span class="md-img-missing">${md.utils.escapeHtml(alt || src)}</span>`;
     }
   }
-  return defaultImageRenderer ? defaultImageRenderer(tokens, idx, options, env, self) : "";
+  const title = token.attrGet("title");
+  const cls = token.attrGet("class");
+  return `<img${cls ? ` class="${escapeAttr(String(cls))}"` : ""} src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${title ? ` title="${escapeAttr(String(title))}"` : ""}${imageSizeAttrs(size)}>`;
 };
 
 md.renderer.rules.mdtag = (tokens, idx) => {
   return `<span class="md-tag">${md.utils.escapeHtml(tokens[idx].content)}</span>`;
 };
+
+// Scroll container so wide tables scroll without stretching the card to the
+// full text width (also gives the rounded bordered frame a clip box)
+md.renderer.rules.table_open = () => '<div class="md-table-wrap"><table>';
+md.renderer.rules.table_close = () => "</table></div>";
 
 // ---- Heading ids + outline extraction ----
 // Runs at the parse level so the outline is independent of DOM mutations

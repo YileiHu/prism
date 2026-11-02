@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { NoteContentHit } from "./database";
 
 const api = {
   // Resources
@@ -18,6 +19,8 @@ const api = {
   unwatchVault: (vaultPath: string) => ipcRenderer.invoke("vault:unwatch-path", vaultPath),
   getNoteList: (vaultPath: string) => ipcRenderer.invoke("vault:list-brief", vaultPath),
   searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("vault:search", vaultPath, query),
+  searchNoteContents: (vaultPath: string, query: string) =>
+    ipcRenderer.invoke("vault:search-content", vaultPath, query) as Promise<NoteContentHit[]>,
   deleteNotes: (paths: string[]) => ipcRenderer.invoke("vault:delete-notes", paths),
   readNote: (filePath: string) => ipcRenderer.invoke("vault:read-note", filePath),
   saveNote: (filePath: string, content: string) => ipcRenderer.invoke("vault:save-note", filePath, content),

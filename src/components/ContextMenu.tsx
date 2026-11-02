@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { DropdownMenuItem, DropdownMenuDivider } from "./DropdownMenu";
+import { DropdownMenuItem } from "./DropdownMenu";
 
 export interface MenuItem {
   label: string;
   icon?: ReactNode;
   onClick?: () => void;
-  divider?: boolean;
   children?: MenuItem[];
   checked?: boolean;
   danger?: boolean;
@@ -75,12 +74,8 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, i) => {
-        if (item.divider && !item.label && !item.onClick && !item.icon && !item.children) {
-          return <DropdownMenuDivider key={i} />;
-        }
         return (
         <div key={i}>
-          {item.divider && <DropdownMenuDivider />}
           <div
             className="relative"
             onMouseEnter={() => {
@@ -109,7 +104,6 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
               >
                 {item.children.map((child, ci) => (
                   <div key={ci}>
-                    {child.divider && <DropdownMenuDivider />}
                     <DropdownMenuItem
                       onClick={() => {
                         child.onClick?.();

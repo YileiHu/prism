@@ -69,9 +69,7 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
             onPrimaryClick={() => onProcess(item)}
             menuItems={[
               { label: t["gtd.process"], icon: <ListChecks size={14} />, onClick: () => onProcess(item) },
-              { label: "", divider: true },
               { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(item) },
-              { label: "", divider: true },
               { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(item) },
             ]}
             title={item.title}

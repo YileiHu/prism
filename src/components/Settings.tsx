@@ -22,8 +22,16 @@ export default function Settings() {
   const [defaultNotesDir, setDefaultNotesDir] = useState("");
   const [imagePathStyle, setImagePathStyle] = useState("note");
   const [langOpen, setLangOpen] = useState(false);
+  const [imageStyleOpen, setImageStyleOpen] = useState(false);
   const [addError, setAddError] = useState("");
   const langAnchorRef = useRef<HTMLDivElement>(null);
+  const imageStyleAnchorRef = useRef<HTMLDivElement>(null);
+
+  const imageStyleOptions = [
+    { value: "note", label: t["settings.imagePathStyleNote"] },
+    { value: "vault", label: t["settings.imagePathStyleVault"] },
+    { value: "name", label: t["settings.imagePathStyleName"] },
+  ];
 
   useEffect(() => {
     loadSettings();
@@ -178,15 +186,31 @@ export default function Settings() {
                 <span className="text-sm font-medium text-secondary">{t["settings.imagePathStyle"]}</span>
               </div>
               <p className="text-xs text-muted mb-3">{t["settings.imagePathStyleDesc"]}</p>
-              <select
-                value={imagePathStyle}
-                onChange={(e) => { setImagePathStyle(e.target.value); saveSetting("image_path_style", e.target.value); }}
-                className="bg-elevated border border-strong rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)] transition-colors"
-              >
-                <option value="note">{t["settings.imagePathStyleNote"]}</option>
-                <option value="vault">{t["settings.imagePathStyleVault"]}</option>
-                <option value="name">{t["settings.imagePathStyleName"]}</option>
-              </select>
+              <div ref={imageStyleAnchorRef}>
+                <button
+                  type="button"
+                  onClick={() => setImageStyleOpen(!imageStyleOpen)}
+                  className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm text-primary transition-colors hover:border-strong"
+                >
+                  <span>{imageStyleOptions.find((o) => o.value === imagePathStyle)?.label}</span>
+                  <ChevronDown size={14} className="text-muted flex-shrink-0" />
+                </button>
+                <DropdownMenu open={imageStyleOpen} onClose={() => setImageStyleOpen(false)} anchorRef={imageStyleAnchorRef} matchWidth>
+                  {imageStyleOptions.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onClick={() => {
+                        setImagePathStyle(opt.value);
+                        saveSetting("image_path_style", opt.value);
+                        setImageStyleOpen(false);
+                      }}
+                      active={imagePathStyle === opt.value}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenu>
+              </div>
             </div>
 
             <div className="p-4 bg-surface/30 rounded-lg border border-line/50 space-y-3">

@@ -382,6 +382,58 @@ export function searchNotes(vaultPath: string, query: string): NoteBrief[] {
   `).all(vaultPath, ...params) as NoteBrief[];
 }
 
+export interface NoteContentHit {
+  path: string;
+  title: string;
+  snippet: string;
+}
+
+const SNIPPET_BEFORE = 60;
+const SNIPPET_AFTER = 120;
+
+function makeSnippet(content: string, terms: string[]): string {
+  const lower = content.toLowerCase();
+  let matchIndex = -1;
+  let matchLength = 0;
+  for (const term of terms) {
+    const idx = lower.indexOf(term.toLowerCase());
+    if (idx !== -1 && (matchIndex === -1 || idx < matchIndex)) {
+      matchIndex = idx;
+      matchLength = term.length;
+    }
+  }
+  if (matchIndex === -1) {
+    return content.slice(0, SNIPPET_BEFORE + SNIPPET_AFTER).replace(/\s+/g, " ").trim();
+  }
+
+  const start = Math.max(0, matchIndex - SNIPPET_BEFORE);
+  const end = Math.min(content.length, matchIndex + matchLength + SNIPPET_AFTER);
+  let snippet = content.slice(start, end).replace(/\s+/g, " ").trim();
+  if (start > 0) snippet = `…${snippet}`;
+  if (end < content.length) snippet = `${snippet}…`;
+  return snippet;
+}
+
+export function searchNoteContents(vaultPath: string, query: string): NoteContentHit[] {
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const clauses = terms.map(() => "content LIKE ? ESCAPE '\\'").join(" AND ");
+  const params = terms.map((t) => `%${escapeLike(t)}%`);
+
+  const rows = db.prepare(`
+    SELECT path, title, content FROM notes
+    WHERE vault_path = ? AND ${clauses}
+    ORDER BY modified_at DESC
+  `).all(vaultPath, ...params) as { path: string; title: string; content: string }[];
+
+  return rows.map(({ path, title, content }) => ({
+    path,
+    title,
+    snippet: makeSnippet(content, terms),
+  }));
+}
+
 export function insertNote(note: NoteUpsertRow & { vault_path: string }): VaultNote {
   const stmt = db.prepare(
     "INSERT INTO notes (vault_path, path, title, content, tags, modified_at) VALUES (?, ?, ?, ?, ?, ?)",

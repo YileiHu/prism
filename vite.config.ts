@@ -35,6 +35,10 @@ export default defineConfig({
     ]),
   ],
   base: "./",
+  // Electron's main process loads http://localhost:5173 directly; without
+  // strictPort Vite would silently move to another port and the window would
+  // stay stuck on a dead server.
+  server: { port: 5173, strictPort: true },
   build: {
     outDir: "dist",
     emptyOutDir: true,

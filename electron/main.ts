@@ -17,6 +17,7 @@ import {
   getNoteMtimes,
   getNoteList,
   searchNotes,
+  searchNoteContents,
   getSetting,
   setSetting,
   getAllTags,
@@ -525,6 +526,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle("vault:list-brief", (_e, vaultPath: string) => getNoteList(vaultPath));
 
   ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query));
+
+  ipcMain.handle("vault:search-content", (_e, vaultPath: string, query: string) => searchNoteContents(vaultPath, query));
 
   ipcMain.handle("vault:delete-notes", (_e, paths: string[]) => {
     deleteNotesByPaths(paths);

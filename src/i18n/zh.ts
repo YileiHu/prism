@@ -41,6 +41,12 @@ const zh = {
 
   // Vault notes
   "vault.search": "搜索笔记...",
+  "vault.contentSearch": "搜索正文",
+  "vault.contentSearchPlaceholder": "搜索当前笔记库的正文...",
+  "vault.contentSearchEmpty": "没有匹配的正文内容。",
+  "vault.contentSearchCount": "{count} 条结果",
+  "vault.scopeTitle": "标题",
+  "vault.scopeContent": "正文",
   "vault.emptySearch": "没有匹配的笔记。",
   "vault.emptyVault": "此知识库中没有找到 Markdown 文件。",
   "vault.scanning": "正在扫描知识库...",
@@ -82,6 +88,8 @@ const zh = {
   "collections.expandSidebar": "展开侧栏",
   "collections.namePlaceholder": "收藏集名称...",
   "collections.rename": "重命名",
+  "collections.color": "收藏集颜色",
+  "collections.colorAuto": "自动",
   "collections.delete": "删除收藏集",
   "collections.deleteGroup": "删除分组",
   "collections.deleteConfirm": "删除收藏集不会删除其中的笔记文件。确定删除吗？",
@@ -215,6 +223,9 @@ const zh = {
   "editor.addQuotePrefix": "添加 > 引用前缀",
   "editor.removeQuotePrefix": "去除引用前缀",
   "editor.insertTable": "插入 2×2 表格",
+  "editor.imageSizeTitle": "图片大小",
+  "editor.imageSizeOriginal": "原始",
+  "editor.imageSizeScale": "缩放",
   "editor.outline": "大纲",
   "editor.foldCard": "折叠大纲",
 };

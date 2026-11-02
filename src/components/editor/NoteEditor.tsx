@@ -8,6 +8,7 @@ import { useContextMenu } from "../../lib/useContextMenu";
 import { type MenuItem } from "../ContextMenu";
 import Button from "../Button";
 import { buildExtensions } from "./cmExtensions";
+import { type ImageToolbarLabels } from "./livePreview";
 import MarkdownPreview from "./MarkdownPreview";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
 import { toggleTaskInSource } from "./markdown";
@@ -147,7 +148,6 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     const items: MenuItem[] = [
       { label: t["editor.addQuotePrefix"], icon: <TextQuote size={14} />, onClick: () => applyQuotePrefix(true) },
       { label: t["editor.removeQuotePrefix"], icon: <TextQuote size={14} />, onClick: () => applyQuotePrefix(false) },
-      { label: "", divider: true },
       { label: t["editor.insertTable"], icon: <Table size={14} />, onClick: insertTableSkeleton },
     ];
     onContextMenu(e, items);
@@ -173,6 +173,18 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
   const editScrollRef = useRef(0);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollAnchorRef = useRef<ScrollAnchor>({ h: -1, frac: 0, ratio: 0 });
+  // Read at widget-render time so a language switch updates the toolbar
+  // without rebuilding the editor view
+  const imageToolbarLabelsRef = useRef<ImageToolbarLabels>({
+    title: t["editor.imageSizeTitle"],
+    original: t["editor.imageSizeOriginal"],
+    scale: t["editor.imageSizeScale"],
+  });
+  imageToolbarLabelsRef.current = {
+    title: t["editor.imageSizeTitle"],
+    original: t["editor.imageSizeOriginal"],
+    scale: t["editor.imageSizeScale"],
+  };
 
   // Capture where the viewport is, anchored to the nearest heading at/above
   // the top of the view (pixel offsets don't survive the mode swap because
@@ -297,6 +309,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
               onOpenWikilink,
               onOpenLink: (url) => void window.prism.openUrl(url),
               assetCtx: { vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") },
+              imageToolbarLabels: () => imageToolbarLabelsRef.current,
               onPasteImage: async (file) => {
                 try {
                   const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");

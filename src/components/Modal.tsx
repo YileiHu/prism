@@ -62,7 +62,7 @@ export default function Modal({
         )}
         {children}
         {footer !== undefined && (
-          <div className="flex justify-end gap-3 mt-5 pt-4 border-t border-line">
+          <div className="flex justify-end gap-3 mt-5">
             {footer}
           </div>
         )}

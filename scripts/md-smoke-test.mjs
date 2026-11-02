@@ -45,6 +45,9 @@ const x = 1;
 `;
 
 const { html, frontmatter } = renderMarkdown(sample);
+const tableWrapHtml = renderMarkdown(
+  "| Date | Description |\n|---|---|\n| 2026-11-02 | A long description that should wrap inside its cell |",
+).html;
 
 // ---- Asset context tests (images / embeds / math) ----
 const ctx = { vaultPath: "E:/Vault", noteDir: "notes/sub" };
@@ -53,6 +56,15 @@ const imgHtml = renderMarkdown("![alt text](img/pic.png)", ctx).html;
 const imgNoCtx = renderMarkdown("![alt](img/pic.png)").html;
 const embedImg = renderMarkdown("![[a.png]]", ctx).html;
 const embedMd = renderMarkdown("![[Some Note]]", ctx).html;
+const imgSized = renderMarkdown("![alt text|220](img/pic.png)", ctx).html;
+const imgSizedBoth = renderMarkdown("![alt|220x140](img/pic.png)", ctx).html;
+const embedSized = renderMarkdown("![[a.png|320]]", ctx).html;
+const embedSizedAlt = renderMarkdown("![[a.png|caption|320x180]]", ctx).html;
+const imgFormattedAlt = renderMarkdown("![**bold** alt|220](img/pic.png)", ctx).html;
+const imgStandalone = renderMarkdown("![alt](img/pic.png)", ctx).html;
+const embedStandalone = renderMarkdown("![[a.png]]", ctx).html;
+const imgInline = renderMarkdown("text ![alt](img/pic.png) more", ctx).html;
+const imgMixedLine = renderMarkdown("![alt](img/pic.png)\n\ntext", ctx).html;
 
 const assetChecks = [
   ["inline math rendered", mathHtml.includes('class="katex"') && mathHtml.includes("katex-mathml")],
@@ -61,6 +73,16 @@ const assetChecks = [
   ["image without ctx → placeholder", imgNoCtx.includes("md-img-missing")],
   ["![[img]] embed → img tag", embedImg.includes("<img") && embedImg.includes("ref=a.png")],
   ["![[note]] embed → wikilink", embedMd.includes('data-wikilink="Some Note"')],
+  ["![alt|220] width, size stripped from alt", imgSized.includes('width="220"') && imgSized.includes('alt="alt text"') && !imgSized.includes("|220")],
+  ["![alt|220x140] width + height", imgSizedBoth.includes('width="220"') && imgSizedBoth.includes('height="140"') && imgSizedBoth.includes('alt="alt"')],
+  ["![[img|320]] width", embedSized.includes('width="320"') && embedSized.includes('alt="a.png"')],
+  ["![[img|alt|320x180]] alt + size", embedSizedAlt.includes('width="320"') && embedSizedAlt.includes('height="180"') && embedSizedAlt.includes('alt="caption"')],
+  ["unsized images emit no width", !imgHtml.includes("width=") && !embedImg.includes("width=")],
+  ["formatted alt rendered as text + size", imgFormattedAlt.includes('alt="bold alt"') && imgFormattedAlt.includes('width="220"')],
+  ["standalone image centered block", imgStandalone.includes("md-img-standalone")],
+  ["standalone embed centered block", embedStandalone.includes("md-img-standalone")],
+  ["inline image stays inline", !imgInline.includes("md-img-standalone")],
+  ["image before text is standalone", imgMixedLine.includes("md-img-standalone")],
 ];
 
 let assetFail = 0;
@@ -71,7 +93,7 @@ for (const [name, ok] of assetChecks) {
 const checks = [
   ["frontmatter parsed", frontmatter?.title === "Test Note" && frontmatter?.rating === 5],
   ["frontmatter stripped from body", !html.includes("title: Test Note")],
-  ["heading", html.includes("<h1>")],
+  ["heading", /<h1[\s>]/.test(html)],
   ["bold", html.includes("<strong>bold</strong>")],
   ["highlight mark", html.includes("<mark>highlight</mark>")],
   ["tag pill", html.includes('class="md-tag">#project/tag</span>')],
@@ -94,7 +116,10 @@ const checks = [
   ["callout closes before blockquote", /<\/div>\s*<\/div>\s*<blockquote>/.test(html)],
   ["unknown callout stays blockquote", html.includes("<blockquote>")],
   ["code fence with lang", html.includes('data-lang="js"') && html.includes("hljs-keyword")],
-  ["table", html.includes("<table>") && html.includes("<th>")],
+  ["table", html.includes("<table>") && /<th[\s>]/.test(html)],
+  ["table scroll wrapper", html.includes('class="md-table-wrap"') && html.includes("</table></div>")],
+  ["short table cells get nowrap", (tableWrapHtml.match(/md-cell-nowrap/g) || []).length === 3],
+  ["long table cells keep wrapping", !/<td class="md-cell-nowrap">A long/.test(tableWrapHtml)],
   ["html injection escaped", renderMarkdown("<img src=x onerror=alert(1)>").html.includes("&lt;img")],
 ];
 

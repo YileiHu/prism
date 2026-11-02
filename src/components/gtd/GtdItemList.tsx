@@ -72,9 +72,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
           : [];
     return [
       ...moduleActions,
-      ...(moduleActions.length > 0 ? [{ label: "", divider: true } as MenuItem] : []),
       { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(item) },
-      { label: "", divider: true },
       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(item) },
     ];
   };

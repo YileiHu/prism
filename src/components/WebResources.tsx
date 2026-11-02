@@ -68,9 +68,7 @@ function ResourceRowView({
 
   const menuItems: MenuItem[] = [
     { label: t["menu.openInBrowser"], icon: <ExternalLink size={14} />, onClick: () => window.prism.openUrl(r.url) },
-    { label: "", divider: true },
     { label: t["menu.edit"], icon: <Edit3 size={14} />, onClick: onStartEdit },
-    { label: "", divider: true },
     { label: t["menu.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
 
@@ -325,7 +323,6 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             checked: !tag.color,
             onClick: () => applyTagColor(tag.name, ""),
           },
-          { label: "", divider: true },
           ...TAG_COLORS.map((c) => ({
             label: t[`tagColor.${c.key}`],
             icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.bar }} />,
@@ -334,9 +331,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
           })),
         ],
       },
-      { label: "", divider: true },
       { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenamingTag(tag.name) },
-      { label: "", divider: true },
       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeletingTag(tag.name) },
     ]);
   };
