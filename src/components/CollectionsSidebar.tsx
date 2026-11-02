@@ -156,9 +156,9 @@ export default function CollectionsSidebar({
     <Sidebar storageKey="vault">
       <div
         onClick={() => onSelect(null)}
-        className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer mb-1 pb-2 border-b border-line/50 ${
+        className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer mb-1 section-wash ${
           selectedId === null
-            ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+            ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
             : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
         }`}
       >

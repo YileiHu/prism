@@ -35,7 +35,7 @@ export default function SectionCard({
   return (
     <div className={`border rounded-card bg-surface/20 overflow-hidden ${accent ? "border-[var(--accent-border)]" : "border-strong/50"} ${className}`}>
       <div
-        className={`flex items-center gap-2 px-3 h-8 flex-shrink-0 ${onToggle ? "cursor-pointer" : ""} ${accent ? "bg-[var(--accent-muted)]" : tintColor ? "" : "bg-elevated/30"}`}
+        className={`flex items-center gap-2 px-3 h-8 flex-shrink-0 ${onToggle ? "cursor-pointer" : ""} ${accent ? "bg-[var(--accent-border)]" : tintColor ? "" : "bg-elevated/30"}`}
         style={tintColor ? { backgroundColor: tintColor.tint } : undefined}
         onClick={onToggle}
       >

@@ -440,7 +440,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
           <NavItem
             onClick={() => setActiveTag(null)}
             active={!activeTag}
-            className="mb-1 pb-2 border-b border-line/50 font-medium"
+            className="mb-1 font-medium section-wash"
             label={t["resources.allTags"]}
             trailing={totalCount}
           />

@@ -73,9 +73,11 @@ function SortableTab({
         if (e.button === 1) onClose();
       }}
       title={tab.path}
-      className={`group relative flex items-center gap-1.5 pl-3 pr-2 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 border-r border-line/30 transition-colors ${
-        active ? "text-primary bg-tint/[0.06]" : "text-muted hover:text-secondary hover:bg-tint/[0.04]"
-      } ${isDragging ? "opacity-40" : ""} after:absolute after:left-0 after:right-0 after:bottom-0 after:h-0.5 after:bg-[var(--accent)] after:transition-opacity ${active ? "after:opacity-100" : "after:opacity-0"}`}
+      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 h-7 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full transition-colors ${
+        active
+          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
+          : "text-muted hover:text-secondary hover:bg-tint/[0.04]"
+      } ${isDragging ? "opacity-40" : ""}`}
     >
       <FileText size={12} className={active ? "text-[var(--accent-text)]" : ""} />
       <span className="max-w-[160px] truncate">{tab.title}</span>
@@ -97,7 +99,7 @@ function SortableTab({
 
 function TabOverlay({ tab }: { tab: NoteTab }) {
   return (
-    <div className="flex items-center gap-1.5 pl-3 pr-2 h-9 text-caption whitespace-nowrap rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+    <div className="flex items-center gap-1.5 pl-3 pr-2 h-7 text-caption whitespace-nowrap rounded-full bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
       <FileText size={12} />
       <span className="max-w-[160px] truncate">{tab.title}</span>
       <X size={11} className="ml-1 text-muted" />
@@ -183,7 +185,7 @@ export default function NoteTabBar({ tabs, activePath, newLabel, closeLabel, sid
           <div
             ref={scrollRef}
             onScroll={updateOverflow}
-            className="flex-1 flex items-stretch overflow-x-auto scrollbar-none"
+            className="flex-1 flex items-center gap-1.5 px-2 overflow-x-auto scrollbar-none"
           >
             <SortableContext items={tabs.map((tab) => tab.path)} strategy={horizontalListSortingStrategy}>
               {tabs.map((tab) => (

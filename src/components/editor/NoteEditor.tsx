@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { EditorState, Transaction } from "@codemirror/state";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
 import { BookOpen, Pencil, Table, TextQuote } from "lucide-react";
@@ -61,40 +61,129 @@ const PREVIEW_HEADING_SEL = ".markdown-preview h1, .markdown-preview h2, .markdo
 
 // ATX headings of the source document, skipping fenced code blocks. Order
 // matches the rendered headings in MarkdownPreview, so index i in the source
-// list is the same heading as element i in the preview DOM.
+// list is the same heading as element i in the preview DOM. Takes an iterator
+// of lines so CM documents can be scanned without materializing them as one
+// string first.
 interface SourceHeading { line: number; level: number; text: string }
-function sourceHeadings(doc: string): SourceHeading[] {
+function sourceHeadings(lines: Iterable<string>): SourceHeading[] {
   const out: SourceHeading[] = [];
   let fence = false;
-  doc.split("\n").forEach((text, i) => {
+  let n = 0;
+  for (const text of lines) {
+    n++;
     if (/^\s*(```|~~~)/.test(text)) fence = !fence;
-    if (fence) return;
+    if (fence) continue;
     const m = /^(#{1,6})\s+(.*)$/.exec(text);
     if (m) {
       out.push({
-        line: i + 1,
+        line: n,
         level: m[1].length,
         // Drop optional closing hashes and inline marks for display
         text: m[2].replace(/\s+#+$/, "").replace(/[*_~=`$]+/g, "").trim(),
       });
     }
-  });
+  }
   return out;
 }
 
-const sourceHeadingLines = (doc: string): number[] => sourceHeadings(doc).map((h) => h.line);
+const sourceHeadingLines = (doc: CMText): number[] => sourceHeadings(doc.iterLines()).map((h) => h.line);
 
 // Edit-mode outline items: id = 1-based line number (jump target)
-const outlineItemsOf = (doc: string): OutlineItem[] =>
-  sourceHeadings(doc).map((h) => ({ id: String(h.line), level: h.level, text: h.text }));
+const outlineItemsOf = (lines: Iterable<string>): OutlineItem[] =>
+  sourceHeadings(lines).map((h) => ({ id: String(h.line), level: h.level, text: h.text }));
 
 const sameOutline = (a: OutlineItem[], b: OutlineItem[]): boolean =>
   a.length === b.length && a.every((it, i) => it.id === b[i].id && it.level === b[i].level && it.text === b[i].text);
 
 interface ScrollAnchor {
-  h: number; // index of the topmost visible heading, -1 = none
-  frac: number; // 0..1 progress of the viewport top within that heading's section
+  // Index of the heading at/above the viewport center, in document order.
+  // Mode-independent: edit (source headings) and read (rendered headings) use
+  // the same order, unlike their per-mode ids (line number vs "hd-N").
+  section: number; // -1 = the note has no headings
+  frac: number; // 0..1 progress of the viewport center within that heading's section
   ratio: number; // scrollTop ratio, fallback when the note has no headings
+  token: string | null; // visible text at the center — the exact cross-mode anchor
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+// First run of word characters (≥4) at/after `from`. Markdown syntax breaks
+// runs, so the result is plain text that exists verbatim in both the source
+// and the rendered HTML — used to line up the two modes at the same words.
+function textTokenAt(text: string, from: number, maxLen = 24): string | null {
+  const limit = Math.min(text.length, Math.max(0, from) + 240);
+  let i = Math.max(0, from);
+  while (i < limit) {
+    if (!WORD_CHAR.test(text[i])) { i++; continue; }
+    let j = i;
+    while (j < limit && WORD_CHAR.test(text[j])) j++;
+    if (j - i >= 4) return text.slice(i, Math.min(j, i + maxLen));
+    i = j;
+  }
+  return null;
+}
+
+// Text node under a viewport point (Chromium ships both APIs; use either)
+function caretTextAt(x: number, y: number): { node: Text; offset: number } | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const pos = doc.caretPositionFromPoint?.(x, y);
+  if (pos) return pos.offsetNode instanceof Text ? { node: pos.offsetNode, offset: pos.offset } : null;
+  const range = doc.caretRangeFromPoint?.(x, y);
+  if (range && range.startContainer instanceof Text) {
+    return { node: range.startContainer, offset: range.startOffset };
+  }
+  return null;
+}
+
+// Occurrence of `token` in a source range closest to the fractional estimate
+function nearestTokenIndex(haystack: string, token: string, from: number, to: number, frac: number): number | null {
+  const estimate = from + frac * Math.max(0, to - from);
+  let best: number | null = null;
+  let bestDist = Infinity;
+  for (let i = haystack.indexOf(token, from); i !== -1 && i < to; i = haystack.indexOf(token, i + 1)) {
+    const d = Math.abs(i - estimate);
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  return best;
+}
+
+// Content-coordinate top of the visible occurrence of `token` in a rendered
+// section closest to the fractional estimate, skipping folded (laid-out-less)
+// content
+function nearestRenderedTokenTop(
+  container: HTMLElement,
+  sectionStart: Element,
+  sectionEnd: Element | null,
+  token: string,
+  estimateC: number,
+  containerTop: number,
+  scrollTop: number,
+): number | null {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let bestTop: number | null = null;
+  let bestDist = Infinity;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    const parent = text.parentElement;
+    if (!parent || parent.getClientRects().length === 0) continue;
+    if (!(sectionStart.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    if (sectionEnd && sectionEnd.contains(text)) continue;
+    const value = text.nodeValue ?? "";
+    for (let i = value.indexOf(token); i !== -1; i = value.indexOf(token, i + 1)) {
+      const range = document.createRange();
+      range.setStart(text, i);
+      range.setEnd(text, i + token.length);
+      const r = range.getBoundingClientRect();
+      if (r.height === 0) continue;
+      const top = r.top - containerTop + scrollTop;
+      const d = Math.abs(top - estimateC);
+      if (d < bestDist) { bestDist = d; bestTop = top; }
+    }
+  }
+  return bestTop;
 }
 
 export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onOpenWikilink }: Props) {
@@ -175,6 +264,11 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
   const [docText, setDocText] = useState("");
   // Edit-mode outline: heading items derived from the live CM document
   const [editOutline, setEditOutline] = useState<OutlineItem[]>([]);
+  // Heading whose line sits at the center of the edit viewport (outline highlight)
+  const [editActiveId, setEditActiveId] = useState<string | null>(null);
+  const jumpLockRef = useRef<string | null>(null);
+  const jumpSettledRef = useRef(false);
+  const jumpLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -184,9 +278,8 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
   const saveNowRef = useRef<() => void>(() => {});
   const notePathRef = useRef(notePath);
   notePathRef.current = notePath;
-  const editScrollRef = useRef(0);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
-  const scrollAnchorRef = useRef<ScrollAnchor>({ h: -1, frac: 0, ratio: 0 });
+  const scrollAnchorRef = useRef<ScrollAnchor>({ section: -1, frac: 0, ratio: 0, token: null });
   // Read at widget-render time so a language switch updates the toolbar
   // without rebuilding the editor view
   const imageToolbarLabelsRef = useRef<ImageToolbarLabels>({
@@ -200,13 +293,13 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     scale: t["editor.imageSizeScale"],
   };
 
-  // Capture where the viewport is, anchored to the nearest heading at/above
-  // the top of the view (pixel offsets don't survive the mode swap because
-  // rendered and source layouts have different heights). frac is the
-  // viewport top's PIXEL progress inside that heading's section, measured in
-  // whichever mode we're leaving. Must key off the CURRENT mode — the editor
-  // view stays mounted (hidden) while reading, so element existence can't
-  // tell the modes apart.
+  // Capture where the viewport is. Pixel offsets don't survive the mode swap
+  // (rendered and source layouts have different heights), so the anchor is a
+  // section index + in-section fraction PLUS the visible text at the vertical
+  // center; the token is preferred on restore because it puts the same words
+  // on the center line in the other mode. Must key off the CURRENT mode — the
+  // editor view stays mounted (hidden) while reading, so element existence
+  // can't tell the modes apart.
   const captureScrollAnchor = useCallback((from: EditorMode) => {
     const ratioOf = (el: HTMLElement) =>
       el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : 0;
@@ -214,41 +307,63 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     if (from === "edit") {
       const view = viewRef.current;
       if (!view) return;
-      const topLine = view.state.doc.lineAt(view.visibleRanges[0]?.from ?? 0).number;
-      const heads = sourceHeadingLines(view.state.doc.toString());
+      const doc = view.state.doc;
+      const heads = sourceHeadingLines(doc);
+      const scroller = view.scrollDOM;
+      // documentTop is the doc start in viewport coords (negative when
+      // scrolled down); block .top is doc-relative — the difference maps the
+      // viewport center into the document's pixel space
+      const rect = scroller.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const centerDocY = centerY - view.documentTop;
       let h = -1;
-      for (let i = 0; i < heads.length && heads[i] <= topLine; i++) h = i;
+      for (let i = 0; i < heads.length; i++) {
+        if (view.lineBlockAt(doc.line(heads[i]).from).top <= centerDocY) h = i;
+        else break;
+      }
       let frac = 0;
       if (h >= 0) {
-        // documentTop is the doc start in viewport coords (negative when
-        // scrolled down); block .top is doc-relative — the difference maps
-        // the viewport top into the section's pixel range
-        const viewTopDocY = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
-        const endLineNo = h + 1 < heads.length ? heads[h + 1] : view.state.doc.lines;
-        const sTop = view.lineBlockAt(view.state.doc.line(heads[h]).from).top;
-        const eTop = view.lineBlockAt(view.state.doc.line(endLineNo).from).top;
-        frac = clamp01((viewTopDocY - sTop) / Math.max(1, eTop - sTop));
+        const endLineNo = h + 1 < heads.length ? heads[h + 1] : doc.lines;
+        const sTop = view.lineBlockAt(doc.line(heads[h]).from).top;
+        const eTop = view.lineBlockAt(doc.line(endLineNo).from).top;
+        frac = clamp01((centerDocY - sTop) / Math.max(1, eTop - sTop));
       }
-      scrollAnchorRef.current = { h, frac, ratio: ratioOf(view.scrollDOM) };
+      const centerPos = view.posAtCoords({ x: centerX, y: centerY });
+      const token = centerPos != null ? textTokenAt(doc.sliceString(centerPos, centerPos + 240), 0) : null;
+      scrollAnchorRef.current = { section: h, frac, ratio: ratioOf(scroller), token };
     } else {
       const container = previewScrollRef.current;
       if (!container) return;
-      const els = container.querySelectorAll<HTMLElement>(PREVIEW_HEADING_SEL);
-      const containerTop = container.getBoundingClientRect().top;
+      const rect = container.getBoundingClientRect();
       const ctop = container.scrollTop;
       // rect diff + scrollTop → element position in content coordinates
-      const contentTopOf = (el: HTMLElement) => el.getBoundingClientRect().top - containerTop + ctop;
+      const contentTopOf = (el: HTMLElement) => el.getBoundingClientRect().top - rect.top + ctop;
+      const centerC = ctop + container.clientHeight / 2;
+      // Index into ALL headings (not just visible ones): the index must mean
+      // the same heading in edit mode. Headings inside collapsed fold bodies
+      // have no box, so they can't be picked as the center's section.
+      const allHeads = Array.from(container.querySelectorAll<HTMLElement>(PREVIEW_HEADING_SEL));
       let h = -1;
-      els.forEach((el, i) => {
-        if (el.getBoundingClientRect().top <= containerTop + 4) h = i;
-      });
+      for (let i = 0; i < allHeads.length; i++) {
+        const el = allHeads[i];
+        if (el.getClientRects().length === 0) continue;
+        if (contentTopOf(el) <= centerC) h = i;
+        else break;
+      }
       let frac = 0;
       if (h >= 0) {
-        const startC = contentTopOf(els[h]);
-        const endC = h + 1 < els.length ? contentTopOf(els[h + 1]) : container.scrollHeight;
-        frac = clamp01((ctop - startC) / Math.max(1, endC - startC));
+        const startC = contentTopOf(allHeads[h]);
+        const endC = h + 1 < allHeads.length ? contentTopOf(allHeads[h + 1]) : container.scrollHeight;
+        frac = clamp01((centerC - startC) / Math.max(1, endC - startC));
       }
-      scrollAnchorRef.current = { h, frac, ratio: ratioOf(container) };
+      const caret = caretTextAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      // Only trust text that belongs to the note (the outline overlay can
+      // cover the center point in a narrow pane)
+      const token = caret && container.contains(caret.node)
+        ? textTokenAt(caret.node.nodeValue ?? "", caret.offset)
+        : null;
+      scrollAnchorRef.current = { section: h, frac, ratio: ratioOf(container), token };
     }
   }, []);
 
@@ -312,7 +427,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
       if (cancelled || !mountRef.current) return;
       crlfRef.current = note.content.includes("\r\n");
       setDocText(note.content);
-      setEditOutline(outlineItemsOf(note.content));
+      setEditOutline(outlineItemsOf(note.content.split("\n")));
       const view = new EditorView({
         parent: mountRef.current,
         state: EditorState.create({
@@ -342,10 +457,26 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
             }),
             EditorView.updateListener.of((u) => {
               if (!u.docChanged) return;
-              // Keep the edit-mode outline in sync (no-op unless the heading
-              // set actually changed)
-              const nextOutline = outlineItemsOf(u.state.doc.toString());
-              setEditOutline((prev) => (sameOutline(prev, nextOutline) ? prev : nextOutline));
+              // Keep the edit-mode outline in sync. Only an edit that touches
+              // heading syntax, a fence marker, a line start or an existing
+              // heading line can change the heading set — skip the full scan
+              // for ordinary typing.
+              let headingsMayChange = false;
+              u.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                if (headingsMayChange) return;
+                const removed = u.startState.doc.sliceString(fromA, toA);
+                const line = u.startState.doc.lineAt(fromA);
+                headingsMayChange =
+                  /[\n#`~]/.test(inserted.toString()) ||
+                  /[\n#`~]/.test(removed) ||
+                  /^#{1,6}\s/.test(line.text) ||
+                  // Un-indenting an already-"#"-prefixed line promotes it
+                  (fromA === line.from && line.text.includes("#"));
+              });
+              if (headingsMayChange) {
+                const nextOutline = outlineItemsOf(u.state.doc.iterLines());
+                setEditOutline((prev) => (sameOutline(prev, nextOutline) ? prev : nextOutline));
+              }
               // Programmatic doc swaps (external reload) carry the remote
               // annotation — they must not feed back into autosave
               const allRemote = u.transactions.every((tr) => tr.annotation(Transaction.remote) === true);
@@ -440,57 +571,90 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     return () => window.removeEventListener(SHORTCUT_EVENT, handler);
   }, [vaultPath, ready, mode, switchMode]);
 
-  useEffect(() => {
+  // Layout effect so the restored scroll position is applied before the first
+  // paint — otherwise the switched-to view shows its stale/top position first
+  useLayoutEffect(() => {
     if (mode === "edit") {
       const view = viewRef.current;
       if (!view) return;
-      // The editor may have been created while hidden (loading state) —
-      // re-measure once it becomes visible, then jump on the next frame so
-      // the layout is actually flushed
+      const sd = view.scrollDOM;
+      // The editor may have been created while hidden — apply a cheap estimate
+      // (via the captured scroll ratio) before paint, then refine once the
+      // visible layout has been measured
+      const { ratio: estRatio } = scrollAnchorRef.current;
+      sd.scrollTop = estRatio * Math.max(0, sd.scrollHeight - sd.clientHeight);
       view.requestMeasure();
+      let cancelled = false;
       const raf = requestAnimationFrame(() => {
-        const { h, frac, ratio } = scrollAnchorRef.current;
-        const heads = sourceHeadingLines(view.state.doc.toString());
-        if (h >= 0 && heads[h]) {
-          const headLine = view.state.doc.line(heads[h]);
-          view.dispatch({ effects: EditorView.scrollIntoView(headLine.from, { y: "start" }) });
-          if (frac > 0) {
-            // Snap to the section start first, then shift by the captured
-            // in-section progress — measure once the scroll has been applied
-            requestAnimationFrame(() => {
-              const nextLineNo = h + 1 < heads.length ? heads[h + 1] : view.state.doc.lines;
-              const from = view.lineBlockAt(headLine.from);
-              const to = view.lineBlockAt(view.state.doc.line(nextLineNo).from);
-              view.scrollDOM.scrollTop += frac * Math.max(0, to.top - from.top);
-            });
-          }
+        if (cancelled) return;
+        const doc = view.state.doc;
+        const { section, frac, ratio, token } = scrollAnchorRef.current;
+        const heads = sourceHeadingLines(doc);
+        if (section < 0 || section >= heads.length) {
+          sd.scrollTop = ratio * Math.max(0, sd.scrollHeight - sd.clientHeight);
           return;
         }
-        const sd = view.scrollDOM;
-        sd.scrollTop = ratio * Math.max(0, sd.scrollHeight - sd.clientHeight);
+        const headLine = doc.line(heads[section]);
+        // Prefer the exact text captured at the center: find the same words in
+        // this section and let CodeMirror center them (its measure loop handles
+        // expanding the viewport for a far jump)
+        const sectionTo = section + 1 < heads.length ? doc.line(heads[section + 1]).from : doc.length;
+        const sectionText = doc.sliceString(headLine.from, sectionTo);
+        const localPos = token ? nearestTokenIndex(sectionText, token, 0, sectionText.length, frac) : null;
+        if (localPos != null) {
+          view.dispatch({ effects: EditorView.scrollIntoView(headLine.from + localPos, { y: "center" }) });
+          return;
+        }
+        // Fallback: snap the heading into view so its block gets measured, then
+        // place the captured section point at the vertical center
+        view.dispatch({ effects: EditorView.scrollIntoView(headLine.from, { y: "start" }) });
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const nextLineNo = section + 1 < heads.length ? heads[section + 1] : doc.lines;
+          const from = view.lineBlockAt(headLine.from);
+          const to = view.lineBlockAt(doc.line(nextLineNo).from);
+          const targetY = from.top + frac * Math.max(0, to.top - from.top);
+          // doc Y is measured from the first line, while scrollTop counts from
+          // the scroll content's top — map through documentTop so the content
+          // padding isn't added as a vertical offset
+          const rect = sd.getBoundingClientRect();
+          const delta = view.documentTop + targetY - (rect.top + rect.height / 2);
+          sd.scrollTop = Math.max(0, sd.scrollTop + delta);
+        });
       });
-      return () => cancelAnimationFrame(raf);
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(raf);
+      };
     }
-    const raf = requestAnimationFrame(() => {
-      const container = previewScrollRef.current;
-      if (!container) return;
-      const { h, frac, ratio } = scrollAnchorRef.current;
-      if (h >= 0) {
-        const els = container.querySelectorAll<HTMLElement>(PREVIEW_HEADING_SEL);
-        const el = els[h];
-        if (el) {
-          const containerTop = container.getBoundingClientRect().top;
-          const ctop = container.scrollTop;
-          const contentTopOf = (e: HTMLElement) => e.getBoundingClientRect().top - containerTop + ctop;
-          const elTopC = contentTopOf(el);
-          const endC = h + 1 < els.length ? contentTopOf(els[h + 1]) : container.scrollHeight;
-          container.scrollTop = Math.max(0, elTopC - 8 + frac * Math.max(0, endC - elTopC));
-          return;
-        }
+    // Reading view: measure and restore synchronously — the preview's DOM is
+    // committed here, so this lands before the first paint (no top flash)
+    const container = previewScrollRef.current;
+    if (!container) return;
+    const { section, frac, ratio, token } = scrollAnchorRef.current;
+    const allHeads = Array.from(container.querySelectorAll<HTMLElement>(PREVIEW_HEADING_SEL));
+    const el = section >= 0 && section < allHeads.length ? allHeads[section] : null;
+    // A heading inside a collapsed fold body has no box and can't be centered
+    if (el && el.getClientRects().length > 0) {
+      const rect = container.getBoundingClientRect();
+      const ctop = container.scrollTop;
+      const contentTopOf = (e: HTMLElement) => e.getBoundingClientRect().top - rect.top + ctop;
+      const startC = contentTopOf(el);
+      const endEl = section + 1 < allHeads.length ? allHeads[section + 1] : null;
+      const endC = endEl ? contentTopOf(endEl) : container.scrollHeight;
+      const estimateC = startC + frac * Math.max(0, endC - startC);
+      // Prefer the exact text captured at the center
+      const tokenTop = token
+        ? nearestRenderedTokenTop(container, el, endEl, token, estimateC, rect.top, ctop)
+        : null;
+      if (tokenTop != null) {
+        container.scrollTop = Math.max(0, tokenTop - container.clientHeight / 2);
+        return;
       }
-      container.scrollTop = ratio * Math.max(0, container.scrollHeight - container.clientHeight);
-    });
-    return () => cancelAnimationFrame(raf);
+      container.scrollTop = Math.max(0, estimateC - container.clientHeight / 2);
+      return;
+    }
+    container.scrollTop = ratio * Math.max(0, container.scrollHeight - container.clientHeight);
   }, [mode, ready]);
 
   const handleToggleTask = (taskIndex: number) => {
@@ -510,10 +674,86 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     const lineNo = Number(id);
     if (lineNo < 1 || lineNo > view.state.doc.lines) return;
     const line = view.state.doc.line(lineNo);
+    setEditActiveId(id);
+    jumpLockRef.current = id;
+    jumpSettledRef.current = false;
+    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+    // Fallback when the jump doesn't scroll (already at the target)
+    jumpLockTimerRef.current = setTimeout(() => {
+      jumpSettledRef.current = true;
+    }, 1000);
     view.dispatch({ selection: { anchor: line.from } });
     view.scrollDOM.scrollTo({ top: Math.max(0, view.lineBlockAt(line.from).top - 12), behavior: "smooth" });
     view.focus();
   };
+
+  // Keep the outline highlight in sync with the line crossing the edit
+  // viewport's vertical center. Keyed off editOutline so heading-line shifts
+  // after edits recompute it.
+  const prevModeRef = useRef<EditorMode>(mode);
+  useEffect(() => {
+    const switchedIn = mode === "edit" && prevModeRef.current !== "edit";
+    prevModeRef.current = mode;
+    if (mode !== "edit" || !ready) return;
+    const view = viewRef.current;
+    if (!view) return;
+    const heads = editOutline.map((item) => Number(item.id));
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      if (jumpLockRef.current) return;
+      const rect = view.scrollDOM.getBoundingClientRect();
+      // posAtCoords returns null below the last line; fall back to the top line
+      const pos = view.posAtCoords({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+        ?? view.visibleRanges[0]?.from
+        ?? 0;
+      const centerLine = view.state.doc.lineAt(pos).number;
+      // At the top before the first heading, the first section counts as current
+      let next: string | null = heads.length > 0 ? String(heads[0]) : null;
+      for (let i = 0; i < heads.length && heads[i] <= centerLine; i++) next = String(heads[i]);
+      setEditActiveId((prev) => (prev === next ? prev : next));
+    };
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(compute);
+    };
+    // Programmatic jump scrolls keep the clicked entry highlighted; the lock
+    // releases on the first scroll after the animation has settled
+    const onScroll = () => {
+      if (jumpLockRef.current) {
+        if (!jumpSettledRef.current) return;
+        jumpLockRef.current = null;
+      }
+      schedule();
+    };
+    const onScrollEnd = () => {
+      if (jumpLockRef.current) jumpSettledRef.current = true;
+    };
+    if (switchedIn) {
+      // Seed from the mode-switch anchor — the restore scroll is still pending,
+      // so computing now (against the stale hidden-editor position) would flash
+      // the wrong entry. The restore's scroll event recomputes.
+      const { section } = scrollAnchorRef.current;
+      const target = section >= 0 && section < heads.length
+        ? String(heads[section])
+        : heads.length > 0 ? String(heads[0]) : null;
+      setEditActiveId((prev) => (prev === target ? prev : target));
+    } else {
+      compute();
+    }
+    const scroller = view.scrollDOM;
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    scroller.addEventListener("scrollend", onScrollEnd);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", onScroll);
+      scroller.removeEventListener("scrollend", onScrollEnd);
+    };
+  }, [mode, ready, editOutline]);
+
+  useEffect(() => () => {
+    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+  }, []);
 
   if (loadFailed) {
     return (
@@ -563,7 +803,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
         ) : null}
         <div ref={mountRef} className={mode === "edit" && ready ? "h-full" : "hidden"} onContextMenu={handleEditorContextMenu} />
         {mode === "edit" && ready && (
-          <OutlineCard items={editOutline} onJump={jumpToEditHeading} />
+          <OutlineCard items={editOutline} onJump={jumpToEditHeading} activeId={editActiveId} />
         )}
         {mode === "read" && ready && (
           <MarkdownPreview
@@ -571,6 +811,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
             assetContext={{ vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") }}
             foldScope={notePath}
             scrollRef={previewScrollRef}
+            initialSection={scrollAnchorRef.current.section}
             onToggleTask={handleToggleTask}
             onOpenWikilink={onOpenWikilink}
             onResolveRelativeLink={(href) => onOpenWikilink(resolveRelativeLink(href, notePath))}

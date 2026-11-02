@@ -138,10 +138,12 @@ body {
 
 /* Selected-item indicator: rounded tick flush with the item's left edge
    (inset box-shadow follows border-radius and looks like a crescent — this doesn't) */
-.active-bar {
+.active-bar,
+.active-bar-neutral {
   position: relative;
 }
-.active-bar::before {
+.active-bar::before,
+.active-bar-neutral::before {
   content: "";
   position: absolute;
   left: 0;
@@ -151,8 +153,28 @@ body {
   min-height: 14px;
   width: 3px;
   border-radius: 9999px;
+}
+.active-bar::before {
   background-color: var(--accent);
   box-shadow: 0 0 8px var(--glow);
+}
+/* Neutral variant for surfaces that already tint with the theme accent (e.g.
+   the outline's active row) — an accent tick blends in there */
+.active-bar-neutral::before {
+  background-color: rgb(var(--c-primary) / 0.65);
+}
+
+/* Thick accent frame: 2px theme border drawn inside the box, so adding or
+   removing it never shifts layout. Shares --accent-border with accented card
+   headers so the frame and the header read as the same color. */
+.accent-frame {
+  box-shadow: inset 0 0 0 2px var(--accent-border);
+}
+
+/* Faint section wash for "All …" sidebar entries. Painted as a background
+   layer (not background-color) so the accent selection tint still shows. */
+.section-wash {
+  background-image: linear-gradient(rgb(var(--c-tint) / 0.05), rgb(var(--c-tint) / 0.05));
 }
 
 /* Frosted glass — always active on every theme. Intensity controlled by

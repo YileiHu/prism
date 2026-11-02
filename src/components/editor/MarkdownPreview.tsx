@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   Pencil, Info, Flame, CheckCircle2, Check, HelpCircle,
@@ -37,6 +37,10 @@ interface Props {
   onOpenWikilink: (target: string) => void;
   onResolveRelativeLink: (href: string) => void;
   scrollRef?: RefObject<HTMLDivElement | null>;
+  // Section index the mode-switch restore will scroll to (-1 = none). Used to
+  // seed the outline highlight so it doesn't flash the first entry before the
+  // restore lands.
+  initialSection?: number;
 }
 
 function formatFrontmatterValue(value: unknown): string {
@@ -64,7 +68,7 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, scrollRef }: Props) {
+export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, scrollRef, initialSection }: Props) {
   const { values } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const { html, frontmatter, outline } = useMemo(() => renderMarkdown(content, assetContext), [content, assetContext]);
@@ -74,6 +78,18 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
   // collapsed sections. Rebuilt whenever the rendered html/foldScope changes.
   const unfoldRef = useRef(new Map<Element, () => void>());
   const foldBuildKeyRef = useRef("");
+  // Outline highlight: which heading's section crosses the viewport center.
+  // When a mode switch seeded a section, start on it so the first paint
+  // already highlights the right entry.
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(() =>
+    initialSection != null && initialSection >= 0 ? outline[initialSection]?.id ?? null : null,
+  );
+  // Clicking an entry smooth-scrolls through intermediate headings; hold the
+  // highlight on the clicked one until the jump animation ends AND the user
+  // scrolls again (center-based detection would otherwise move it right away).
+  const jumpLockRef = useRef<string | null>(null);
+  const jumpSettledRef = useRef(false);
+  const jumpLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const jumpToHeading = (id: string) => {
     const root = containerRef.current;
@@ -92,17 +108,88 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
       }
       p = p.parentElement;
     }
+    setActiveHeadingId(id);
+    jumpLockRef.current = id;
+    jumpSettledRef.current = false;
+    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+    // Fallback for jumps that never scroll (already at the target, so no
+    // scrollend): consider the jump settled after the animation window
+    jumpLockTimerRef.current = setTimeout(() => {
+      jumpSettledRef.current = true;
+    }, 1000);
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  useEffect(() => () => {
+    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+  }, []);
+
+  // Track the section at the top of the viewport and mirror it into the
+  // outline. Heading ids (hd-N) are the outline item ids.
   useEffect(() => {
+    const scroller = scrollRef?.current;
+    const root = containerRef.current;
+    if (!scroller || !root) return;
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      if (jumpLockRef.current) return;
+      const rect = scroller.getBoundingClientRect();
+      const threshold = rect.top + rect.height / 2;
+      const heads = root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6");
+      let active: string | null = null;
+      let firstVisible: string | null = null;
+      for (const el of heads) {
+        // Headings inside collapsed fold bodies have no box — skip them
+        if (!el.id || el.getClientRects().length === 0) continue;
+        if (firstVisible === null) firstVisible = el.id;
+        if (el.getBoundingClientRect().top <= threshold) active = el.id;
+        else break;
+      }
+      const next = active ?? firstVisible;
+      setActiveHeadingId((prev) => (prev === next ? prev : next));
+    };
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(compute);
+    };
+    // Programmatic jump scrolls keep the clicked entry highlighted; the lock
+    // releases on the first scroll after the animation has settled
+    const onScroll = () => {
+      if (jumpLockRef.current) {
+        if (!jumpSettledRef.current) return;
+        jumpLockRef.current = null;
+      }
+      schedule();
+    };
+    const onScrollEnd = () => {
+      if (jumpLockRef.current) jumpSettledRef.current = true;
+    };
+    compute();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    scroller.addEventListener("scrollend", onScrollEnd);
+    // Fold toggles and late image loads change the layout without scrolling
+    const ro = new ResizeObserver(schedule);
+    ro.observe(root);
+    ro.observe(scroller);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", onScroll);
+      scroller.removeEventListener("scrollend", onScrollEnd);
+      ro.disconnect();
+    };
+  }, [scrollRef, html, foldScope]);
+
+  // Layout effects so the folded DOM exists before the parent's mode-switch
+  // scroll restore measures it (and before the first paint — no unfolded flash)
+  useLayoutEffect(() => {
     foldsRef.current = foldScope ? loadFolds(foldScope) : new Set();
   }, [foldScope]);
 
   // Heading folding: wrap each heading's section in a collapsible body and
   // prepend a chevron. Fold keys match the editor's live-preview keys so both
   // modes share one persisted state.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = containerRef.current;
     if (!root || !foldScope) return;
     // Rebuild the unfold map only when the content actually changed — React
@@ -216,7 +303,7 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
 
   return (
     <div className="relative h-full">
-      <OutlineCard items={outline} onJump={jumpToHeading} />
+      <OutlineCard items={outline} onJump={jumpToHeading} activeId={activeHeadingId} />
       <div ref={scrollRef} className="h-full overflow-y-auto">
         {frontmatter && values.show_frontmatter && <FrontmatterCard data={frontmatter} />}
         <div

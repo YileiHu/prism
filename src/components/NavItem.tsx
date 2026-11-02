@@ -18,7 +18,7 @@ const NavItem = forwardRef<HTMLButtonElement, NavItemProps>(function NavItem(
       type="button"
       className={`w-full px-3 py-2 rounded-control text-body text-left transition-colors ${
         active
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
           : "text-tertiary hover:text-primary hover:bg-elevated/50"
       } ${className}`}
       {...props}
