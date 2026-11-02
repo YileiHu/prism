@@ -38,6 +38,7 @@ const api = {
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke("settings:set", key, value),
+  getAllSettings: () => ipcRenderer.invoke("settings:get-all") as Promise<Record<string, string>>,
 
   // Tags
   getAllTags: () => ipcRenderer.invoke("tags:list"),
@@ -88,6 +89,7 @@ const api = {
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  setColorMode: (mode: string) => ipcRenderer.invoke("app:set-color-mode", mode),
   onMaximizeChange: (callback: (maximized: boolean) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized);
     ipcRenderer.on("window:maximize-change", handler);

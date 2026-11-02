@@ -1,4 +1,4 @@
-import { EditorSelection, EditorState, Extension, Prec } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Extension, Prec } from "@codemirror/state";
 import { EditorView, dropCursor, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting } from "@codemirror/language";
@@ -13,7 +13,7 @@ import { livePreview, type LivePreviewHooks } from "./livePreview";
 const editorTheme = EditorView.theme({
   "&": {
     height: "100%",
-    fontSize: "14.5px",
+    fontSize: "var(--content-font-size)",
     color: "rgb(var(--c-primary))",
     backgroundColor: "transparent",
   },
@@ -22,10 +22,10 @@ const editorTheme = EditorView.theme({
     overflowY: "auto",
     overflowX: "hidden",
     fontFamily: "inherit",
-    lineHeight: "1.7",
+    lineHeight: "var(--content-line-height)",
   },
   ".cm-content": {
-    maxWidth: "750px",
+    maxWidth: "var(--content-width)",
     margin: "0 auto",
     padding: "20px 28px 45vh",
     caretColor: "rgb(var(--accent))",
@@ -130,15 +130,26 @@ function wrapInMarkers(marker: string) {
   };
 }
 
+// Reconfigurable at runtime from the Editor settings section
+export const schemeCompartment = new Compartment();
+export const indentCompartment = new Compartment();
+export const wrapCompartment = new Compartment();
+
+export interface EditorOptions {
+  dark: boolean;
+  indentWidth: number;
+  lineWrapping: boolean;
+}
+
 export function buildExtensions(hooks: LivePreviewHooks & {
   onSave: () => void;
   // Saves the attachment and returns the markdown snippet to insert, or null on failure
   onPasteImage: (file: File) => Promise<string | null>;
-}): Extension[] {
+}, options: EditorOptions): Extension[] {
   return [
-    // Tell CM6 the editor sits on a dark surface so every base-theme default
-    // (gutters, panels, selection fallbacks) resolves to dark variants
-    EditorView.darkTheme.of(true),
+    // Tell CM6 which surface the editor sits on so every base-theme default
+    // (gutters, panels, selection fallbacks) resolves to the right variants
+    schemeCompartment.of(EditorView.darkTheme.of(options.dark)),
     history(),
     // No drawSelection() — native ::selection only covers rendered glyphs, so
     // multi-line highlights align strictly with visible text instead of
@@ -146,8 +157,8 @@ export function buildExtensions(hooks: LivePreviewHooks & {
     dropCursor(),
     EditorState.allowMultipleSelections.of(true),
     bracketMatching(),
-    indentUnit.of("    "),
-    EditorView.lineWrapping,
+    indentCompartment.of(indentUnit.of(" ".repeat(options.indentWidth))),
+    wrapCompartment.of(options.lineWrapping ? EditorView.lineWrapping : []),
     search({ top: true }),
     highlightSelectionMatches(),
     // markdownLanguage (not the markdown() default commonmarkLanguage!) —

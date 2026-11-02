@@ -1,7 +1,19 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import Button from "./Button";
 import { useAnimatedMount } from "../lib/useAnimatedMount";
+
+type ModalSize = "sm" | "md" | "lg";
+
+const SIZE_WIDTHS: Record<ModalSize, string> = {
+  sm: "400px",
+  md: "520px",
+  lg: "600px",
+};
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface ModalProps {
   open: boolean;
@@ -9,7 +21,11 @@ interface ModalProps {
   title?: string;
   icon?: ReactNode;
   width?: string;
+  size?: ModalSize;
   position?: "top" | "center";
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
+  initialFocusRef?: RefObject<HTMLElement | null>;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -19,23 +35,88 @@ export default function Modal({
   onClose,
   title,
   icon,
-  width = "420px",
+  width,
+  size,
   position = "top",
+  closeOnBackdrop = true,
+  closeOnEscape = true,
+  initialFocusRef,
   children,
   footer,
 }: ModalProps) {
   const { mounted, exiting } = useAnimatedMount(open, 100);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
 
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    if (!open || !closeOnEscape) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, closeOnEscape, onClose]);
+
+  useEffect(() => {
+    if (!open || !mounted) return;
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const raf = requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const active = document.activeElement;
+      // React's autoFocus already moved focus inside the dialog — keep it.
+      if (!initialFocusRef?.current && active instanceof HTMLElement && active !== panel && panel.contains(active)) {
+        return;
+      }
+      const target =
+        initialFocusRef?.current ??
+        panel.querySelector<HTMLElement>("[autofocus]") ??
+        panel.querySelector<HTMLElement>(FOCUSABLE) ??
+        panel;
+      target.focus();
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      restoreFocusRef.current?.focus();
+    };
+  }, [open, mounted, initialFocusRef]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const nodes = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+      (el) => el.offsetParent !== null || el === document.activeElement,
+    );
+    if (nodes.length === 0) {
+      e.preventDefault();
+      panel.focus();
+      return;
+    }
+
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    const active = document.activeElement;
+
+    if (e.shiftKey && (active === first || active === panel)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   if (!mounted) return null;
 
-  return (
+  const panelWidth = width ?? (size ? SIZE_WIDTHS[size] : "420px");
+
+  return createPortal(
     <div
       className={`fixed inset-0 z-50 flex ${
         position === "center" ? "items-center" : "items-start"
@@ -43,17 +124,23 @@ export default function Modal({
     >
       <div
         className={`fixed inset-0 bg-overlay/60 glass-overlay ${exiting ? "anim-exit" : "anim-overlay"}`}
-        onClick={onClose}
+        onClick={closeOnBackdrop ? onClose : undefined}
       />
       <div
-        className={`relative glass bg-surface/85 border border-strong rounded-xl shadow-2xl p-6 ${exiting ? "anim-exit-pop" : "anim-pop"}`}
-        style={{ width }}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title !== undefined ? titleId : undefined}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+        className={`relative glass bg-surface/85 border border-strong rounded-card shadow-modal p-6 focus:outline-none ${exiting ? "anim-exit-pop" : "anim-pop"}`}
+        style={{ width: panelWidth }}
       >
         {title !== undefined && (
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               {icon}
-              <h2 className="text-base font-semibold text-primary">{title}</h2>
+              <h2 id={titleId} className="text-section font-semibold text-primary">{title}</h2>
             </div>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
               <X size={18} />
@@ -67,6 +154,7 @@ export default function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

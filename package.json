@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Personal knowledge management desktop app",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -15,7 +15,6 @@
   },
   "keywords": [
     "knowledge-management",
-    "obsidian",
     "notes"
   ],
   "author": "",

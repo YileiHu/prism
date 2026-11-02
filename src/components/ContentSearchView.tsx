@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useSettings } from "../lib/settings";
+import { resolveTagColor, type PaletteColor } from "../lib/colors";
 import { type CollectionData } from "./CollectionsSidebar";
 import { toRelativePath } from "./useCollections";
 import EmptyState from "./EmptyState";
+import { SkeletonRows } from "./Skeleton";
+import Badge from "./Badge";
+import Spinner from "./Spinner";
 
 interface Props {
   vaultPath: string;
@@ -17,6 +22,7 @@ interface Props {
 interface Membership {
   collection: string;
   group: string | null;
+  color: PaletteColor;
 }
 
 function escapeRegExp(value: string) {
@@ -30,7 +36,7 @@ function Highlighted({ text, terms }: { text: string; terms: string[] }) {
     <>
       {text.split(pattern).map((part, i) =>
         i % 2 === 1 ? (
-          <mark key={i} className="bg-[var(--accent-muted)] text-[var(--accent-text)] rounded-sm px-0.5">
+          <mark key={i} className="bg-[var(--accent-muted)] text-[var(--accent-text)] rounded-chip px-0.5">
             {part}
           </mark>
         ) : (
@@ -43,6 +49,7 @@ function Highlighted({ text, terms }: { text: string; terms: string[] }) {
 
 export default function ContentSearchView({ vaultPath, collections, query, onOpenNote }: Props) {
   const { t } = useT();
+  const { values } = useSettings();
 
   const membershipsByPath = useMemo(() => {
     const map = new Map<string, Membership[]>();
@@ -53,9 +60,11 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
       else map.set(key, [membership]);
     };
     for (const c of collections) {
-      for (const np of c.notePaths) add(np, { collection: c.name, group: null });
+      // Group membership uses the collection's own color, never the group's
+      const color = resolveTagColor(c.name, c.color);
+      for (const np of c.notePaths) add(np, { collection: c.name, group: null, color });
       for (const g of c.groups ?? []) {
-        for (const np of g.notePaths) add(np, { collection: c.name, group: g.name });
+        for (const np of g.notePaths) add(np, { collection: c.name, group: g.name, color });
       }
     }
     return map;
@@ -110,15 +119,22 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex items-center gap-2 px-4 h-9 border-b border-line/50 flex-shrink-0 text-xs text-muted">
+      <div className="flex items-center gap-2 px-4 h-9 border-b border-line/50 flex-shrink-0 text-caption text-muted">
         {hasSearched && (
           <span>{t["vault.contentSearchCount"].replace("{count}", String(results.length))}</span>
         )}
-        {loading && <Loader2 size={13} className="animate-spin flex-shrink-0" />}
+        {hasSearched && results.length >= values.search_result_limit && (
+          <span className="text-faint">
+            {t["vault.resultLimitHint"].replace("{count}", String(values.search_result_limit))}
+          </span>
+        )}
+        {loading && <Spinner size={13} className="flex-shrink-0" />}
       </div>
 
       <div className="flex-1 overflow-y-auto" ref={scrollRef}>
-        {hasSearched && results.length === 0 && !loading ? (
+        {loading && results.length === 0 ? (
+          <SkeletonRows count={5} />
+        ) : hasSearched && results.length === 0 ? (
           <EmptyState size="module" text={t["vault.contentSearchEmpty"]} />
         ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
@@ -144,24 +160,23 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <FileText size={14} className="text-muted flex-shrink-0" />
-                      <span className="text-[15px] font-semibold leading-6 text-primary truncate min-w-0">{hit.title}</span>
+                      <span className="text-body font-semibold leading-6 text-primary truncate min-w-0">{hit.title}</span>
                       {memberships.length > 0 && (
                         <span className="flex items-center gap-1 flex-shrink-0">
                           {memberships.slice(0, 2).map((m, i) => (
-                            <span
-                              key={i}
-                              className="inline-block max-w-[180px] truncate rounded bg-hover/60 px-1.5 py-0.5 text-[10px] text-tertiary"
-                            >
-                              {m.group ? `${m.collection} › ${m.group}` : m.collection}
-                            </span>
+                            <Badge key={i} palette={m.color} className="max-w-[180px]">
+                              <span className="min-w-0 truncate">
+                                {m.group ? `${m.collection} › ${m.group}` : m.collection}
+                              </span>
+                            </Badge>
                           ))}
                           {memberships.length > 2 && (
-                            <span className="text-[10px] text-faint">+{memberships.length - 2}</span>
+                            <span className="text-meta text-faint">+{memberships.length - 2}</span>
                           )}
                         </span>
                       )}
                     </div>
-                    <p className="mt-1.5 pl-[22px] text-xs text-tertiary leading-relaxed line-clamp-2 break-words">
+                    <p className="mt-1.5 pl-[22px] text-caption text-tertiary leading-relaxed line-clamp-2 break-words">
                       <Highlighted text={hit.snippet} terms={terms} />
                     </p>
                   </button>

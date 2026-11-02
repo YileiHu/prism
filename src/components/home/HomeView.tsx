@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { History, Star } from "lucide-react";
 import { useT } from "../../i18n";
+import { useSettings } from "../../lib/settings";
 import HomeClock from "./HomeClock";
 import HomeNextActions from "./HomeNextActions";
 import NoteListCard, { type NoteRow } from "./NoteListCard";
@@ -14,15 +15,21 @@ interface Props {
 
 export default function HomeView({ active, onNavigateToGtd }: Props) {
   const { t } = useT();
+  const { values } = useSettings();
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const [favorites, setFavorites] = useState<FavoriteNote[]>([]);
   const [recents, setRecents] = useState<RecentNote[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
 
   useEffect(() => {
-    window.prism.getFavoriteNotes().then(setFavorites);
-    window.prism.getRecentNotes(10).then(setRecents);
-  }, [version]);
+    window.prism.getFavoriteNotes().then(setFavorites).finally(() => setFavoritesLoaded(true));
+    window.prism
+      .getRecentNotes(values.home_recents_count)
+      .then(setRecents)
+      .finally(() => setRecentsLoaded(true));
+  }, [version, values.home_recents_count]);
 
   // Refresh whenever the tab becomes visible — the pane is kept alive while
   // the user works in other tabs (GTD completions, starring, note opens).
@@ -70,8 +77,8 @@ export default function HomeView({ active, onNavigateToGtd }: Props) {
           </div>
         </div>
         <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
-          <NoteListCard title={t["home.favorites"]} icon={Star} rows={favoriteRows} emptyText={t["home.emptyFavorites"]} accent onUnstar={unstar} />
-          <NoteListCard title={t["home.recents"]} icon={History} rows={recentRows} emptyText={t["home.emptyRecents"]} />
+          <NoteListCard title={t["home.favorites"]} icon={Star} rows={favoriteRows} emptyText={t["home.emptyFavorites"]} accent loading={!favoritesLoaded} onUnstar={unstar} />
+          <NoteListCard title={t["home.recents"]} icon={History} rows={recentRows} emptyText={t["home.emptyRecents"]} loading={!recentsLoaded} />
         </div>
       </div>
     </div>

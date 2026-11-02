@@ -8,8 +8,10 @@ import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, List
 
 import { useT } from "./i18n";
 import ErrorBoundary from "./components/ErrorBoundary";
+import Button from "./components/Button";
 import SplashScreen from "./components/SplashScreen";
 import { ContextMenuProvider } from "./lib/useContextMenu";
+import { useGlobalShortcuts } from "./lib/useShortcuts";
 import { ToastProvider } from "./lib/toast";
 import ChangelogModal from "./components/ChangelogModal";
 import { type VaultEntry } from "./types";
@@ -32,6 +34,8 @@ export default function App() {
   const [gtdFocus, setGtdFocus] = useState<GtdFocus | null>(null);
   const [noteOpenRequest, setNoteOpenRequest] = useState<NoteOpenRequest | null>(null);
   const splashHidden = useRef(false);
+
+  useGlobalShortcuts(activeTab, !SPECIAL_TAB_KEYS.has(activeTab));
 
   useEffect(() => {
     window.prism.isMaximized().then(setMaximized);
@@ -217,7 +221,7 @@ export default function App() {
               key={key}
               onClick={() => handleTabClick(key)}
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-              className={`relative h-full flex items-center gap-1.5 px-3 text-[13px] font-medium transition-colors flex-shrink-0 ${
+              className={`relative h-full flex items-center gap-1.5 px-3 text-control font-medium transition-colors flex-shrink-0 ${
                 activeTab === key
                   ? "text-[var(--accent-text)]"
                   : "text-muted hover:text-secondary"
@@ -231,33 +235,39 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={() => setChangelogOpen(true)}
           title={t["changelog.button"]}
-          className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors mr-1 flex-shrink-0"
+          className="w-8 h-8 mr-1"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           <Megaphone size={15} strokeWidth={1.5} />
-        </button>
+        </Button>
         <div
           className="flex items-center gap-1 flex-shrink-0"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => window.prism.minimizeWindow()}
-            className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors"
+            className="w-8 h-8"
           >
             <Minus size={14} strokeWidth={1.5} />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => window.prism.maximizeWindow()}
-            className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors"
+            className="w-8 h-8"
           >
             {maximized ? <Copy size={13} strokeWidth={1.5} /> : <Square size={13} strokeWidth={1.5} />}
-          </button>
+          </Button>
           <button
             onClick={() => window.prism.closeWindow()}
-            className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-white hover:bg-red-500/65 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-control text-muted hover:text-on-accent hover:bg-danger/70 transition-colors"
           >
             <X size={15} strokeWidth={1.5} />
           </button>

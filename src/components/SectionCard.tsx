@@ -33,10 +33,10 @@ export default function SectionCard({
 }: Props) {
   const body = <div ref={bodyRef} className={bodyClassName}>{children}</div>;
   return (
-    <div className={`border rounded-xl bg-surface/20 overflow-hidden ${accent ? "border-[var(--accent-border)]" : "border-strong/50"} ${className}`}>
+    <div className={`border rounded-card bg-surface/20 overflow-hidden ${accent ? "border-[var(--accent-border)]" : "border-strong/50"} ${className}`}>
       <div
         className={`flex items-center gap-2 px-3 h-8 flex-shrink-0 ${onToggle ? "cursor-pointer" : ""} ${accent ? "bg-[var(--accent-muted)]" : tintColor ? "" : "bg-elevated/30"}`}
-        style={tintColor ? { backgroundColor: `${tintColor.bar}18` } : undefined}
+        style={tintColor ? { backgroundColor: tintColor.tint } : undefined}
         onClick={onToggle}
       >
         {onToggle && (
@@ -44,12 +44,12 @@ export default function SectionCard({
         )}
         {Icon && <Icon size={13} className={accent ? "text-[var(--accent-text)]" : "text-muted"} />}
         <span
-          className={`text-xs font-medium truncate ${tintColor || accent ? "" : "text-secondary"}`}
+          className={`text-caption font-medium truncate ${tintColor || accent ? "" : "text-secondary"}`}
           style={tintColor ? { color: tintColor.name } : accent ? { color: "var(--accent-text)" } : undefined}
         >
           {title}
         </span>
-        {count !== undefined && <span className="text-xs text-faint">{count}</span>}
+        {count !== undefined && <span className="text-caption text-faint">{count}</span>}
         {headerActions && <div className="ml-auto flex items-center gap-1">{headerActions}</div>}
       </div>
       {onToggle ? (

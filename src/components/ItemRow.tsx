@@ -44,12 +44,12 @@ export default function ItemRow({
       title={tooltip}
       onClick={onPrimaryClick}
       onContextMenu={menuItems ? (e) => openMenu(e, menuItems) : propsOnContextMenu}
-      className={`group flex items-center gap-2 transition-colors ${variant === "dense" ? "px-2 py-1.5 rounded-lg" : "px-3 py-1.5"} ${
-        selected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/40"
+      className={`group flex items-center gap-2 transition-colors ${variant === "dense" ? "px-2 py-1.5 rounded-control" : "px-3 py-1.5"} ${
+        selected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/50"
       } ${onPrimaryClick ? "cursor-pointer" : ""} ${className}`}
     >
       {leading}
-      <span className={`flex-1 min-w-0 truncate text-sm ${selected ? "text-[var(--accent-text)]" : "text-primary"}`}>
+      <span className={`flex-1 min-w-0 truncate text-body ${selected ? "text-[var(--accent-text)]" : "text-primary"}`}>
         {title}
       </span>
       {meta}

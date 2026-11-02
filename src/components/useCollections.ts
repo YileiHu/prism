@@ -49,6 +49,18 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<CollectionData[] | null>(null);
+  const saveFailedRef = useRef(false);
+
+  const persistCollections = useCallback((colls: CollectionData[]) => {
+    return window.prism.saveCollections(vaultPath, { version: 1, collections: colls })
+      .then(() => { saveFailedRef.current = false; })
+      .catch(() => {
+        if (saveFailedRef.current) return;
+        saveFailedRef.current = true;
+        showToast(t["common.saveFailed"], "error");
+        setTimeout(() => { saveFailedRef.current = false; }, 4000);
+      });
+  }, [vaultPath, showToast, t]);
 
   const saveCollections = useCallback((colls: CollectionData[]) => {
     pendingRef.current = colls;
@@ -56,16 +68,16 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     saveTimer.current = setTimeout(() => {
       pendingRef.current = null;
       saveTimer.current = null;
-      window.prism.saveCollections(vaultPath, { version: 1, collections: colls });
+      void persistCollections(colls);
     }, 300);
-  }, [vaultPath]);
+  }, [persistCollections]);
 
   // Flush pending debounced save on unmount / window close so the last edit isn't lost
   useEffect(() => {
     const flush = () => {
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       if (pendingRef.current) {
-        window.prism.saveCollections(vaultPath, { version: 1, collections: pendingRef.current });
+        void persistCollections(pendingRef.current);
         pendingRef.current = null;
       }
     };
@@ -74,7 +86,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
       window.removeEventListener("beforeunload", flush);
       flush();
     };
-  }, [vaultPath]);
+  }, [persistCollections]);
 
   const loadCollections = useCallback(async (vp: string) => {
     const data = await window.prism.loadCollections(vp) as CollectionsFile | null;
@@ -124,6 +136,15 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
       },
     };
   }, [collections, saveCollections, selectedCollectionId, vaultPath]);
+
+  const restoreCollections = useCallback((snapshot: CollectionData[], selectedId?: string | null) => {
+    setCollections(snapshot);
+    saveCollections(snapshot);
+    if (selectedId !== undefined) {
+      setSelectedCollectionId(selectedId);
+      window.prism.setSetting(`last_coll_${vaultPath}`, selectedId ?? "");
+    }
+  }, [saveCollections, vaultPath]);
 
   const handleSetCollectionColor = useCallback((collId: string, color: string) => {
     updateCollection(collId, (c) => ({ ...c, color }));
@@ -190,10 +211,17 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
 
   // ---- Group operations ----
 
-  const handleAddGroup = useCallback((collId: string, name: string) => {
+  const handleAddGroup = useCallback((collId: string, name: string, color?: string) => {
     updateCollection(collId, (c) => ({
       ...c,
-      groups: [...(c.groups ?? []), { id: makeId(), name, notePaths: [] }],
+      groups: [...(c.groups ?? []), { id: makeId(), name, notePaths: [], ...(color ? { color } : {}) }],
+    }));
+  }, [updateCollection]);
+
+  const handleSetGroupColor = useCallback((collId: string, groupId: string, color: string) => {
+    updateCollection(collId, (c) => ({
+      ...c,
+      groups: (c.groups ?? []).map((g) => g.id === groupId ? { ...g, color } : g),
     }));
   }, [updateCollection]);
 
@@ -241,14 +269,25 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   }, [updateCollection]);
 
   const handleRemoveNote = useCallback((collId: string, relPath: string, groupId: string | null) => {
+    const coll = collections.find((c) => c.id === collId);
+    const source = groupId
+      ? (coll?.groups ?? []).find((g) => g.id === groupId)?.notePaths
+      : coll?.notePaths;
+    const oldIndex = source ? source.indexOf(relPath) : -1;
+
     updateCollection(collId, (c) => {
       if (groupId) {
         return { ...c, groups: (c.groups ?? []).map((g) => g.id === groupId ? { ...g, notePaths: g.notePaths.filter((p) => p !== relPath) } : g) };
       }
       return { ...c, notePaths: c.notePaths.filter((p) => p !== relPath) };
     });
-    showToast(t["collections.removed"]);
-  }, [updateCollection, showToast, t]);
+    showToast(t["collections.removed"], {
+      action: {
+        label: t["common.undo"],
+        onClick: () => handleMoveNote(collId, relPath, null, groupId, oldIndex >= 0 ? oldIndex : undefined),
+      },
+    });
+  }, [collections, updateCollection, handleMoveNote, showToast, t]);
 
   const handleMoveToCollection = useCallback((fromCollId: string, toCollId: string, relPath: string, fromGroupId: string | null) => {
     const target = collections.find((c) => c.id === toCollId);
@@ -399,6 +438,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     return (selectedCollection.groups ?? []).map((g) => ({
       id: g.id,
       name: g.name,
+      color: g.color,
       notes: mapNotes(g.notePaths),
     }));
   }, [selectedCollection, mapNotes]);
@@ -467,9 +507,11 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
           await loadNotes();
         }
         const failed = result.results.length - succeeded.length;
-        showToast(failed === 0
-          ? t["batch.deleted"].replace("{count}", String(succeeded.length))
-          : t["batch.deleteFailed"].replace("{count}", String(failed)));
+        if (failed === 0) {
+          showToast(t["batch.deleted"].replace("{count}", String(succeeded.length)));
+        } else {
+          showToast(t["batch.deleteFailed"].replace("{count}", String(failed)), "error");
+        }
       },
     };
   }, [vaultPath, removeNotePaths, loadNotes, showToast, t]);
@@ -484,6 +526,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     handleCreateCollection,
     handleRenameCollection,
     handleDeleteCollection,
+    restoreCollections,
     handleSetCollectionColor,
     handleReorderCollections,
     // Notes in collections
@@ -496,6 +539,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
     handleReorderNotesInGroup,
     // Groups
     handleAddGroup,
+    handleSetGroupColor,
     handleRenameGroup,
     handleDeleteGroup,
     handleReorderGroups,

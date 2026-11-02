@@ -57,19 +57,25 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
 
   useEffect(() => {
     const handleClick = () => onClose();
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // Capture phase: consume Escape before a parent Modal's listener runs.
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
     document.addEventListener("click", handleClick);
-    document.addEventListener("keydown", handleKey);
+    document.addEventListener("keydown", handleKey, true);
     return () => {
       document.removeEventListener("click", handleClick);
-      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("keydown", handleKey, true);
     };
   }, [onClose]);
 
   return (
     <div
       ref={menuRef}
-      className={`fixed z-[100] glass bg-elevated/85 border border-strong rounded-lg shadow-xl p-1 min-w-[180px] ${exiting ? "anim-exit" : "anim-menu"}`}
+      data-prism-menu=""
+      className={`fixed z-context glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 min-w-[180px] ${exiting ? "anim-exit" : "anim-menu"}`}
       style={{ left: adjustedPos.x, top: adjustedPos.y, visibility: ready ? "visible" : "hidden" }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -93,12 +99,12 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
             >
               {item.icon && <span className="w-4 flex-shrink-0">{item.icon}</span>}
               <span className="flex-1 text-left">{item.label}</span>
-              {item.checked && <span className="text-[var(--accent-text)] text-xs">✓</span>}
+              {item.checked && <span className="text-[var(--accent-text)] text-caption">✓</span>}
               {item.children && <ChevronRight size={12} className="text-muted flex-shrink-0" />}
             </DropdownMenuItem>
             {item.children && submenuOpen === i && (
               <div
-                className={`absolute top-0 glass bg-elevated/85 border border-strong rounded-lg shadow-xl p-1 min-w-[160px] anim-fade-in ${flipSubmenu ? "right-full mr-1" : "left-full ml-1"}`}
+                className={`absolute top-0 glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 min-w-[160px] anim-fade-in ${flipSubmenu ? "right-full mr-1" : "left-full ml-1"}`}
                 onMouseEnter={clearCloseTimer}
                 onMouseLeave={scheduleClose}
               >
@@ -113,7 +119,7 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
                     >
                       {child.icon && <span className="w-4 flex-shrink-0">{child.icon}</span>}
                       <span className="flex-1 text-left">{child.label}</span>
-                      {child.checked && <span className="text-[var(--accent-text)] text-xs">✓</span>}
+                      {child.checked && <span className="text-[var(--accent-text)] text-caption">✓</span>}
                     </DropdownMenuItem>
                   </div>
                 ))}

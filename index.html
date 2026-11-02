@@ -4,8 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prism</title>
+    <script>
+      // First-paint color scheme: localStorage mirrors SQLite color_mode so the
+      // window paints in the right palette before React mounts.
+      (function () {
+        var mode = "dark";
+        try {
+          var stored = localStorage.getItem("prism_mode");
+          if (stored === "light" || stored === "dark" || stored === "system") mode = stored;
+        } catch (e) {}
+        var resolved =
+          mode === "system"
+            ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : mode;
+        document.documentElement.dataset.mode = resolved;
+        document.documentElement.style.colorScheme = resolved;
+      })();
+    </script>
   </head>
-  <body class="text-gray-100 bg-gray-950">
+  <body class="text-primary bg-base">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

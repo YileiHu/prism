@@ -1,20 +1,39 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import {
   FileText,
-  FolderOpen, FolderX, CheckSquare, Maximize2,
-  Trash2, Plus, Pencil, RefreshCw,
+  FolderOpen, FolderX, CheckSquare, Maximize2, Minimize2, ListPlus,
+  Trash2, Plus, Pencil,
   ArrowRightLeft, Star, Search,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useT } from "../i18n";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  pointerWithin,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  type DragStartEvent,
+  type DragEndEvent,
+  type CollisionDetection,
+} from "@dnd-kit/core";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useSettings } from "../lib/settings";
 import { useToast } from "../lib/toast";
+import { useDragClickGuard } from "../lib/useDragClickGuard";
+import Badge from "./Badge";
+import Spinner from "./Spinner";
 import { resolveTagColor, type PaletteColor } from "../lib/colors";
-import CollectionsSidebar, { type CollectionData, type NoteGroup } from "./CollectionsSidebar";
+import CollectionsSidebar, { type CollectionData, makeCollId, CollectionDragOverlay } from "./CollectionsSidebar";
 import ContentSearchView from "./ContentSearchView";
 import CollectionDetail from "./CollectionDetail";
 import CreateCollectionModal from "./CreateCollectionModal";
+import CreateGroupModal from "./CreateGroupModal";
 import CreateNoteModal from "./CreateNoteModal";
+import { buildColorMenuItem } from "./ColorPicker";
 import BatchActionBar from "./BatchActionBar";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
@@ -24,12 +43,14 @@ import Button from "./Button";
 import ItemRow from "./ItemRow";
 import SearchInput from "./SearchInput";
 import EmptyState from "./EmptyState";
+import { SkeletonRows } from "./Skeleton";
 import RenameModal from "./RenameModal";
 import ConfirmDialog from "./ConfirmDialog";
 import NoteTabBar from "./editor/NoteTabBar";
 import NoteEditor from "./editor/NoteEditor";
 import { useNoteTabs } from "./editor/useNoteTabs";
 import { resolveNoteTarget } from "./editor/linkResolver";
+import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../shared/shortcuts";
 
 export interface NoteOpenRequest {
   seq: number;
@@ -50,7 +71,7 @@ interface VaultNote {
 interface ConfirmState {
   message: string;
   confirmLabel: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 interface Props {
@@ -59,22 +80,64 @@ interface Props {
   openRequest?: NoteOpenRequest | null;
 }
 
+type VaultDrag =
+  | { kind: "collection"; id: string }
+  | { kind: "notes"; paths: string[]; title: string };
+
+// The wrapper (not the virtualized positioning node) is the draggable, and it
+// never receives a transform — the DragOverlay carries the visual.
+function DraggableNoteRow({
+  notePath,
+  noteTitle,
+  dragPaths,
+  children,
+}: {
+  notePath: string;
+  noteTitle: string;
+  dragPaths: string[];
+  children: ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `vnote:${notePath}`,
+    data: { kind: "note", paths: dragPaths, title: noteTitle },
+  });
+  const clickGuard = useDragClickGuard(isDragging);
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      {...clickGuard}
+      className={isDragging ? "opacity-40" : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function VaultView({ vaultPath, onScanComplete, openRequest }: Props) {
   const { t } = useT();
+  const { values: settings } = useSettings();
 
   const [notes, setNotes] = useState<VaultNote[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchScope, setSearchScope] = useState<"title" | "content">("title");
+  const [searchScope, setSearchScope] = useState<"title" | "content">(
+    () => (localStorage.getItem(`prism_note_search_scope_v2_${vaultPath}`) === "title" ? "title" : "content"),
+  );
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [scanning, setScanning] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [vaultError, setVaultError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showNewNoteModal, setShowNewNoteModal] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CollectionData | null>(null);
+  const [renameGroupTarget, setRenameGroupTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Collections sidebar collapse (global UI pref, like the sidebar width)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -95,15 +158,32 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const saved = localStorage.getItem(`prism_note_search_scope_${vaultPath}`);
-    setSearchScope(saved === "content" ? "content" : "title");
+    const saved = localStorage.getItem(`prism_note_search_scope_v2_${vaultPath}`);
+    setSearchScope(saved === "title" ? "title" : "content");
   }, [vaultPath]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Quick-jump-to-search may run while already in list view, where no state
+  // changes would wake a focus effect — the counter forces one pass.
+  const searchFocusPendingRef = useRef(false);
+  const [searchFocusSeq, setSearchFocusSeq] = useState(0);
+
+  // Esc exits batch selection; menus and modals consume their own Escape.
+  useEffect(() => {
+    if (!selectMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      setSelectMode(false);
+      setSelectedPaths(new Set());
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [selectMode]);
 
   const changeSearchScope = useCallback((scope: "title" | "content") => {
     setSearchScope(scope);
-    localStorage.setItem(`prism_note_search_scope_${vaultPath}`, scope);
+    localStorage.setItem(`prism_note_search_scope_v2_${vaultPath}`, scope);
     if (scope === "content") {
       setSelectMode(false);
       setSelectedPaths(new Set());
@@ -185,10 +265,15 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
   // ---- Notes loading ----
 
   const loadNotes = useCallback(async () => {
-    if (debouncedQuery.trim()) {
-      setNotes(await window.prism.searchNotes(vaultPath, debouncedQuery));
-    } else {
-      setNotes(await window.prism.getNoteList(vaultPath));
+    setNotesLoading(true);
+    try {
+      if (debouncedQuery.trim()) {
+        setNotes(await window.prism.searchNotes(vaultPath, debouncedQuery));
+      } else {
+        setNotes(await window.prism.getNoteList(vaultPath));
+      }
+    } finally {
+      setNotesLoading(false);
     }
   }, [debouncedQuery, vaultPath]);
 
@@ -247,6 +332,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     handleCreateCollection,
     handleRenameCollection,
     handleDeleteCollection,
+    restoreCollections,
     handleReorderCollections,
     handleSetCollectionColor,
     handleDropNote,
@@ -257,6 +343,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     handleMoveToCollection,
     handleReorderNotesInGroup,
     handleAddGroup,
+    handleSetGroupColor,
     handleRenameGroup,
     handleDeleteGroup,
     handleReorderGroups,
@@ -272,6 +359,33 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     sortedNotes,
   } = useCollections({ vaultPath, notes, loadNotes });
 
+  // App shortcut: jump to the all-notes search and focus it, leaving the
+  // editor (unmounting flushes its autosave) and any selected collection.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ShortcutEventDetail>).detail;
+      if (detail?.action !== "focusSearch" || detail.vaultPath !== vaultPath) return;
+      setActivePath(null);
+      setSelectedCollectionId(null);
+      setSelectMode(false);
+      setSelectedPaths(new Set());
+      void window.prism.setSetting(`last_coll_${vaultPath}`, "");
+      searchFocusPendingRef.current = true;
+      setSearchFocusSeq((seq) => seq + 1);
+    };
+    window.addEventListener(SHORTCUT_EVENT, handler);
+    return () => window.removeEventListener(SHORTCUT_EVENT, handler);
+  }, [vaultPath, setActivePath, setSelectedCollectionId]);
+
+  useEffect(() => {
+    if (!searchFocusPendingRef.current) return;
+    const el = searchInputRef.current;
+    if (!el) return;
+    searchFocusPendingRef.current = false;
+    el.focus();
+    el.select();
+  }, [searchFocusSeq, activePath, selectedCollectionId]);
+
   const collectionColorByName = useMemo(() => {
     const map = new Map<string, PaletteColor>();
     for (const c of collections) map.set(c.name, resolveTagColor(c.name, c.color));
@@ -279,6 +393,56 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
   }, [collections]);
 
   const contentResultsVisible = searchScope === "content" && searchQuery.trim() !== "" && !selectedCollectionId;
+
+  // ---- Drag and drop (collections sorting + notes → collections) ----
+
+  const [drag, setDrag] = useState<VaultDrag | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  // Notes are only draggable, never droppable: nearest-center would report a
+  // collection while the pointer is still over the list, so require the
+  // pointer to actually be inside a collection row.
+  const collisionDetection = useCallback<CollisionDetection>((args) =>
+    args.active.data.current?.kind === "note" ? pointerWithin(args) : closestCenter(args), []);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const data = event.active.data.current;
+    if (data?.kind === "collection") {
+      setDrag({ kind: "collection", id: String(data.id) });
+    } else if (data?.kind === "note") {
+      setDrag({
+        kind: "notes",
+        paths: Array.isArray(data.paths) ? (data.paths as string[]) : [],
+        title: String(data.title ?? ""),
+      });
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDrag(null);
+    const { active, over } = event;
+    if (!over) return;
+    const data = active.data.current;
+    const overId = String(over.id);
+
+    if (data?.kind === "collection") {
+      if (!overId.startsWith("coll-") || active.id === over.id) return;
+      const fromIdx = collections.findIndex((c) => makeCollId(c.id) === active.id);
+      const toIdx = collections.findIndex((c) => makeCollId(c.id) === overId);
+      if (fromIdx !== -1 && toIdx !== -1) handleReorderCollections(fromIdx, toIdx);
+    } else if (data?.kind === "note") {
+      if (!overId.startsWith("coll-")) return;
+      const paths = Array.isArray(data.paths) ? (data.paths as string[]) : [];
+      if (paths.length > 0) handleDropNote(overId.slice(5), paths);
+    }
+  };
+
+  const dragCollection = drag?.kind === "collection"
+    ? collections.find((c) => c.id === drag.id) ?? null
+    : null;
 
   // ---- Create note callback ----
 
@@ -317,7 +481,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
       showToast(t["editor.linkNoteCreated"].replace("{name}", created.title));
       loadNotes();
     } catch {
-      showToast(t["editor.linkNoteFailed"]);
+      showToast(t["editor.linkNoteFailed"], "error");
     }
   };
 
@@ -345,7 +509,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
       showToast(t["vault.renamed"].replace("{name}", newTitle));
       loadNotes();
     } catch {
-      showToast(t["vault.renameFailed"]);
+      showToast(t["vault.renameFailed"], "error");
     }
   };
 
@@ -436,19 +600,23 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
         label: t["menu.moveToTrash"],
         icon: <Trash2 size={14} />,
         danger: true,
-        onClick: async () => {
-          const result = await window.prism.trashFile(note.path);
-          if (result.success) {
-            // Remove the DB row too, otherwise the next loadNotes() resurrects it
-            await window.prism.deleteNotes([note.path]);
-            removeNotePaths([relPath]);
-            removePaths([note.path]);
-            setNotes((prev) => prev.filter((n) => n.path !== note.path));
-            showToast(t["vault.trashed"]);
-          } else {
-            showToast(t["vault.deleteFailed"].replace("{error}", result.error ?? ""));
-          }
-        },
+        onClick: () => setConfirm({
+          message: t["vault.trashConfirm"].replace("{name}", note.title),
+          confirmLabel: t["menu.moveToTrash"],
+          onConfirm: async () => {
+            const result = await window.prism.trashFile(note.path);
+            if (result.success) {
+              // Remove the DB row too, otherwise the next loadNotes() resurrects it
+              await window.prism.deleteNotes([note.path]);
+              removeNotePaths([relPath]);
+              removePaths([note.path]);
+              setNotes((prev) => prev.filter((n) => n.path !== note.path));
+              showToast(t["vault.trashed"]);
+            } else {
+              showToast(t["vault.deleteFailed"].replace("{error}", result.error ?? ""), "error");
+            }
+          },
+        }),
       },
     );
 
@@ -478,6 +646,41 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
     }
   };
 
+  const getGroupContextMenuItems = (groupId: string): MenuItem[] => {
+    const group = selectedCollection?.groups?.find((g) => g.id === groupId);
+    if (!group) return [];
+    return [
+      {
+        label: t["collections.rename"],
+        icon: <Pencil size={14} />,
+        onClick: () => setRenameGroupTarget({ id: group.id, name: group.name }),
+      },
+      buildColorMenuItem(t, {
+        label: t["collections.groupColor"],
+        autoLabel: t["collections.colorAuto"],
+        autoSource: group.name,
+        current: group.color,
+        onSelect: (color) => handleSetGroupColor(selectedCollectionId!, group.id, color),
+      }),
+      {
+        label: t["collections.deleteGroup"],
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => {
+          if (!selectedCollectionId) return;
+          setConfirm({
+            message: t["collections.deleteGroupConfirm"].replace("{name}", group.name),
+            confirmLabel: t["collections.deleteGroup"],
+            onConfirm: () => {
+              handleDeleteGroup(selectedCollectionId, group.id);
+              showToast(t["collections.groupDeleted"].replace("{name}", group.name));
+            },
+          });
+        },
+      },
+    ];
+  };
+
   // ---- Render ----
 
   return (
@@ -486,14 +689,14 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
         // Single loading view until scan + collections + restored selection are
         // all ready — prevents flashing intermediate layouts on first mount
         <div className="flex-1 flex flex-col items-center justify-center gap-3 anim-fade-in">
-          <RefreshCw size={22} className="animate-spin text-muted" />
-          <p className="text-sm text-muted">{t["vault.scanning"]}</p>
+          <Spinner size={22} className="text-muted" />
+          <p className="text-body text-muted">{t["vault.scanning"]}</p>
         </div>
       ) : vaultError ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center anim-fade-in">
           <FolderX size={36} className="text-faint mb-1" />
-          <p className="text-sm font-medium text-secondary">{t["vault.vaultNotFound"]}</p>
-          <p className="text-xs text-muted leading-relaxed break-all max-w-md">
+          <p className="text-body font-medium text-secondary">{t["vault.vaultNotFound"]}</p>
+          <p className="text-caption text-muted leading-relaxed break-all max-w-md">
             {t["vault.vaultNotFoundDesc"].replace("{path}", vaultPath)}
           </p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReloadKey((k) => k + 1)}>
@@ -501,7 +704,14 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
           </Button>
         </div>
       ) : (
-      <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        autoScroll={drag?.kind !== "notes"}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setDrag(null)}
+      >
       {/* Collections Sidebar — collapsible. The grid-template-columns 0fr↔1fr
           transition animates the collapse; the sidebar stays MOUNTED while
           collapsed so its scroll/selection state survives */}
@@ -533,19 +743,25 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
             }}
             onDelete={(id) => {
               const { collName, onConfirm } = handleDeleteCollection(id);
+              // Snapshot synchronously so the undo restores the exact prior state
+              const snapshot = collections;
+              const prevSelected = selectedCollectionId;
               setConfirm({
                 message: t["collections.deleteConfirm"],
                 confirmLabel: t["collections.delete"],
                 onConfirm: () => {
                   onConfirm();
                   setConfirm(null);
-                  showToast(t["collections.removed"].replace("{name}", collName));
+                  showToast(t["collections.deleted"].replace("{name}", collName), {
+                    action: {
+                      label: t["common.undo"],
+                      onClick: () => restoreCollections(snapshot, prevSelected),
+                    },
+                  });
                 },
               });
             }}
-            onReorder={handleReorderCollections}
             onSetColor={handleSetCollectionColor}
-            onDropNote={handleDropNote}
           />
         </div>
       </div>
@@ -571,15 +787,28 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
               ref={searchInputRef}
               value={searchQuery}
               onChange={setSearchQuery}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.stopPropagation();
+                if (searchQuery) {
+                  setSearchQuery("");
+                  return;
+                }
+                if (searchScope === "content") {
+                  changeSearchScope("title");
+                  return;
+                }
+                searchInputRef.current?.blur();
+              }}
               placeholder={searchScope === "title" ? t["vault.search"] : t["vault.contentSearchPlaceholder"]}
               wrapperClassName="flex-1"
             />
-            <div className="flex items-center rounded-lg border border-strong bg-elevated/60 p-0.5 flex-shrink-0">
+            <div className="flex items-center rounded-control border border-strong bg-elevated/50 p-0.5 flex-shrink-0">
               <button
                 type="button"
                 aria-pressed={searchScope === "title"}
                 onClick={() => changeSearchScope("title")}
-                className={`px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                className={`px-2 py-0.5 rounded-chip text-caption cursor-pointer transition-colors ${
                   searchScope === "title"
                     ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
                     : "text-muted hover:text-secondary"
@@ -591,7 +820,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                 type="button"
                 aria-pressed={searchScope === "content"}
                 onClick={() => changeSearchScope("content")}
-                className={`px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                className={`px-2 py-0.5 rounded-chip text-caption cursor-pointer transition-colors ${
                   searchScope === "content"
                     ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium"
                     : "text-muted hover:text-secondary"
@@ -608,7 +837,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden flex flex-col relative">
+        <div className="flex-1 overflow-hidden flex flex-col relative bg-base">
           {editorActive && activeNoteTab && (
             <NoteEditor
               key={activeNoteTab.path}
@@ -630,11 +859,16 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: resolveTagColor(selectedCollection.name, selectedCollection.color).bar }}
                 />
-                <h2 className="text-base font-semibold text-primary">{selectedCollection.name}</h2>
-                <span className="text-xs text-muted">{t["vault.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
+                <h2 className="text-section font-semibold text-primary">{selectedCollection.name}</h2>
+                <span className="text-caption text-muted">{t["vault.notesCount"].replace("{count}", String(totalCollectionNotes))}</span>
                 <div className="flex-1" />
-                <Button variant="ghost" size="icon-md" onClick={handleToggleAll} title={allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}>
-                  <Maximize2 size={16} />
+                <Button variant="ghost" size="xs" onClick={() => setShowGroupModal(true)} title={t["collections.addGroup"]}>
+                  <ListPlus size={14} />
+                  <span>{t["collections.addGroup"]}</span>
+                </Button>
+                <Button variant="ghost" size="xs" onClick={handleToggleAll} title={allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}>
+                  {allExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  <span>{allExpanded ? t["collections.collapseAll"] : t["collections.expandAll"]}</span>
                 </Button>
               </div>
               <CollectionDetail
@@ -644,9 +878,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                 ungroupedCollapsed={ungroupedCollapsed}
                 onToggleGroup={toggleCollapsedGroup}
                 onToggleUngrouped={() => setUngroupedCollapsed(!ungroupedCollapsed)}
-                onAddGroup={(name) => handleAddGroup(selectedCollectionId!, name)}
-                onRenameGroup={(groupId, name) => handleRenameGroup(selectedCollectionId!, groupId, name)}
-                onDeleteGroup={(groupId) => handleDeleteGroup(selectedCollectionId!, groupId)}
+                onGroupContextMenu={(e, groupId) => onContextMenu(e, getGroupContextMenuItems(groupId))}
                 onReorderGroups={(from, to) => handleReorderGroups(selectedCollectionId!, from, to)}
                 onMoveNote={(relPath, fromG, toG, toIdx) => handleMoveNote(selectedCollectionId!, relPath, fromG, toG, toIdx)}
                 onRemoveNote={(relPath, groupId) => handleRemoveNote(selectedCollectionId!, relPath, groupId)}
@@ -682,16 +914,20 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
             className={`flex-1 overflow-y-auto py-1 inset-0 ${!selectedCollectionId && !contentResultsVisible && !editorActive ? "anim-fade-in" : ""}`}
             ref={notesScrollRef}
           >
-              {sortedNotes.length === 0 && (
+              {searchScope === "title" && debouncedQuery.trim() && notes.length >= settings.search_result_limit && (
+                <div className="px-4 py-1.5 text-caption text-faint">
+                  {t["vault.resultLimitHint"].replace("{count}", String(settings.search_result_limit))}
+                </div>
+              )}
+              {(scanning || notesLoading) && sortedNotes.length === 0 && <SkeletonRows count={8} />}
+              {!scanning && !notesLoading && sortedNotes.length === 0 && (
                 <EmptyState
                   size="module"
-                  text={scanning ? t["vault.scanning"] : (searchQuery ? t["vault.emptySearch"] : t["vault.emptyVault"])}
+                  text={searchQuery ? t["vault.emptySearch"] : t["vault.emptyVault"]}
                   cta={
-                    !scanning
-                      ? searchQuery
-                        ? { label: t["vault.contentSearch"], onClick: () => changeSearchScope("content"), icon: <Search size={14} /> }
-                        : { label: t["vault.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> }
-                      : undefined
+                    searchQuery
+                      ? { label: t["vault.contentSearch"], onClick: () => changeSearchScope("content"), icon: <Search size={14} /> }
+                      : { label: t["vault.newNote"], onClick: () => setShowNewNoteModal(true), icon: <Plus size={14} /> }
                   }
                 />
               )}
@@ -711,15 +947,14 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
+                        <DraggableNoteRow
+                          notePath={note.path}
+                          noteTitle={note.title}
+                          dragPaths={selectedPaths.size > 0 && selectedPaths.has(note.path)
+                            ? Array.from(selectedPaths) : [relPath]}
+                        >
                         <ItemRow
                           variant="list"
-                          draggable
-                          onDragStart={(e) => {
-                            const paths = selectedPaths.size > 0 && selectedPaths.has(note.path)
-                              ? Array.from(selectedPaths) : [relPath];
-                            e.dataTransfer.setData("text/x-note-paths", JSON.stringify(paths));
-                            e.dataTransfer.effectAllowed = "copy";
-                          }}
                           menuItems={getContextMenuItems(note)}
                           onPrimaryClick={() => {
                             if (selectMode) toggleSelectPath(note.path);
@@ -728,8 +963,8 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                           selected={isSelected}
                           tooltip={note.path}
                           leading={selectMode ? (
-                            <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`}>
-                              {isSelected && <CheckSquare size={12} className="text-white" />}
+                            <div className={`w-4 h-4 rounded-chip border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`}>
+                              {isSelected && <CheckSquare size={12} className="text-on-accent" />}
                             </div>
                           ) : undefined}
                           title={note.title}
@@ -739,9 +974,7 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                                 const noteColls = noteCollections.get(relPath.replace(/\//g, "\\").toLowerCase()) ?? [];
                                 if (noteColls.length === 0) {
                                   return (
-                                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 whitespace-nowrap">
-                                      {t["vault.uncategorized"]}
-                                    </span>
+                                    <Badge tone="warning">{t["vault.uncategorized"]}</Badge>
                                   );
                                 }
                                 return (
@@ -749,29 +982,24 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                                     {noteColls.slice(0, 3).map((name) => {
                                       const color = collectionColorByName.get(name);
                                       return (
-                                        <span
-                                          key={name}
-                                          className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
-                                          style={color ? { color: color.name, backgroundColor: color.bg } : undefined}
-                                        >
-                                          {name}
-                                        </span>
+                                        <Badge key={name} palette={color ?? undefined}>{name}</Badge>
                                       );
                                     })}
-                                    {noteColls.length > 3 && <span className="text-[10px] text-faint">+{noteColls.length - 3}</span>}
+                                    {noteColls.length > 3 && <span className="text-meta text-faint">+{noteColls.length - 3}</span>}
                                   </span>
                                 );
                               })()}
                               {note.tags && (
                                 <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                                   {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
-                                    <span key={tag} className="text-xs text-[var(--accent-text)] bg-[var(--accent-muted)] px-1.5 py-0.5 rounded whitespace-nowrap">{tag}</span>
+                                    <Badge key={tag} tone="accent">{tag}</Badge>
                                   ))}
                                 </span>
                               )}
                             </>
                           ) : undefined}
                         />
+                        </DraggableNoteRow>
                       </div>
                     );
                   })}
@@ -787,24 +1015,49 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
                 handleBatchAddToCollection(collId, Array.from(selectedPaths));
                 setSelectedPaths(new Set());
               }}
-              onDelete={async () => {
-                const { onConfirm } = handleBatchDelete(Array.from(selectedPaths));
-                await onConfirm();
-                removePaths(Array.from(selectedPaths));
-                setSelectedPaths(new Set());
+              onDelete={() => {
+                const paths = Array.from(selectedPaths);
+                const { onConfirm } = handleBatchDelete(paths);
+                setConfirm({
+                  message: t["vault.batchDeleteConfirm"].replace("{count}", String(paths.length)),
+                  confirmLabel: t["batch.delete"],
+                  onConfirm: async () => {
+                    await onConfirm();
+                    removePaths(paths);
+                    setSelectedPaths(new Set());
+                  },
+                });
               }}
             />
           )}
         </div>
       </div>
-      </>
+
+      <DragOverlay dropAnimation={null}>
+        {dragCollection ? (
+          <CollectionDragOverlay coll={dragCollection} />
+        ) : drag?.kind === "notes" ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+            <span className="text-body text-primary whitespace-nowrap">
+              {drag.paths.length === 1
+                ? drag.title
+                : t["collections.dragNotes"].replace("{count}", String(drag.paths.length))}
+            </span>
+          </div>
+        ) : null}
+      </DragOverlay>
+      </DndContext>
       )}
 
       {/* Modals */}
       {showCreateModal && (
         <CreateCollectionModal
           title={t["collections.new"]}
-          onSave={(name) => { handleCreateCollection(name); setShowCreateModal(false); }}
+          onSave={(name) => {
+            handleCreateCollection(name);
+            setShowCreateModal(false);
+            showToast(t["collections.created"].replace("{name}", name));
+          }}
           onClose={() => setShowCreateModal(false)}
         />
       )}
@@ -812,8 +1065,23 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
         <CreateCollectionModal
           title={t["collections.rename"]}
           initialName={renameTarget.name}
-          onSave={(name) => { handleRenameCollection(renameTarget, name); setRenameTarget(null); }}
+          onSave={(name) => {
+            handleRenameCollection(renameTarget, name);
+            setRenameTarget(null);
+            showToast(t["collections.renamed"]);
+          }}
           onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {showGroupModal && (
+        <CreateGroupModal
+          title={t["collections.addGroup"]}
+          onSave={(name, color) => {
+            if (selectedCollectionId) handleAddGroup(selectedCollectionId, name, color);
+            setShowGroupModal(false);
+            showToast(t["collections.groupAdded"].replace("{name}", name));
+          }}
+          onClose={() => setShowGroupModal(false)}
         />
       )}
       {showNewNoteModal && (
@@ -824,6 +1092,19 @@ export default function VaultView({ vaultPath, onScanComplete, openRequest }: Pr
           onClose={() => setShowNewNoteModal(false)}
         />
       )}
+
+      <RenameModal
+        open={renameGroupTarget !== null}
+        initialValue={renameGroupTarget?.name ?? ""}
+        title={t["collections.rename"]}
+        icon={<Pencil size={18} className="text-[var(--accent-text)]" />}
+        onClose={() => setRenameGroupTarget(null)}
+        onSubmit={(name) => {
+          if (selectedCollectionId && renameGroupTarget) {
+            handleRenameGroup(selectedCollectionId, renameGroupTarget.id, name);
+          }
+        }}
+      />
 
       <RenameModal
         open={renameNoteTarget !== null}

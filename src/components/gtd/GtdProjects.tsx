@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Pencil, Check, Trash2 } from "lucide-react";
 import Sidebar from "../Sidebar";
+import NavItem from "../NavItem";
+import Badge from "../Badge";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
@@ -8,6 +10,7 @@ import GtdProjectDetail from "./GtdProjectDetail";
 import RenameModal from "../RenameModal";
 import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import type { GtdItem } from "./types";
 
 interface Props {
@@ -21,12 +24,13 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
   const { onContextMenu } = useContextMenu();
   const showToast = useToast();
   const [projects, setProjects] = useState<GtdItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<GtdItem | null>(null);
 
   useEffect(() => {
-    window.prism.getGtdItems("project").then(setProjects);
+    window.prism.getGtdItems("project").then(setProjects).finally(() => setLoaded(true));
   }, [version]);
 
   // Select the project targeted by a Home navigation
@@ -39,20 +43,32 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
   const selected = projects.find((p) => p.id === selectedId) ?? projects[0] ?? null;
 
   const completeProject = async (item: GtdItem) => {
-    await window.prism.setGtdItemStatus(item.id, "done");
+    try {
+      await window.prism.setGtdItemStatus(item.id, "done");
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
   const deleteProject = async () => {
     if (!confirmDelete) return;
-    await window.prism.deleteGtdItem(confirmDelete.id);
+    try {
+      await window.prism.deleteGtdItem(confirmDelete.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     showToast(t["common.deleted"]);
     onChanged();
   };
 
   return (
     <>
-      {projects.length === 0 ? (
+      {!loaded ? (
+        <SkeletonRows count={7} className="p-2" />
+      ) : projects.length === 0 ? (
         <EmptyState size="module" text={t["gtd.emptyList"]} />
       ) : (
         <div className="flex-1 flex min-w-0 min-h-0">
@@ -63,7 +79,7 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
                 .replace("{total}", String(p.action_count));
               const percent = p.action_count > 0 ? (p.done_action_count / p.action_count) * 100 : 0;
               return (
-                <button
+                <NavItem
                   key={p.id}
                   onClick={() => setSelectedId(p.id)}
                   onContextMenu={(e) =>
@@ -73,31 +89,27 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
                       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
                     ])
                   }
-                  className={`w-full px-3 py-2 rounded-lg text-sm transition-colors mb-0.5 ${
-                    selected?.id === p.id
-                      ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                      : "text-tertiary hover:text-primary hover:bg-elevated/50"
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="flex-1 text-left truncate">{p.title}</span>
-                    {p.action_count === 0 ? (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--accent-muted)] text-[var(--accent-text)] flex-shrink-0">
-                        {t["gtd.pendingRefine"]}
-                      </span>
+                  active={selected?.id === p.id}
+                  className="mb-0.5"
+                  label={p.title}
+                  trailing={
+                    p.action_count === 0 ? (
+                      <Badge tone="accent">{t["gtd.pendingRefine"]}</Badge>
                     ) : (
-                      <span className="text-xs text-muted flex-shrink-0">{progress}</span>
-                    )}
-                  </span>
-                  {p.action_count > 0 && (
-                    <span className="block mt-1.5 h-1 rounded bg-elevated overflow-hidden">
-                      <span
-                        className="block h-1 rounded bg-[var(--accent)] transition-all"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </span>
-                  )}
-                </button>
+                      progress
+                    )
+                  }
+                  footer={
+                    p.action_count > 0 ? (
+                      <span className="block mt-1.5 h-1 rounded-chip bg-elevated overflow-hidden">
+                        <span
+                          className="block h-1 rounded-chip bg-[var(--accent)] transition-all"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </span>
+                    ) : undefined
+                  }
+                />
               );
             })}
           </Sidebar>
@@ -120,7 +132,12 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
         initialValue={renaming?.title ?? ""}
         onClose={() => setRenaming(null)}
         onSubmit={async (title) => {
-          if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+          try {
+            if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+          } catch {
+            showToast(t["common.saveFailed"], "error");
+            return;
+          }
           onChanged();
         }}
       />

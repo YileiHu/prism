@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
-import { FilePlus, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { FilePlus } from "lucide-react";
 import { useT } from "../i18n";
 import type { CollectionData } from "./CollectionsSidebar";
 import Button from "./Button";
+import Input from "./Input";
 import Modal from "./Modal";
-import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
+import SelectButton from "./SelectButton";
 
 interface Props {
   vaultPath: string;
@@ -19,10 +20,6 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
   const [collectionId, setCollectionId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [creating, setCreating] = useState(false);
-  const [collectionOpen, setCollectionOpen] = useState(false);
-  const [groupOpen, setGroupOpen] = useState(false);
-  const collectionAnchorRef = useRef<HTMLDivElement>(null);
-  const groupAnchorRef = useRef<HTMLDivElement>(null);
 
   const selectedCollection = collections.find((c) => c.id === collectionId);
   const groups = selectedCollection?.groups ?? [];
@@ -65,82 +62,42 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
     >
       <div className="space-y-4">
         <div>
-          <input
+          <Input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
             placeholder={t["vault.newNoteTitle"]}
             autoFocus
-            className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+            className="w-full"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-muted mb-1.5">{t["vault.newNoteCollection"]}</label>
-          <div ref={collectionAnchorRef}>
-            <button
-              type="button"
-              onClick={() => setCollectionOpen(!collectionOpen)}
-              className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-3 py-2.5 text-sm transition-colors hover:border-strong"
-            >
-              <span className={collectionId ? "text-primary" : "text-muted"}>
-                {collectionId ? selectedCollection?.name : t["vault.newNoteNoCollection"]}
-              </span>
-              <ChevronDown size={14} className="text-muted flex-shrink-0" />
-            </button>
-            <DropdownMenu open={collectionOpen} onClose={() => setCollectionOpen(false)} anchorRef={collectionAnchorRef} matchWidth>
-              <DropdownMenuItem
-                onClick={() => { handleCollectionChange(""); setCollectionOpen(false); }}
-                active={collectionId === ""}
-              >
-                {t["vault.newNoteNoCollection"]}
-              </DropdownMenuItem>
-              {collections.map((c) => (
-                <DropdownMenuItem
-                  key={c.id}
-                  onClick={() => { handleCollectionChange(c.id); setCollectionOpen(false); }}
-                  active={collectionId === c.id}
-                >
-                  {c.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenu>
-          </div>
+          <label className="block text-caption text-muted mb-1.5">{t["vault.newNoteCollection"]}</label>
+          <SelectButton
+            value={collectionId}
+            onChange={handleCollectionChange}
+            className="w-full"
+            options={[
+              { value: "", label: t["vault.newNoteNoCollection"] },
+              ...collections.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
         </div>
 
         {collectionId && groups.length > 0 && (
           <div>
-            <label className="block text-xs text-muted mb-1.5">{t["vault.newNoteGroup"]}</label>
-            <div ref={groupAnchorRef}>
-              <button
-                type="button"
-                onClick={() => setGroupOpen(!groupOpen)}
-                className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-3 py-2.5 text-sm transition-colors hover:border-strong"
-              >
-                <span className={groupId ? "text-primary" : "text-muted"}>
-                  {groupId ? groups.find((g) => g.id === groupId)?.name : t["vault.newNoteNoGroup"]}
-                </span>
-                <ChevronDown size={14} className="text-muted flex-shrink-0" />
-              </button>
-              <DropdownMenu open={groupOpen} onClose={() => setGroupOpen(false)} anchorRef={groupAnchorRef} matchWidth>
-                <DropdownMenuItem
-                  onClick={() => { setGroupId(""); setGroupOpen(false); }}
-                  active={groupId === ""}
-                >
-                  {t["vault.newNoteNoGroup"]}
-                </DropdownMenuItem>
-                {groups.map((g) => (
-                  <DropdownMenuItem
-                    key={g.id}
-                    onClick={() => { setGroupId(g.id); setGroupOpen(false); }}
-                    active={groupId === g.id}
-                  >
-                    {g.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenu>
-            </div>
+            <label className="block text-caption text-muted mb-1.5">{t["vault.newNoteGroup"]}</label>
+            <SelectButton
+              value={groupId}
+              onChange={setGroupId}
+              className="w-full"
+              options={[
+                { value: "", label: t["vault.newNoteNoGroup"] },
+                ...groups.map((g) => ({ value: g.id, label: g.name })),
+              ]}
+            />
           </div>
         )}
       </div>

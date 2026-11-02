@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Inbox, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
 import Sidebar from "../Sidebar";
+import NavItem from "../NavItem";
 import { useT } from "../../i18n";
 import GtdInbox from "./GtdInbox";
 import GtdItemList from "./GtdItemList";
@@ -61,21 +62,14 @@ export default function GtdView({ focus }: Props) {
     <div className="h-full flex">
       <Sidebar storageKey="gtd">
         {nav.map(({ key, icon: Icon, label, count }) => (
-          <button
+          <NavItem
             key={key}
             onClick={() => setList(key)}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-              list === key
-                ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                : "text-tertiary hover:text-primary hover:bg-elevated/50"
-            }`}
-          >
-            <Icon size={15} className="flex-shrink-0" />
-            <span className="flex-1 text-left truncate">{label}</span>
-            {count !== undefined && count > 0 && (
-              <span className="text-xs text-muted">{count}</span>
-            )}
-          </button>
+            active={list === key}
+            leading={<Icon size={15} />}
+            label={label}
+            trailing={count !== undefined && count > 0 ? count : undefined}
+          />
         ))}
       </Sidebar>
 

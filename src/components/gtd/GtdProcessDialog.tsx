@@ -3,6 +3,7 @@ import { ListChecks, Clock, FolderKanban, Zap, CheckCircle2 } from "lucide-react
 import Modal from "../Modal";
 import Button from "../Button";
 import { useT } from "../../i18n";
+import { useToast } from "../../lib/toast";
 import type { GtdItem, GtdStatus } from "./types";
 
 type Step = "q1" | "q2" | "q3" | "doing";
@@ -15,6 +16,7 @@ interface Props {
 
 export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
   const { t } = useT();
+  const showToast = useToast();
   const [step, setStep] = useState<Step>("q1");
 
   useEffect(() => {
@@ -23,7 +25,12 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
 
   const decide = async (status: GtdStatus) => {
     if (!item) return;
-    await window.prism.setGtdItemStatus(item.id, status);
+    try {
+      await window.prism.setGtdItemStatus(item.id, status);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onDecided();
     onClose();
   };
@@ -34,16 +41,16 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
       onClose={onClose}
       title={t["gtd.process"]}
       icon={<ListChecks size={16} className="text-[var(--accent-text)]" />}
-      width="480px"
+      size="md"
     >
-      <p className="text-sm text-primary font-medium bg-elevated/60 border border-line/50 rounded-lg px-3 py-2 mb-5 break-words">
+      <p className="text-body text-primary font-medium bg-elevated/50 border border-line/50 rounded-control px-3 py-2 mb-5 break-words">
         {item?.title}
       </p>
 
       {step === "q1" && (
         <>
-          <p className="text-sm font-medium text-primary">{t["gtd.process.q1"]}</p>
-          <p className="text-xs text-muted leading-relaxed mt-1.5 mb-4">{t["gtd.process.q1hint"]}</p>
+          <p className="text-body font-medium text-primary">{t["gtd.process.q1"]}</p>
+          <p className="text-caption text-muted leading-relaxed mt-1.5 mb-4">{t["gtd.process.q1hint"]}</p>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="secondary" size="sm" onClick={() => decide("someday")}>
               {t["gtd.process.q1no"]}
@@ -57,8 +64,8 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
 
       {step === "q2" && (
         <>
-          <p className="text-sm font-medium text-primary">{t["gtd.process.q2"]}</p>
-          <p className="text-xs text-muted leading-relaxed mt-1.5 mb-4">{t["gtd.process.q2hint"]}</p>
+          <p className="text-body font-medium text-primary">{t["gtd.process.q2"]}</p>
+          <p className="text-caption text-muted leading-relaxed mt-1.5 mb-4">{t["gtd.process.q2hint"]}</p>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="secondary" size="sm" onClick={() => setStep("q3")}>
               {t["gtd.process.q2no"]}
@@ -78,8 +85,8 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
               <Zap size={26} className="text-[var(--accent-text)]" />
             </div>
           </div>
-          <p className="text-sm font-medium text-primary">{t["gtd.doNow"]}</p>
-          <p className="text-xs text-muted leading-relaxed mt-1.5 mb-5">{t["gtd.doNowHint"]}</p>
+          <p className="text-body font-medium text-primary">{t["gtd.doNow"]}</p>
+          <p className="text-caption text-muted leading-relaxed mt-1.5 mb-5">{t["gtd.doNowHint"]}</p>
           <Button variant="primary" size="md" className="w-full" onClick={() => decide("done")}>
             <CheckCircle2 size={15} />
             {t["gtd.doNowConfirm"]}
@@ -89,23 +96,23 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
 
       {step === "q3" && (
         <>
-          <p className="text-sm font-medium text-primary mb-4">{t["gtd.process.q3"]}</p>
+          <p className="text-body font-medium text-primary mb-4">{t["gtd.process.q3"]}</p>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => decide("waiting")}
-              className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-strong/60 bg-elevated/40 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
+              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated/50 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
             >
               <Clock size={16} className="text-[var(--accent-text)]" />
-              <span className="text-sm font-medium text-primary">{t["gtd.waiting"]}</span>
-              <span className="text-xs text-muted leading-relaxed">{t["gtd.process.hintSingle"]}</span>
+              <span className="text-body font-medium text-primary">{t["gtd.waiting"]}</span>
+              <span className="text-caption text-muted leading-relaxed">{t["gtd.process.hintSingle"]}</span>
             </button>
             <button
               onClick={() => decide("project")}
-              className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-strong/60 bg-elevated/40 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
+              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated/50 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
             >
               <FolderKanban size={16} className="text-[var(--accent-text)]" />
-              <span className="text-sm font-medium text-primary">{t["gtd.projects"]}</span>
-              <span className="text-xs text-muted leading-relaxed">{t["gtd.process.hintMulti"]}</span>
+              <span className="text-body font-medium text-primary">{t["gtd.projects"]}</span>
+              <span className="text-caption text-muted leading-relaxed">{t["gtd.process.hintMulti"]}</span>
             </button>
           </div>
         </>

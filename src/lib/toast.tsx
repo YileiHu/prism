@@ -1,31 +1,75 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { AlertCircle, CheckCircle2, Info, type LucideIcon } from "lucide-react";
 import { useAnimatedMount } from "./useAnimatedMount";
 
-const ToastContext = createContext<(msg: string) => void>(() => {});
+export type ToastType = "default" | "success" | "error" | "info";
 
-export function useToast(): (msg: string) => void {
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface ToastOptions {
+  type?: ToastType;
+  action?: ToastAction;
+  duration?: number;
+}
+
+type ShowToast = (msg: string, typeOrOptions?: ToastType | ToastOptions) => void;
+
+interface ToastState {
+  msg: string;
+  type: ToastType;
+  action?: ToastAction;
+}
+
+const ToastContext = createContext<ShowToast>(() => {});
+
+export function useToast(): ShowToast {
   return useContext(ToastContext);
 }
 
+const TONE: Record<ToastType, { border: string; Icon?: LucideIcon; iconClass: string }> = {
+  default: { border: "border-strong", iconClass: "" },
+  success: { border: "border-success/40", Icon: CheckCircle2, iconClass: "text-success" },
+  error: { border: "border-danger/40", Icon: AlertCircle, iconClass: "text-danger" },
+  info: { border: "border-info/40", Icon: Info, iconClass: "text-info" },
+};
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [toastSeq, setToastSeq] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastToast = useRef("");
+  const lastToast = useRef<ToastState>({ msg: "", type: "default" });
   if (toast) lastToast.current = toast;
   const { mounted, exiting } = useAnimatedMount(toast !== null, 150);
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
+  const dismiss = useCallback(() => {
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+      toastTimer.current = null;
+    }
+    setToast(null);
+  }, []);
+
+  const showToast = useCallback<ShowToast>((msg, typeOrOptions) => {
+    const options: ToastOptions =
+      typeof typeOrOptions === "string" ? { type: typeOrOptions } : (typeOrOptions ?? {});
+    setToast({ msg, type: options.type ?? "default", action: options.action });
     // Bump the key so repeating the same message replays the animation
     setToastSeq((s) => s + 1);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
+    // Action toasts need time to be clicked
+    toastTimer.current = setTimeout(() => setToast(null), options.duration ?? (options.action ? 5000 : 2500));
   }, []);
 
   useEffect(() => {
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, []);
+
+  const current = toast ?? lastToast.current;
+  const tone = TONE[current.type];
+  const Icon = tone.Icon;
 
   return (
     <ToastContext.Provider value={showToast}>
@@ -33,9 +77,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {mounted && (
         <div
           key={toastSeq}
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 glass bg-elevated/85 border border-strong rounded-lg shadow-lg text-sm text-primary ${exiting ? "anim-exit" : "anim-toast"}`}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-toast flex items-center gap-2 px-4 py-2 glass bg-elevated/85 border ${tone.border} rounded-control shadow-toast text-body text-primary ${exiting ? "anim-exit" : "anim-toast"}`}
         >
-          {toast ?? lastToast.current}
+          {Icon && <Icon size={16} className={tone.iconClass} />}
+          <span>{current.msg}</span>
+          {current.action && (
+            <button
+              type="button"
+              onClick={() => { current.action!.onClick(); dismiss(); }}
+              className="ml-1 text-caption font-medium text-[var(--accent-text)] hover:underline"
+            >
+              {current.action.label}
+            </button>
+          )}
         </div>
       )}
     </ToastContext.Provider>

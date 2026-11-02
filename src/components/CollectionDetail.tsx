@@ -1,8 +1,8 @@
-import { useState, useMemo, useRef } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, MoreVertical, Plus } from "lucide-react";
-import { useT } from "../i18n";
+import { useState, useMemo } from "react";
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import Button from "./Button";
-import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
+import EmptyState from "./EmptyState";
+import { useT } from "../i18n";
 import {
   DndContext,
   DragOverlay,
@@ -19,7 +19,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { positionalColor, type PaletteColor } from "../lib/colors";
+import { resolveTagColor, type PaletteColor } from "../lib/colors";
+import { useDragClickGuard } from "../lib/useDragClickGuard";
 
 export interface NoteInfo {
   path: string;
@@ -31,6 +32,7 @@ export interface NoteInfo {
 interface GroupView {
   id: string;
   name: string;
+  color?: string;
   notes: NoteInfo[];
 }
 
@@ -41,9 +43,7 @@ interface Props {
   ungroupedCollapsed: boolean;
   onToggleGroup: (id: string) => void;
   onToggleUngrouped: () => void;
-  onAddGroup: (name: string) => void;
-  onRenameGroup: (groupId: string, name: string) => void;
-  onDeleteGroup: (groupId: string) => void;
+  onGroupContextMenu: (e: React.MouseEvent, groupId: string) => void;
   onReorderGroups: (fromIndex: number, toIndex: number) => void;
   onMoveNote: (noteRelPath: string, fromGroupId: string | null, toGroupId: string | null, toIndex?: number) => void;
   onRemoveNote: (noteRelPath: string, groupId: string | null) => void;
@@ -74,8 +74,7 @@ function SortableGroupCard({
   color,
   isOverlay,
   onToggle,
-  onRename,
-  onDelete,
+  onGroupContextMenu,
   onRemoveNote,
   onReorderNotes,
   onNoteContextMenu,
@@ -83,22 +82,16 @@ function SortableGroupCard({
 }: {
   group: GroupView;
   collapsed: boolean;
-  color: { bar: string; name: string };
+  color: PaletteColor;
   isOverlay?: boolean;
   onToggle: () => void;
-  onRename: (name: string) => void;
-  onDelete: () => void;
+  onGroupContextMenu: (e: React.MouseEvent, groupId: string) => void;
   onRemoveNote: (relPath: string, groupId: string | null) => void;
   onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
 }) {
   const { t } = useT();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const menuAnchorRef = useRef<HTMLDivElement>(null);
-
   const {
     attributes,
     listeners,
@@ -107,6 +100,8 @@ function SortableGroupCard({
     transition,
     isDragging,
   } = useSortable({ id: makeGroupId(group.id) });
+
+  const clickGuard = useDragClickGuard(isDragging);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -120,58 +115,23 @@ function SortableGroupCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`mb-3 border rounded-xl bg-surface/20 overflow-hidden transition-colors ${
-        isOverlay ? "shadow-xl border-[var(--accent)]" : "border-strong/50"
+      className={`mb-3 border rounded-card bg-surface/20 overflow-hidden transition-colors ${
+        isOverlay ? "shadow-drag border-[var(--accent)]" : "border-strong/50"
       }`}
     >
       <div
         className="flex items-center gap-2 px-3 h-8"
-        style={{ backgroundColor: `${color.bar}18` }}
+        style={{ backgroundColor: color.tint }}
+        onContextMenu={(e) => onGroupContextMenu(e, group.id)}
         {...attributes}
         {...listeners}
+        {...clickGuard}
       >
-        <button onClick={onToggle} className="text-muted hover:text-secondary transition-colors">
+        <Button variant="ghost" size="icon-xs" onClick={onToggle}>
           {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {editing ? (
-          <input
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && editName.trim()) { onRename(editName.trim()); setEditing(false); }
-              if (e.key === "Escape") setEditing(false);
-            }}
-            onBlur={() => {
-              if (editName.trim()) onRename(editName.trim());
-              setEditing(false);
-            }}
-            autoFocus
-            className="flex-1 bg-hover border border-strong rounded px-2 py-0.5 text-sm text-primary focus:outline-none focus:border-[var(--accent)]"
-            onClick={(e) => e.stopPropagation()}
-          />
-        ) : (
-          <span className="text-xs font-medium truncate max-w-[200px]" style={{ color: color.name }}>{group.name}</span>
-        )}
-        <span className="text-xs text-muted ml-1">{group.notes.length}</span>
-        <div className="flex-1" />
-        <div ref={menuAnchorRef}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-            className="p-0"
-          >
-            <MoreVertical size={13} />
-          </Button>
-          <DropdownMenu open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={menuAnchorRef} align="right" className="min-w-[100px]">
-            <DropdownMenuItem onClick={() => { setEditing(true); setEditName(group.name); setMenuOpen(false); }}>
-              {t["collections.rename"]}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { onDelete(); setMenuOpen(false); }} danger>
-              {t["collections.deleteGroup"]}
-            </DropdownMenuItem>
-          </DropdownMenu>
-        </div>
+        </Button>
+        <span className="text-caption font-medium truncate max-w-[200px]" style={{ color: color.name }}>{group.name}</span>
+        <span className="text-caption text-muted ml-1">{group.notes.length}</span>
       </div>
 
       <div
@@ -181,7 +141,7 @@ function SortableGroupCard({
         <div className="overflow-hidden min-h-0">
           <div className="p-2">
             {group.notes.length === 0 ? (
-              <p className="text-xs text-faint text-center py-3">
+              <p className="text-caption text-faint text-center py-3">
                 {t["collections.dropNotesHere"]}
               </p>
             ) : (
@@ -233,6 +193,8 @@ function SortableNoteRow({
     isDragging,
   } = useSortable({ id: makeNoteId(note.relativePath) });
 
+  const clickGuard = useDragClickGuard(isDragging);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -245,16 +207,17 @@ function SortableNoteRow({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
-        note.missing ? "opacity-50" : "hover:bg-hover/30"
+      {...clickGuard}
+      className={`group flex items-center gap-2 px-2 py-1.5 rounded-control transition-colors cursor-pointer ${
+        note.missing ? "opacity-50" : "hover:bg-hover/50"
       }`}
       onClick={() => { if (!note.missing) onOpenNote(note); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onNoteContextMenu(e, note, groupId); }}
     >
-      <span className={`flex-1 text-sm truncate ${note.missing ? "text-faint line-through" : "text-primary"}`}>
+      <span className={`flex-1 text-body truncate ${note.missing ? "text-faint line-through" : "text-primary"}`}>
         {note.title}
         {note.missing && (
-          <span className="ml-1.5 text-xs text-yellow-500 inline-flex items-center gap-0.5">
+          <span className="ml-1.5 text-caption text-warning inline-flex items-center gap-0.5">
             <AlertTriangle size={10} />
             {t["collections.missing"]}
           </span>
@@ -268,20 +231,20 @@ function SortableNoteRow({
 
 function DragOverlayNote({ note }: { note: NoteInfo }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-elevated border border-[var(--accent)] shadow-xl opacity-90">
-      <span className="text-sm text-primary">{note.title}</span>
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+      <span className="text-body text-primary">{note.title}</span>
     </div>
   );
 }
 
 // ---- Drag Overlay Group ----
 
-function DragOverlayGroup({ group, color }: { group: GroupView; color: { bar: string; name: string } }) {
+function DragOverlayGroup({ group, color }: { group: GroupView; color: PaletteColor }) {
   return (
-    <div className="rounded-xl bg-elevated border border-[var(--accent)] shadow-xl opacity-90 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 h-8" style={{ backgroundColor: `${color.bar}18` }}>
-        <span className="text-xs font-medium" style={{ color: color.name }}>{group.name}</span>
-        <span className="text-xs text-muted">{group.notes.length}</span>
+    <div className="rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 h-8" style={{ backgroundColor: color.tint }}>
+        <span className="text-caption font-medium" style={{ color: color.name }}>{group.name}</span>
+        <span className="text-caption text-muted">{group.notes.length}</span>
       </div>
     </div>
   );
@@ -296,9 +259,7 @@ export default function CollectionDetail({
   ungroupedCollapsed,
   onToggleGroup,
   onToggleUngrouped,
-  onAddGroup,
-  onRenameGroup,
-  onDeleteGroup,
+  onGroupContextMenu,
   onReorderGroups,
   onMoveNote,
   onRemoveNote,
@@ -307,8 +268,6 @@ export default function CollectionDetail({
   onOpenNote,
 }: Props) {
   const { t } = useT();
-  const [addingGroup, setAddingGroup] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
   const [activeDrag, setActiveDrag] = useState<{ type: "group"; group: GroupView; color: PaletteColor } | { type: "note"; note: NoteInfo } | null>(null);
 
   const sensors = useSensors(
@@ -318,21 +277,13 @@ export default function CollectionDetail({
   const groupIds = useMemo(() => groups.map((g) => makeGroupId(g.id)), [groups]);
   const ungroupedIds = useMemo(() => ungroupedNotes.map((n) => makeNoteId(n.relativePath)), [ungroupedNotes]);
 
-  const handleAddGroup = () => {
-    if (!newGroupName.trim()) return;
-    onAddGroup(newGroupName.trim());
-    setNewGroupName("");
-    setAddingGroup(false);
-  };
-
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const gid = parseGroupId(active.id as string);
     if (gid) {
       const g = groups.find((x) => x.id === gid);
       if (g) {
-        const idx = groups.findIndex((x) => x.id === gid);
-        setActiveDrag({ type: "group", group: g, color: positionalColor(idx) });
+        setActiveDrag({ type: "group", group: g, color: resolveTagColor(g.name, g.color) });
         return;
       }
     }
@@ -409,8 +360,8 @@ export default function CollectionDetail({
   const totalNotes = ungroupedNotes.length + groups.reduce((s, g) => s + g.notes.length, 0);
   if (totalNotes === 0 && groups.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-sm text-muted">{t["collections.noNotes"]}</p>
+      <div className="flex-1">
+        <EmptyState size="module" text={t["collections.noNotes"]} />
       </div>
     );
   }
@@ -425,15 +376,14 @@ export default function CollectionDetail({
       <div className="flex-1 overflow-y-auto p-3">
         {/* Group cards */}
         <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
-          {groups.map((group, i) => (
+          {groups.map((group) => (
             <SortableGroupCard
               key={group.id}
               group={group}
               collapsed={collapsedGroups.has(group.id)}
-              color={positionalColor(i)}
+              color={resolveTagColor(group.name, group.color)}
               onToggle={() => onToggleGroup(group.id)}
-              onRename={(name) => onRenameGroup(group.id, name)}
-              onDelete={() => onDeleteGroup(group.id)}
+              onGroupContextMenu={onGroupContextMenu}
               onRemoveNote={onRemoveNote}
               onReorderNotes={onReorderNotes}
               onNoteContextMenu={onNoteContextMenu}
@@ -444,16 +394,16 @@ export default function CollectionDetail({
 
         {/* Ungrouped card */}
         <div
-          className="mb-3 border border-strong/30 rounded-xl bg-surface/10 overflow-hidden"
+          className="mb-3 border border-strong/50 rounded-card bg-surface/20 overflow-hidden"
         >
           <div className="flex items-center gap-2 px-3 h-8 bg-elevated/30">
-            <button onClick={onToggleUngrouped} className="text-muted hover:text-secondary transition-colors">
+            <Button variant="ghost" size="icon-xs" onClick={onToggleUngrouped}>
               {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-            </button>
-            <span className="text-xs font-medium text-muted uppercase tracking-wide">
+            </Button>
+            <span className="text-caption font-medium text-muted uppercase tracking-wide">
               {t["collections.ungrouped"]}
             </span>
-            <span className="text-xs text-faint">{ungroupedNotes.length}</span>
+            <span className="text-caption text-faint">{ungroupedNotes.length}</span>
           </div>
           <div
             className="grid transition-[grid-template-rows] duration-200 ease-out"
@@ -462,7 +412,7 @@ export default function CollectionDetail({
             <div className="overflow-hidden min-h-0">
               <div className="p-2">
                 {ungroupedNotes.length === 0 ? (
-                  <p className="text-xs text-faint text-center py-3">
+                  <p className="text-caption text-faint text-center py-3">
                     {t["collections.dropNotesHere"]}
                   </p>
                 ) : (
@@ -485,39 +435,6 @@ export default function CollectionDetail({
           </div>
         </div>
 
-        {/* Add group button */}
-        {addingGroup ? (
-          <div className="flex items-center gap-2 mb-3">
-            <input
-              type="text"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddGroup(); if (e.key === "Escape") setAddingGroup(false); }}
-              placeholder={t["collections.namePlaceholder"]}
-              autoFocus
-              className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-1.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)]"
-            />
-            <Button
-              variant="primary"
-              size="xs"
-              onClick={handleAddGroup}
-              disabled={!newGroupName.trim()}
-            >
-              {t["resources.save"]}
-            </Button>
-            <Button variant="secondary" size="xs" onClick={() => setAddingGroup(false)}>
-              {t["resources.cancel"]}
-            </Button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setAddingGroup(true)}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-strong rounded-xl text-xs text-muted hover:text-secondary hover:border-strong transition-colors"
-          >
-            <Plus size={14} />
-            {t["collections.addGroup"]}
-          </button>
-        )}
       </div>
 
       {/* Drag overlay */}

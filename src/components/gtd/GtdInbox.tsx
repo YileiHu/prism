@@ -5,6 +5,7 @@ import { useToast } from "../../lib/toast";
 import ItemRow from "../ItemRow";
 import SearchInput from "../SearchInput";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import ConfirmDialog from "../ConfirmDialog";
 import RenameModal from "../RenameModal";
 import { formatGtdDate, type GtdItem } from "./types";
@@ -19,19 +20,25 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const [items, setItems] = useState<GtdItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [deleting, setDeleting] = useState<GtdItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    window.prism.getGtdItems("inbox").then(setItems);
+    window.prism.getGtdItems("inbox").then(setItems).finally(() => setLoaded(true));
   }, [version]);
 
   const submit = async () => {
     const title = draft.trim();
     if (!title) return;
-    await window.prism.addGtdItem(title);
+    try {
+      await window.prism.addGtdItem(title);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     setDraft("");
     onChanged();
     inputRef.current?.focus();
@@ -39,7 +46,12 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
 
   const handleDelete = async () => {
     if (!deleting) return;
-    await window.prism.deleteGtdItem(deleting.id);
+    try {
+      await window.prism.deleteGtdItem(deleting.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     showToast(t["common.deleted"]);
     onChanged();
   };
@@ -60,7 +72,8 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {items.length === 0 && <EmptyState size="module" text={t["gtd.emptyInbox"]} />}
+        {!loaded && items.length === 0 && <SkeletonRows count={6} />}
+        {loaded && items.length === 0 && <EmptyState size="module" text={t["gtd.emptyInbox"]} />}
         {items.map((item) => (
           <ItemRow
             key={item.id}
@@ -73,7 +86,7 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
               { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(item) },
             ]}
             title={item.title}
-            meta={<span className="text-xs text-faint flex-shrink-0">{formatGtdDate(item.created_at)}</span>}
+            meta={<span className="text-caption text-faint flex-shrink-0">{formatGtdDate(item.created_at)}</span>}
             hoverActions={[{ icon: <ListChecks size={13} />, label: t["gtd.process"], onClick: () => onProcess(item) }]}
           />
         ))}
@@ -84,7 +97,12 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
         initialValue={renaming?.title ?? ""}
         onClose={() => setRenaming(null)}
         onSubmit={async (title) => {
-          if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+          try {
+            if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+          } catch {
+            showToast(t["common.saveFailed"], "error");
+            return;
+          }
           onChanged();
         }}
       />

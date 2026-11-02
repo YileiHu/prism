@@ -10,6 +10,14 @@
   --accent-border: rgba(139, 92, 246, 0.3);
   --accent-rgb: 139 92 246;
 
+  /* Semantic status colors (dark defaults) */
+  --danger: 239 68 68;
+  --success: 34 197 94;
+  --warning: 245 158 11;
+  --info: 59 130 246;
+  --on-accent: 255 255 255;
+  --on-danger: 255 255 255;
+
   /* Surface defaults (= darkSurfaces) — required so first paint isn't unstyled */
   --c-base: 3 7 18;
   --c-surface: 17 24 39;
@@ -30,6 +38,51 @@
   --glow: transparent;
   --aurora: rgb(var(--c-base));
   --window-ring: rgba(255, 255, 255, 0.08);
+
+  /* Shared chrome tokens (overridden in light mode) */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+  --btn-sheen: rgba(255, 255, 255, 0.22);
+  --btn-shadow: rgba(0, 0, 0, 0.35);
+  --md-code-bg: rgba(30, 30, 30, 0.92);
+  --md-code-fg: #d4d4d4;
+
+  /* Content typography — kept in sync by SettingsProvider */
+  --content-font-size: 14.5px;
+  --content-line-height: 1.7;
+  --content-width: 750px;
+}
+
+[data-mode="light"] {
+  /* Light surface defaults (= lightSurfaces) so the very first paint is
+     already light, before ThemeProvider applies the theme variant */
+  --c-base: 246 246 247;
+  --c-surface: 255 255 255;
+  --c-elevated: 255 255 255;
+  --c-hover: 240 240 241;
+  --c-tint: 24 24 27;
+  --c-overlay: 24 24 27;
+  --c-primary: 27 27 30;
+  --c-secondary: 65 65 70;
+  --c-tertiary: 94 94 100;
+  --c-muted: 122 122 128;
+  --c-faint: 170 170 176;
+  --c-line: 231 231 234;
+  --c-strong: 211 211 216;
+
+  /* Deeper status hues for contrast on light surfaces */
+  --danger: 220 38 38;
+  --success: 22 163 74;
+  --warning: 217 119 6;
+  --info: 37 99 235;
+
+  --window-ring: rgb(var(--c-overlay) / 0.1);
+  --scrollbar-thumb: rgb(var(--c-overlay) / 0.18);
+  --scrollbar-thumb-hover: rgb(var(--c-overlay) / 0.32);
+  --btn-sheen: rgba(255, 255, 255, 0.4);
+  --btn-shadow: rgb(var(--c-overlay) / 0.18);
+  --md-code-bg: rgb(var(--c-overlay) / 0.05);
+  --md-code-fg: rgb(var(--c-primary));
 }
 
 body {
@@ -48,18 +101,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* Horizontally scrollable tab bar — scrollbar hidden, mouse wheel scrolls sideways */
@@ -77,7 +130,7 @@ body {
 }
 
 /* Universal aurora background — every theme gets its own accent-tinted
-   gradient layers; Aero overrides with a multi-hue 4-layer variant */
+   gradient layers */
 body {
   background: var(--aurora);
   background-attachment: fixed;
@@ -103,7 +156,7 @@ body {
 }
 
 /* Frosted glass — always active on every theme. Intensity controlled by
-   --glass-blur / --glass-saturate (strongest on Aero, subtler on others).
+   --glass-blur / --glass-saturate.
    Translucency comes from Tailwind alpha modifiers (e.g. bg-surface/80). */
 .glass {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -119,8 +172,8 @@ body {
 .btn-glossy {
   background-image: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 1px 2px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 var(--btn-sheen),
+    0 1px 2px var(--btn-shadow),
     0 0 14px -6px var(--glow);
   transition: filter 150ms ease, background-color 150ms ease, color 150ms ease, transform 100ms ease;
 }
@@ -218,13 +271,33 @@ body {
    dark surfaces). Tweak these vars to taste; both the editor (CodeMirror)
    and the reading view use them */
 :root {
-  --md-h1: #e58080;  /* rose red */
-  --md-h2: #7fc87f;  /* green */
-  --md-h3: #85b6ee;  /* blue */
-  --md-h4: #ab98f0;  /* lavender */
-  --md-h5: #6fcdcd;  /* teal */
-  --md-h6: #eda05c;  /* apricot */
-  --md-bold: #f6d968; /* butter yellow */
+  /* Heading/bold colors come in dark/light pairs. SettingsProvider overrides
+     the -dark/-light values at runtime; the aliases below pick the active
+     pair via data-mode (the light alias block must stay AFTER this block). */
+  --md-h1-dark: #e58080;  /* rose red */
+  --md-h2-dark: #7fc87f;  /* green */
+  --md-h3-dark: #85b6ee;  /* blue */
+  --md-h4-dark: #ab98f0;  /* lavender */
+  --md-h5-dark: #6fcdcd;  /* teal */
+  --md-h6-dark: #eda05c;  /* apricot */
+  --md-bold-dark: #f6d968; /* butter yellow */
+
+  --md-h1-light: #9c453a;
+  --md-h2-light: #3f6b45;
+  --md-h3-light: #37699b;
+  --md-h4-light: #6a54a0;
+  --md-h5-light: #2f6f68;
+  --md-h6-light: #9c5c2e;
+  --md-bold-light: #8a4358;
+
+  --md-h1: var(--md-h1-dark);
+  --md-h2: var(--md-h2-dark);
+  --md-h3: var(--md-h3-dark);
+  --md-h4: var(--md-h4-dark);
+  --md-h5: var(--md-h5-dark);
+  --md-h6: var(--md-h6-dark);
+  --md-bold: var(--md-bold-dark);
+
   --md-code-keyword: #c792ea;
   --md-code-string: #9ecb7f;
   --md-code-comment: #6a737d;
@@ -233,10 +306,27 @@ body {
   --md-code-property: #6fcdcd;
 }
 
+[data-mode="light"] {
+  --md-h1: var(--md-h1-light);
+  --md-h2: var(--md-h2-light);
+  --md-h3: var(--md-h3-light);
+  --md-h4: var(--md-h4-light);
+  --md-h5: var(--md-h5-light);
+  --md-h6: var(--md-h6-light);
+  --md-bold: var(--md-bold-light);
+
+  --md-code-keyword: #7c3aed;
+  --md-code-string: #15803d;
+  --md-code-comment: #6b7280;
+  --md-code-number: #c2410c;
+  --md-code-function: #1d4ed8;
+  --md-code-property: #0f766e;
+}
+
 /* Rendered preview typography (markdown-it output) */
 .markdown-preview {
-  font-size: 14.5px;
-  line-height: 1.7;
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
   color: rgb(var(--c-primary));
   overflow-wrap: break-word;
 }
@@ -288,7 +378,7 @@ body {
 }
 .markdown-preview pre.md-code {
   position: relative;
-  background: rgba(30, 30, 30, 0.92);
+  background: var(--md-code-bg);
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
   padding: 12px 14px;
@@ -300,7 +390,7 @@ body {
   padding: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #d4d4d4;
+  color: var(--md-code-fg);
 }
 .markdown-preview pre.md-code[data-lang]::before {
   content: attr(data-lang);
@@ -517,20 +607,20 @@ body {
   background: var(--accent-muted);
   color: var(--accent-text);
 }
-.cm-md-image-size-slider {
-  /* --slider-progress is written by the toolbar's syncProgress() */
+/* Unified range slider — settings, image size toolbar and any future slider.
+   Callers set --slider-progress inline so the accent fill tracks the value. */
+input[type="range"] {
   --slider-progress: 50%;
   -webkit-appearance: none;
   appearance: none;
-  width: 120px;
   height: 18px;
   background: transparent;
   cursor: pointer;
 }
-.cm-md-image-size-slider:focus {
+input[type="range"]:focus {
   outline: none;
 }
-.cm-md-image-size-slider::-webkit-slider-runnable-track {
+input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(
@@ -541,42 +631,60 @@ body {
     rgb(var(--c-strong) / 0.55) 100%
   );
 }
-.cm-md-image-size-slider::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
   border: 2px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.cm-md-image-size-slider:hover::-webkit-slider-thumb,
-.cm-md-image-size-slider:focus-visible::-webkit-slider-thumb {
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
   transform: scale(1.15);
   box-shadow:
     0 0 0 3px rgb(var(--accent-rgb) / 0.18),
     0 1px 4px rgb(var(--c-overlay) / 0.45);
 }
-.cm-md-image-size-slider::-moz-range-track {
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: rgb(var(--c-strong) / 0.55);
 }
-.cm-md-image-size-slider::-moz-range-progress {
+input[type="range"]::-moz-range-progress {
   height: 4px;
   border-radius: 999px;
   background: var(--accent);
 }
-.cm-md-image-size-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
   border: 2px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:focus-visible::-moz-range-thumb {
+  transform: scale(1.15);
+  box-shadow:
+    0 0 0 3px rgb(var(--accent-rgb) / 0.18),
+    0 1px 4px rgb(var(--c-overlay) / 0.45);
+}
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cm-md-image-size-slider {
+  width: 120px;
 }
 .cm-md-image-size-value {
   min-width: 44px;
@@ -707,4 +815,43 @@ body {
 .hljs-deletion { color: #f14c4c; background: rgba(241, 76, 76, 0.15); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
+
+/* highlight.js — VS Code Light+ palette for light mode */
+[data-mode="light"] .hljs-comment,
+[data-mode="light"] .hljs-quote { color: #008000; }
+[data-mode="light"] .hljs-keyword,
+[data-mode="light"] .hljs-selector-tag,
+[data-mode="light"] .hljs-literal,
+[data-mode="light"] .hljs-doctag,
+[data-mode="light"] .hljs-name { color: #0000ff; }
+[data-mode="light"] .hljs-string,
+[data-mode="light"] .hljs-regexp,
+[data-mode="light"] .hljs-addition { color: #a31515; }
+[data-mode="light"] .hljs-number { color: #098658; }
+[data-mode="light"] .hljs-title,
+[data-mode="light"] .hljs-title.function_,
+[data-mode="light"] .hljs-section { color: #795e26; }
+[data-mode="light"] .hljs-built_in,
+[data-mode="light"] .hljs-type,
+[data-mode="light"] .hljs-class .hljs-title,
+[data-mode="light"] .hljs-title.class_ { color: #267f99; }
+[data-mode="light"] .hljs-attr,
+[data-mode="light"] .hljs-attribute,
+[data-mode="light"] .hljs-variable,
+[data-mode="light"] .hljs-template-variable { color: #001080; }
+[data-mode="light"] .hljs-tag { color: #800000; }
+[data-mode="light"] .hljs-symbol,
+[data-mode="light"] .hljs-bullet { color: #334155; }
+[data-mode="light"] .hljs-meta { color: #001080; }
+[data-mode="light"] .hljs-link { color: #0000ff; }
+[data-mode="light"] .hljs-deletion { color: #cd3131; background: rgba(205, 49, 49, 0.12); }
+
+/* Callout titles use vivid raw hues — darken them on light surfaces */
+[data-mode="light"] .callout-title {
+  color: color-mix(in srgb, rgb(var(--callout-rgb)) 72%, black);
+}
+[data-mode="light"] .markdown-preview mark,
+[data-mode="light"] .cm-md-highlight {
+  background: rgba(250, 204, 21, 0.35);
+}
 

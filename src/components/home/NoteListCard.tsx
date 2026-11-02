@@ -4,6 +4,7 @@ import { useT } from "../../i18n";
 import ItemRow from "../ItemRow";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 
 export interface NoteRow {
   path: string;
@@ -18,10 +19,11 @@ interface Props {
   rows: NoteRow[];
   emptyText: string;
   accent?: boolean;
+  loading?: boolean;
   onUnstar?: (row: NoteRow) => void;
 }
 
-export default function NoteListCard({ title, icon, rows, emptyText, accent, onUnstar }: Props) {
+export default function NoteListCard({ title, icon, rows, emptyText, accent, loading, onUnstar }: Props) {
   const { t } = useT();
 
   return (
@@ -33,7 +35,8 @@ export default function NoteListCard({ title, icon, rows, emptyText, accent, onU
       className="flex-1 min-h-0 flex flex-col"
       bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >
-      {rows.length === 0 && <EmptyState size="card" text={emptyText} />}
+      {loading && rows.length === 0 && <SkeletonRows count={3} />}
+      {!loading && rows.length === 0 && <EmptyState size="card" text={emptyText} />}
       {rows.map((row) => (
         <ItemRow
           key={row.path}
@@ -47,9 +50,9 @@ export default function NoteListCard({ title, icon, rows, emptyText, accent, onU
           title={row.missing ? <span className="text-faint line-through">{row.title}</span> : row.title}
           meta={
             row.missing ? (
-              <span className="text-xs text-faint flex-shrink-0">{t["collections.missing"]}</span>
+              <span className="text-caption text-faint flex-shrink-0">{t["collections.missing"]}</span>
             ) : row.meta ? (
-              <span className="text-xs text-faint flex-shrink-0">{row.meta}</span>
+              <span className="text-caption text-faint flex-shrink-0">{row.meta}</span>
             ) : undefined
           }
           hoverActions={

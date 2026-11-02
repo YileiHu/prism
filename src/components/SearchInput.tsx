@@ -16,7 +16,7 @@ const SearchInput = forwardRef<HTMLInputElement, Props>(({ value, onChange, icon
       type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+      className="w-full bg-elevated border border-strong rounded-full pl-8 pr-3 py-1 text-body placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
       {...rest}
     />
   </div>

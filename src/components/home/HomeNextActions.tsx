@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { ListChecks } from "lucide-react";
 import { useT } from "../../i18n";
+import { useToast } from "../../lib/toast";
 import ItemRow from "../ItemRow";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import type { GtdFocusRequest, GtdNextList as GtdNextListData } from "../gtd/types";
 
 interface Props {
@@ -14,19 +16,31 @@ interface Props {
 
 export default function HomeNextActions({ version, onChanged, onNavigateToGtd }: Props) {
   const { t } = useT();
+  const showToast = useToast();
   const [data, setData] = useState<GtdNextListData>({ waiting: [], projects: [] });
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    window.prism.getGtdNextList().then(setData);
+    window.prism.getGtdNextList().then(setData).finally(() => setLoaded(true));
   }, [version]);
 
   const completeWaiting = async (id: number) => {
-    await window.prism.setGtdItemStatus(id, "done");
+    try {
+      await window.prism.setGtdItemStatus(id, "done");
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
   const completeAction = async (id: number) => {
-    await window.prism.toggleGtdAction(id);
+    try {
+      await window.prism.toggleGtdAction(id);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
@@ -47,7 +61,8 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
       className="h-full min-h-0 flex flex-col"
       bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >
-      {total === 0 && <EmptyState size="card" text={t["gtd.emptyNext"]} />}
+      {!loaded && total === 0 && <SkeletonRows count={3} />}
+      {loaded && total === 0 && <EmptyState size="card" text={t["gtd.emptyNext"]} />}
       {data.waiting.map((item) => (
         <ItemRow
           key={`w${item.id}`}
@@ -55,7 +70,7 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
           leading={checkbox(() => completeWaiting(item.id))}
           onPrimaryClick={() => onNavigateToGtd({ list: "waiting", itemId: item.id })}
           title={item.title}
-          meta={<span className="text-xs text-faint flex-shrink-0">{t["gtd.waiting"]}</span>}
+          meta={<span className="text-caption text-faint flex-shrink-0">{t["gtd.waiting"]}</span>}
         />
       ))}
       {data.projects.map(({ project, action }) => (
@@ -65,7 +80,7 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
           leading={checkbox(() => completeAction(action.id))}
           onPrimaryClick={() => onNavigateToGtd({ list: "project", projectId: project.id, actionId: action.id })}
           title={action.title}
-          meta={<span className="text-xs text-faint truncate max-w-[40%] flex-shrink-0">{project.title}</span>}
+          meta={<span className="text-caption text-faint truncate max-w-[40%] flex-shrink-0">{project.title}</span>}
         />
       ))}
     </SectionCard>

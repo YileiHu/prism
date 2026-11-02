@@ -4,7 +4,9 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { type MenuItem } from "../ContextMenu";
 import ItemRow from "../ItemRow";
+import Button from "../Button";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import ConfirmDialog from "../ConfirmDialog";
 import RenameModal from "../RenameModal";
 import { formatGtdDate, type GtdItem } from "./types";
@@ -21,13 +23,15 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
   const { t } = useT();
   const showToast = useToast();
   const [items, setItems] = useState<GtdItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [deleting, setDeleting] = useState<GtdItem | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const handledSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
-    window.prism.getGtdItems(status).then(setItems);
+    setLoaded(false);
+    window.prism.getGtdItems(status).then(setItems).finally(() => setLoaded(true));
   }, [status, version]);
 
   // Scroll to and flash the item targeted by a Home navigation once it's loaded
@@ -43,18 +47,33 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
   }, [focusItem, items]);
 
   const toggleNext = async (item: GtdItem) => {
-    await window.prism.setGtdItemNext(item.id, !item.is_next);
+    try {
+      await window.prism.setGtdItemNext(item.id, !item.is_next);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
   const markDone = async (item: GtdItem) => {
-    await window.prism.setGtdItemStatus(item.id, "done");
+    try {
+      await window.prism.setGtdItemStatus(item.id, "done");
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
   const handleDelete = async () => {
     if (!deleting) return;
-    await window.prism.deleteGtdItem(deleting.id);
+    try {
+      await window.prism.deleteGtdItem(deleting.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     showToast(t["common.deleted"]);
     onChanged();
   };
@@ -80,7 +99,8 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
   return (
     <>
     <div className="flex-1 overflow-y-auto">
-      {items.length === 0 && <EmptyState size="module" text={t["gtd.emptyList"]} />}
+      {!loaded && items.length === 0 && <SkeletonRows count={6} />}
+      {loaded && items.length === 0 && <EmptyState size="module" text={t["gtd.emptyList"]} />}
       {items.map((item) => (
         <ItemRow
           key={item.id}
@@ -90,15 +110,15 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
           menuItems={menuFor(item)}
           leading={
             status === "waiting" ? (
-              <button
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => toggleNext(item)}
                 title={item.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"]}
-                className={`flex-shrink-0 transition-colors ${
-                  item.is_next ? "text-[var(--accent-text)]" : "text-faint hover:text-tertiary"
-                }`}
+                className={item.is_next ? "!text-[var(--accent-text)]" : "!text-faint hover:!text-tertiary"}
               >
                 <Star size={15} fill={item.is_next ? "currentColor" : "none"} />
-              </button>
+              </Button>
             ) : undefined
           }
           title={
@@ -107,7 +127,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
               : item.title
           }
           meta={
-            <span className="text-xs text-faint flex-shrink-0">
+            <span className="text-caption text-faint flex-shrink-0">
               {formatGtdDate(status === "done" && item.done_at ? item.done_at : item.created_at)}
             </span>
           }
@@ -120,7 +140,12 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
       initialValue={renaming?.title ?? ""}
       onClose={() => setRenaming(null)}
       onSubmit={async (title) => {
-        if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+        try {
+          if (renaming) await window.prism.renameGtdItem(renaming.id, title);
+        } catch {
+          showToast(t["common.saveFailed"], "error");
+          return;
+        }
         onChanged();
       }}
     />

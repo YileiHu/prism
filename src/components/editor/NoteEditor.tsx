@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { BookOpen, Pencil, RefreshCw, Table, TextQuote } from "lucide-react";
+import { indentUnit } from "@codemirror/language";
+import { BookOpen, Pencil, Table, TextQuote } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
+import { useSettings } from "../../lib/settings";
+import { useTheme } from "../../theme/ThemeProvider";
 import { type MenuItem } from "../ContextMenu";
 import Button from "../Button";
-import { buildExtensions } from "./cmExtensions";
+import Spinner from "../Spinner";
+import { buildExtensions, indentCompartment, schemeCompartment, wrapCompartment } from "./cmExtensions";
 import { type ImageToolbarLabels } from "./livePreview";
 import MarkdownPreview from "./MarkdownPreview";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
 import { toggleTaskInSource } from "./markdown";
 import { resolveRelativeLink } from "./linkResolver";
+import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
 
 type EditorMode = "edit" | "read";
 
@@ -51,7 +56,6 @@ interface Props {
 }
 
 const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-const AUTOSAVE_DELAY = 1000;
 
 const PREVIEW_HEADING_SEL = ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6";
 
@@ -153,7 +157,17 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     onContextMenu(e, items);
   }, [applyQuotePrefix, insertTableSkeleton, onContextMenu, t]);
 
+  const { values: settings, ready: settingsReady, get: getSetting } = useSettings();
+  const { resolvedMode } = useTheme();
   const [mode, setMode] = useState<EditorMode>("read");
+  // default_view applies to each newly opened note, not to the note on screen
+  // when the preference changes
+  const defaultViewAppliedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!settingsReady || defaultViewAppliedFor.current === notePath) return;
+    defaultViewAppliedFor.current = notePath;
+    setMode(getSetting("default_view"));
+  }, [notePath, settingsReady, getSetting]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -255,7 +269,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     void window.prism.saveNote(savedPath, content)
       .then(() => setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })))
       .catch(() => {
-        showToast(t["editor.noteDeleted"]);
+        showToast(t["editor.noteDeleted"], "error");
         onNoteGone(savedPath);
       });
   }, [onNoteGone, showToast, t]);
@@ -271,8 +285,8 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
       saveNowRef.current();
-    }, AUTOSAVE_DELAY);
-  }, []);
+    }, getSetting("autosave_delay"));
+  }, [getSetting]);
 
   // ---- Editor lifecycle ----
 
@@ -317,10 +331,14 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
                   const ref = await window.prism.saveAttachment(vaultPath, ext, buf);
                   return `![](${await markdownImagePath(ref, vaultPath, notePath)})`;
                 } catch {
-                  showToast(t["editor.pasteImageFailed"]);
+                  showToast(t["editor.pasteImageFailed"], "error");
                   return null;
                 }
               },
+            }, {
+              dark: resolvedMode === "dark",
+              indentWidth: getSetting("indent_width"),
+              lineWrapping: getSetting("line_wrapping"),
             }),
             EditorView.updateListener.of((u) => {
               if (!u.docChanged) return;
@@ -358,6 +376,19 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     };
   }, [notePath, scheduleSave]);
 
+  // Editor scheme/indent/wrap follow the live settings without a rebuild
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        schemeCompartment.reconfigure(EditorView.darkTheme.of(resolvedMode === "dark")),
+        indentCompartment.reconfigure(indentUnit.of(" ".repeat(settings.indent_width))),
+        wrapCompartment.reconfigure(settings.line_wrapping ? EditorView.lineWrapping : []),
+      ],
+    });
+  }, [resolvedMode, settings.indent_width, settings.line_wrapping]);
+
   // ---- External modifications reload the doc unless there are unsaved edits ----
 
   useEffect(() => {
@@ -388,14 +419,26 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
 
   // ---- Mode switching: restore the viewport to the same region ----
 
-  const switchMode = (next: EditorMode) => {
+  const switchMode = useCallback((next: EditorMode) => {
     if (next === mode) return;
     captureScrollAnchor(mode);
     if (next === "read") {
       setDocText(viewRef.current?.state.doc.toString() ?? "");
     }
     setMode(next);
-  };
+  }, [mode, captureScrollAnchor]);
+
+  // App shortcut: only the editor inside the active vault pane reacts (the
+  // event carries the vault path).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ShortcutEventDetail>).detail;
+      if (detail?.action !== "toggleReadEdit" || detail.vaultPath !== vaultPath || !ready) return;
+      switchMode(mode === "edit" ? "read" : "edit");
+    };
+    window.addEventListener(SHORTCUT_EVENT, handler);
+    return () => window.removeEventListener(SHORTCUT_EVENT, handler);
+  }, [vaultPath, ready, mode, switchMode]);
 
   useEffect(() => {
     if (mode === "edit") {
@@ -475,7 +518,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
   if (loadFailed) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 anim-fade-in">
-        <p className="text-sm text-secondary">{t["editor.noteDeleted"]}</p>
+        <p className="text-body text-secondary">{t["editor.noteDeleted"]}</p>
         <Button variant="secondary" size="sm" onClick={() => onNoteGone(notePath)}>
           {t["editor.closeTab"]}
         </Button>
@@ -486,24 +529,24 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="h-11 flex-shrink-0 flex items-center gap-2 px-4 border-b border-line/50 glass bg-tint/[0.04]">
-        <span className="text-sm font-medium text-primary truncate flex-1" title={notePath}>{title}</span>
+        <span className="text-body font-medium text-primary truncate flex-1" title={notePath}>{title}</span>
         {dirty ? (
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" title={t["editor.unsaved"]} />
         ) : savedAt ? (
-          <span className="text-[11px] text-faint flex-shrink-0 whitespace-nowrap">
+          <span className="text-meta text-faint flex-shrink-0 whitespace-nowrap">
             {t["editor.savedAt"].replace("{time}", savedAt)}
           </span>
         ) : null}
-        <div className="flex rounded-md border border-line/60 p-0.5 flex-shrink-0">
+        <div className="flex rounded-control border border-line/50 p-0.5 flex-shrink-0">
           <button
-            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${mode === "edit" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
+            className={`flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors ${mode === "edit" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
             onClick={() => switchMode("edit")}
           >
             <Pencil size={12} />
             {t["editor.edit"]}
           </button>
           <button
-            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${mode === "read" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
+            className={`flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors ${mode === "read" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
             onClick={() => switchMode("read")}
           >
             <BookOpen size={12} />
@@ -515,7 +558,7 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
       <div className="flex-1 min-h-0 relative">
         {!ready ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <RefreshCw size={20} className="animate-spin text-muted" />
+            <Spinner size={20} className="text-muted" />
           </div>
         ) : null}
         <div ref={mountRef} className={mode === "edit" && ready ? "h-full" : "hidden"} onContextMenu={handleEditorContextMenu} />

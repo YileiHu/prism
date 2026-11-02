@@ -5,9 +5,11 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import ItemRow from "../ItemRow";
 import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import ConfirmDialog from "../ConfirmDialog";
 import RenameModal from "../RenameModal";
 import Modal from "../Modal";
+import { Textarea } from "../Input";
 import { arrayMove } from "@dnd-kit/sortable";
 import SortableList from "../SortableList";
 import type { GtdAction, GtdItem } from "./types";
@@ -23,6 +25,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const { t } = useT();
   const showToast = useToast();
   const [actions, setActions] = useState<GtdAction[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [renaming, setRenaming] = useState<GtdAction | null>(null);
   const [deleting, setDeleting] = useState<GtdAction | null>(null);
@@ -34,7 +37,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    window.prism.getGtdActions(project.id).then(setActions);
+    window.prism.getGtdActions(project.id).then(setActions).finally(() => setLoaded(true));
   }, [project.id, version]);
 
   // Scroll to and flash the action targeted by a Home navigation once loaded
@@ -68,7 +71,12 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const submit = async () => {
     const title = draft.trim();
     if (!title) return;
-    await window.prism.addGtdAction(project.id, title);
+    try {
+      await window.prism.addGtdAction(project.id, title);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     setDraft("");
     if (inputRef.current) {
       inputRef.current.style.height = "";
@@ -80,7 +88,12 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const reorder = (fromIndex: number, toIndex: number) => {
     const next = arrayMove(actions, fromIndex, toIndex);
     setActions(next);
-    void window.prism.reorderGtdActions(project.id, next.map((a) => a.id)).then(onChanged);
+    void window.prism.reorderGtdActions(project.id, next.map((a) => a.id))
+      .then(onChanged)
+      .catch(() => {
+        setActions(actions);
+        showToast(t["common.saveFailed"], "error");
+      });
   };
 
   const openDescription = () => {
@@ -89,19 +102,54 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   };
 
   const saveDescription = async () => {
-    await window.prism.setGtdItemDescription(project.id, descDraft);
+    try {
+      await window.prism.setGtdItemDescription(project.id, descDraft);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     setDescOpen(false);
     onChanged();
   };
 
   const toggleNext = async (action: GtdAction) => {
-    await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id);
+    try {
+      await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
+    onChanged();
+  };
+
+  const completeProject = async () => {
+    try {
+      await window.prism.setGtdItemStatus(project.id, "done");
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
+    onChanged();
+  };
+
+  const toggleActionDone = async (action: GtdAction) => {
+    try {
+      await window.prism.toggleGtdAction(action.id);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
     onChanged();
   };
 
   const handleDelete = async () => {
     if (!deleting) return;
-    await window.prism.deleteGtdAction(deleting.id);
+    try {
+      await window.prism.deleteGtdAction(deleting.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     showToast(t["common.deleted"]);
     onChanged();
   };
@@ -109,12 +157,12 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   return (
     <>
       <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-        <span className="flex-1 text-sm font-medium text-primary truncate">{project.title}</span>
-        {project.action_count > 0 && <span className="text-xs text-muted flex-shrink-0">{progress}</span>}
+        <span className="flex-1 text-body font-medium text-primary truncate">{project.title}</span>
+        {project.action_count > 0 && <span className="text-caption text-muted flex-shrink-0">{progress}</span>}
       </div>
 
       <div className="px-4 py-2 border-b border-line/30 flex-shrink-0">
-        <textarea
+        <Textarea
           ref={inputRef}
           rows={1}
           value={draft}
@@ -127,7 +175,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
           }}
           placeholder={t["gtd.addAction"]}
           autoFocus
-          className="w-full max-h-24 resize-none overflow-y-auto bg-elevated border border-strong rounded-lg px-3 py-1.5 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full max-h-24 resize-none overflow-y-auto"
         />
       </div>
 
@@ -135,27 +183,27 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
         <button
           type="button"
           onClick={openDescription}
-          className="group/desc w-full text-left rounded-lg border border-line/60 bg-elevated/40 px-3 py-2 hover:border-strong transition-colors"
+          className="group/desc w-full text-left rounded-control border border-line/50 bg-elevated/50 px-3 py-2 hover:border-strong transition-colors"
         >
-          <span className="flex items-center gap-1.5 text-[11px] text-muted mb-1">
+          <span className="flex items-center gap-1.5 text-meta text-muted mb-1">
             {t["gtd.projectDescription"]}
             <Pencil size={11} className="ml-auto opacity-0 group-hover/desc:opacity-100 transition-opacity" />
           </span>
           {project.description ? (
-            <span className="block whitespace-pre-wrap text-sm leading-relaxed text-secondary max-h-28 overflow-y-auto pr-1">
+            <span className="block whitespace-pre-wrap text-body leading-relaxed text-secondary max-h-28 overflow-y-auto pr-1">
               {project.description}
             </span>
           ) : (
-            <span className="block text-sm text-muted truncate">{t["gtd.projectDescriptionPlaceholder"]}</span>
+            <span className="block text-body text-muted truncate">{t["gtd.projectDescriptionPlaceholder"]}</span>
           )}
         </button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {allDone && !bannerDismissed && (
-          <div className="flex items-center gap-3 mx-4 mt-3 px-3 py-2 rounded-lg bg-[var(--accent-muted)] border border-[var(--accent-border)]">
-            <span className="flex-1 text-sm text-[var(--accent-text)]">{t["gtd.projectCompletePrompt"]}</span>
-            <Button variant="primary" size="xs" onClick={async () => { await window.prism.setGtdItemStatus(project.id, "done"); onChanged(); }}>
+          <div className="flex items-center gap-3 mx-4 mt-3 px-3 py-2 rounded-control bg-[var(--accent-muted)] border border-[var(--accent-border)]">
+            <span className="flex-1 text-body text-[var(--accent-text)]">{t["gtd.projectCompletePrompt"]}</span>
+            <Button variant="primary" size="xs" onClick={completeProject}>
               {t["gtd.completeProject"]}
             </Button>
             <Button variant="ghost" size="xs" onClick={() => setBannerDismissed(true)}>
@@ -163,7 +211,8 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
             </Button>
           </div>
         )}
-        {actions.length === 0 && <EmptyState size="module" text={t["gtd.emptyActions"]} />}
+        {!loaded && actions.length === 0 && <SkeletonRows count={5} />}
+        {loaded && actions.length === 0 && <EmptyState size="module" text={t["gtd.emptyActions"]} />}
         <SortableList
           items={actions}
           itemId={(action) => String(action.id)}
@@ -180,10 +229,10 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
               ]}
               leading={
                 <button
-                  onClick={async () => { await window.prism.toggleGtdAction(action.id); onChanged(); }}
+                  onClick={() => toggleActionDone(action)}
                   className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
                     action.is_done
-                      ? "bg-[var(--accent)] border-[var(--accent)] text-white"
+                      ? "bg-[var(--accent)] border-[var(--accent)] text-on-accent"
                       : "border-strong hover:border-[var(--accent)]"
                   }`}
                 >
@@ -209,7 +258,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
             />
           )}
           renderOverlay={(action) => (
-            <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-primary">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
               <span className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 ${action.is_done ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`} />
               <span className={`truncate ${action.is_done ? "text-muted line-through" : ""}`}>{action.title}</span>
             </div>
@@ -222,7 +271,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
         onClose={() => setDescOpen(false)}
         title={t["gtd.projectDescription"]}
         icon={<Pencil size={16} className="text-muted" />}
-        width="560px"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" size="sm" onClick={() => setDescOpen(false)}>
@@ -234,12 +283,12 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
           </>
         }
       >
-        <textarea
+        <Textarea
           value={descDraft}
           onChange={(e) => setDescDraft(e.target.value)}
           placeholder={t["gtd.projectDescriptionPlaceholder"]}
           autoFocus
-          className="w-full h-[40vh] min-h-[180px] max-h-[420px] resize-y bg-elevated border border-strong rounded-lg px-3 py-2 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full h-[40vh] min-h-[180px] max-h-[420px] resize-y"
         />
       </Modal>
 
@@ -249,7 +298,12 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
         multiline
         onClose={() => setRenaming(null)}
         onSubmit={async (title) => {
-          if (renaming) await window.prism.renameGtdAction(renaming.id, title);
+          try {
+            if (renaming) await window.prism.renameGtdAction(renaming.id, title);
+          } catch {
+            showToast(t["common.saveFailed"], "error");
+            return;
+          }
           onChanged();
         }}
       />

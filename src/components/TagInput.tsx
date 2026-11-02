@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { X, Tag } from "lucide-react";
+import Input from "./Input";
 
 interface TagSuggestion {
   name: string;
@@ -39,6 +40,21 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
     if (e.key === "Enter") {
       e.preventDefault();
       addTag(input);
+      return;
+    }
+    // Layered Escape: suggestions → draft text → let the enclosing modal close
+    if (e.key === "Escape") {
+      if (open) {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+        return;
+      }
+      if (input) {
+        e.preventDefault();
+        e.stopPropagation();
+        setInput("");
+      }
     }
   };
 
@@ -49,10 +65,10 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           {tags.map((tag) => {
             const c = colorForTag(tag);
             return (
-              <span key={tag} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
+              <span key={tag} className="inline-flex items-center gap-1 text-caption px-2.5 py-1 rounded-full" style={{ color: c.name, backgroundColor: c.bg }}>
                 <Tag size={10} />
                 {tag}
-                <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="hover:text-red-400 ml-0.5">
+                <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="hover:text-danger ml-0.5">
                   <X size={12} />
                 </button>
               </span>
@@ -61,7 +77,7 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
         </div>
       )}
       <div className="relative">
-        <input
+        <Input
           type="text"
           value={input}
           onChange={(e) => { setInput(e.target.value); setOpen(true); }}
@@ -69,21 +85,21 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}
           placeholder={placeholder}
-          className="w-full bg-elevated border border-strong rounded-lg px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full"
         />
         {open && filtered.length > 0 && (
-          <div className="absolute top-full mt-1 left-0 z-30 glass bg-elevated/90 border border-strong rounded-lg shadow-lg p-1 w-full">
+          <div className="absolute top-full mt-1 left-0 z-30 glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 w-full">
             {filtered.map((s) => (
               <button
                 key={s.name}
                 onMouseDown={(e) => addTag(s.name, e)}
-                className="w-full text-left px-3 py-2 text-sm text-secondary hover:bg-hover flex items-center justify-between rounded-md"
+                className="w-full text-left px-3 py-2 text-body text-secondary hover:bg-hover flex items-center justify-between rounded-chip"
               >
                 <span className="flex items-center gap-2">
                   <Tag size={12} className="text-muted" />
                   {s.name}
                 </span>
-                <span className="text-xs text-muted">{s.count}</span>
+                <span className="text-caption text-muted">{s.count}</span>
               </button>
             ))}
           </div>

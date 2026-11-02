@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme } from "electron";
 import path from "path";
 import fs from "fs";
 import { spawn } from "child_process";
@@ -20,6 +20,7 @@ import {
   searchNoteContents,
   getSetting,
   setSetting,
+  getAllSettings,
   getAllTags,
   reorderTags,
   setTagColor,
@@ -92,9 +93,29 @@ function isVisibleOnSomeDisplay(s: WindowState): boolean {
   });
 }
 
+// Keep the native window surface in sync with the renderer's color mode so
+// startup/repaint never flashes the opposite scheme.
+const DARK_BG = "#030712";
+const LIGHT_BG = "#f6f8fb";
+
+function resolveColorScheme(mode: string | null): "dark" | "light" | "system" {
+  return mode === "light" || mode === "dark" ? mode : "system";
+}
+
+function applyNativeColorMode(mode: string): void {
+  const scheme = resolveColorScheme(mode);
+  nativeTheme.themeSource = scheme;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const dark = scheme === "dark" || (scheme === "system" && nativeTheme.shouldUseDarkColors);
+  mainWindow.setBackgroundColor(dark ? DARK_BG : LIGHT_BG);
+}
+
 function createWindow(): void {
   const isWindows = process.platform === "win32";
   const saved = loadWindowState();
+  const colorMode = resolveColorScheme(getSetting("color_mode"));
+  nativeTheme.themeSource = colorMode;
+  const windowDark = colorMode === "dark" || (colorMode === "system" && nativeTheme.shouldUseDarkColors);
 
   const options: Electron.BrowserWindowConstructorOptions = {
     width: saved?.width ?? 1200,
@@ -104,8 +125,8 @@ function createWindow(): void {
     title: "Prism",
     icon: path.join(__dirname, "../public/icon.png"),
     ...(isWindows
-      ? { frame: false, backgroundColor: "#030712" }
-      : { backgroundColor: "#030712" }),
+      ? { frame: false, backgroundColor: windowDark ? DARK_BG : LIGHT_BG }
+      : { backgroundColor: windowDark ? DARK_BG : LIGHT_BG }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -484,6 +505,22 @@ function findOwningVault(filePath: string): string | null {
 
 // ---- IPC Handlers ----
 
+function searchResultLimit(): number {
+  const n = Number(getSetting("search_result_limit"));
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 200;
+}
+
+// Vault-relative attachment folder. Rejects absolute paths and ".." segments
+// so a bad setting can never write outside the vault.
+function resolveAttachmentsDir(): string {
+  const raw = (getSetting("attachments_dir") ?? "").replace(/\\/g, "/").trim();
+  const segs = raw.split("/").filter((s) => s && s !== ".");
+  if (segs.length === 0 || segs.includes("..") || path.isAbsolute(raw) || /^[a-zA-Z]:/.test(raw)) {
+    return "attachments";
+  }
+  return segs.join("/");
+}
+
 function registerIpcHandlers(): void {
   // Resources
   ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[], notes: string) => {
@@ -498,7 +535,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("resources:delete", (_e, id: number) => deleteResource(id));
 
-  ipcMain.handle("resources:search", (_e, query: string) => searchResources(query));
+  ipcMain.handle("resources:search", (_e, query: string) => searchResources(query, searchResultLimit()));
 
   ipcMain.handle("resources:reorder", (_e, orderedIds: number[]) => reorderResources(orderedIds));
 
@@ -525,9 +562,9 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("vault:list-brief", (_e, vaultPath: string) => getNoteList(vaultPath));
 
-  ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query));
+  ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query, searchResultLimit()));
 
-  ipcMain.handle("vault:search-content", (_e, vaultPath: string, query: string) => searchNoteContents(vaultPath, query));
+  ipcMain.handle("vault:search-content", (_e, vaultPath: string, query: string) => searchNoteContents(vaultPath, query, searchResultLimit()));
 
   ipcMain.handle("vault:delete-notes", (_e, paths: string[]) => {
     deleteNotesByPaths(paths);
@@ -611,14 +648,15 @@ function registerIpcHandlers(): void {
     return { modified_at };
   });
 
-  // Pasted editor images → <vault>/attachments/<YYYY-MM-DD-HHmmss>.<ext>.
+  // Pasted editor images → <vault>/<attachments_dir>/<YYYY-MM-DD-HHmmss>.<ext>.
   // Space-free names keep standard ![](path) links clean (no <> wrapping).
   // Returns the vault-relative ref (forward slashes).
   ipcMain.handle("vault:save-attachment", (_e, vaultPath: string, ext: string, data: Uint8Array) => {
     if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
     const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (!ASSET_MIME[safeExt]) throw new Error("UNSUPPORTED_TYPE");
-    const dir = path.join(vaultPath, "attachments");
+    const relDir = resolveAttachmentsDir();
+    const dir = path.join(vaultPath, ...relDir.split("/"));
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -632,7 +670,7 @@ function registerIpcHandlers(): void {
       counter++;
     }
     fs.writeFileSync(filePath, Buffer.from(data));
-    return `attachments/${name}`;
+    return `${relDir}/${name}`;
   });
 
   // Open URL
@@ -648,6 +686,11 @@ function registerIpcHandlers(): void {
   // Settings
   ipcMain.handle("settings:get", (_e, key: string) => getSetting(key));
   ipcMain.handle("settings:set", (_e, key: string, value: string) => setSetting(key, value));
+  ipcMain.handle("settings:get-all", () => getAllSettings());
+  ipcMain.handle("app:set-color-mode", (_e, mode: string) => applyNativeColorMode(mode));
+  nativeTheme.on("updated", () => {
+    if (resolveColorScheme(getSetting("color_mode")) === "system") applyNativeColorMode("system");
+  });
 
   // Tags
   ipcMain.handle("tags:list", () => getAllTags());

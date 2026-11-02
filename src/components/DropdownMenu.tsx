@@ -56,12 +56,18 @@ export function DropdownMenu({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // Capture phase: an open menu consumes Escape before a parent Modal's
+    // document-level listener can close the whole dialog.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
     const onResize = () => onClose();
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", onResize);
     return () => {
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", onResize);
     };
   }, [open, onClose]);
@@ -71,13 +77,14 @@ export function DropdownMenu({
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[90]"
+        className="fixed inset-0 z-menu-backdrop"
         onClick={onClose}
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       />
       <div
         ref={menuRef}
-        className={`fixed z-[95] glass bg-elevated/85 border border-strong rounded-lg shadow-xl p-1 ${
+        data-prism-menu=""
+        className={`fixed z-menu glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 ${
           exiting ? "anim-exit" : side === "top" ? "anim-menu-up" : "anim-menu"
         } ${className}`}
         style={{ ...style, visibility: ready ? "visible" : "hidden" }}
@@ -103,11 +110,11 @@ export function DropdownMenuItem({ onClick, danger, active, className = "", chil
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm rounded-md transition-colors ${
+      className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-body rounded-chip transition-colors ${
         active
           ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
           : danger
-            ? "text-red-400 hover:bg-red-400/10"
+            ? "text-danger hover:bg-danger/10"
             : "text-secondary hover:bg-hover"
       } ${className}`}
     >

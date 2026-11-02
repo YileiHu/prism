@@ -9,6 +9,7 @@ import "katex/dist/katex.min.css";
 import { renderMarkdown, type AssetContext } from "./markdown";
 import { loadFolds, saveFold, FoldKeyCounter } from "./folds";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
+import { useSettings } from "../../lib/settings";
 
 // Icons per canonical callout family (see CALLOUT_FAMILIES in markdown.ts)
 const CALLOUT_ICONS: Record<string, typeof Info> = {
@@ -48,8 +49,8 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data).slice(0, 12);
   if (entries.length === 0) return null;
   return (
-    <div className="mx-auto max-w-[750px] mb-4 px-1 pt-4">
-      <div className="rounded-lg border border-line/60 bg-surface/60 px-4 py-2.5 text-xs overflow-hidden">
+    <div className="mx-auto mb-4 px-1 pt-4" style={{ maxWidth: "var(--content-width)" }}>
+      <div className="rounded-control border border-line/50 bg-surface/50 px-4 py-2.5 text-caption overflow-hidden">
         {entries.map(([key, value]) => (
           <div key={key} className="flex gap-3 py-0.5 min-w-0">
             <span className="text-muted flex-shrink-0">{key}</span>
@@ -64,6 +65,7 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
 }
 
 export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, scrollRef }: Props) {
+  const { values } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const { html, frontmatter, outline } = useMemo(() => renderMarkdown(content, assetContext), [content, assetContext]);
   const foldsRef = useRef<Set<string>>(new Set());
@@ -216,10 +218,11 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
     <div className="relative h-full">
       <OutlineCard items={outline} onJump={jumpToHeading} />
       <div ref={scrollRef} className="h-full overflow-y-auto">
-        {frontmatter && <FrontmatterCard data={frontmatter} />}
+        {frontmatter && values.show_frontmatter && <FrontmatterCard data={frontmatter} />}
         <div
           ref={containerRef}
-          className="markdown-preview mx-auto max-w-[750px] px-8 pb-40 pt-4"
+          className="markdown-preview mx-auto px-8 pb-40 pt-4"
+          style={{ maxWidth: "var(--content-width)" }}
           onClick={handleClick}
           dangerouslySetInnerHTML={{ __html: html }}
         />

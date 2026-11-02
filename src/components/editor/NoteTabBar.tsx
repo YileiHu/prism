@@ -1,6 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FileText, FolderPlus, PanelLeftClose, PanelLeftOpen, Plus, X } from "lucide-react";
 import { useT } from "../../i18n";
+import Button from "../Button";
+import { useDragClickGuard } from "../../lib/useDragClickGuard";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { NoteTab } from "./useNoteTabs";
 
 interface Props {
@@ -17,18 +36,85 @@ interface Props {
   onReorder: (path: string, toIndex: number) => void;
 }
 
-// Distinct from "text/x-note-paths" (note-list drags) so tab reorders never
-// land on collection drop targets and vice versa
-const TAB_MIME = "text/x-tab-path";
+function SortableTab({
+  tab,
+  active,
+  closeLabel,
+  onSelect,
+  onClose,
+}: {
+  tab: NoteTab;
+  active: boolean;
+  closeLabel: string;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tab.path });
+
+  const clickGuard = useDragClickGuard(isDragging);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      {...clickGuard}
+      data-tab-active={active ? "true" : undefined}
+      onClick={onSelect}
+      onAuxClick={(e) => {
+        if (e.button === 1) onClose();
+      }}
+      title={tab.path}
+      className={`group relative flex items-center gap-1.5 pl-3 pr-2 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 border-r border-line/30 transition-colors ${
+        active ? "text-primary bg-tint/[0.06]" : "text-muted hover:text-secondary hover:bg-tint/[0.04]"
+      } ${isDragging ? "opacity-40" : ""} after:absolute after:left-0 after:right-0 after:bottom-0 after:h-0.5 after:bg-[var(--accent)] after:transition-opacity ${active ? "after:opacity-100" : "after:opacity-0"}`}
+    >
+      <FileText size={12} className={active ? "text-[var(--accent-text)]" : ""} />
+      <span className="max-w-[160px] truncate">{tab.title}</span>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        title={closeLabel}
+        className={active ? "" : "opacity-70"}
+      >
+        <X size={11} />
+      </Button>
+    </div>
+  );
+}
+
+function TabOverlay({ tab }: { tab: NoteTab }) {
+  return (
+    <div className="flex items-center gap-1.5 pl-3 pr-2 h-9 text-caption whitespace-nowrap rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+      <FileText size={12} />
+      <span className="max-w-[160px] truncate">{tab.title}</span>
+      <X size={11} className="ml-1 text-muted" />
+    </div>
+  );
+}
 
 export default function NoteTabBar({ tabs, activePath, newLabel, closeLabel, sidebarCollapsed, onSelect, onClose, onNewNote, onNewCollection, onToggleSidebar, onReorder }: Props) {
   const { t } = useT();
-  const [dragPath, setDragPath] = useState<string | null>(null);
-  // Insertion line: shown at the left/right edge of the hovered tab
-  const [indicator, setIndicator] = useState<{ path: string; before: boolean } | null>(null);
+  const [activeDragPath, setActiveDragPath] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Which edges are clipped, for the fade hints
   const [overflow, setOverflow] = useState({ left: false, right: false });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const updateOverflow = () => {
     const el = scrollRef.current;
@@ -69,115 +155,94 @@ export default function NoteTabBar({ tabs, activePath, newLabel, closeLabel, sid
       ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
   }, [activePath]);
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragPath(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragPath(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = tabs.findIndex((tab) => tab.path === active.id);
+    const to = tabs.findIndex((tab) => tab.path === over.id);
+    if (from !== -1 && to !== -1) onReorder(String(active.id), to);
+  };
+
+  const activeDragTab = activeDragPath ? tabs.find((tab) => tab.path === activeDragPath) : null;
+
   return (
-    <div className="h-9 flex-shrink-0 flex items-stretch border-b border-line/50 glass bg-tint/[0.03]">
-      <div className="relative flex-1 min-w-0 flex">
-        <div
-          ref={scrollRef}
-          onScroll={updateOverflow}
-          className="flex-1 flex items-stretch overflow-x-auto scrollbar-none"
-        >
-          {tabs.map((tab) => {
-            const active = tab.path === activePath;
-            const showBefore = indicator?.path === tab.path && indicator.before;
-            const showAfter = indicator?.path === tab.path && !indicator.before;
-            return (
-              <div
-                key={tab.path}
-                data-tab-active={active ? "true" : undefined}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(TAB_MIME, tab.path);
-                  e.dataTransfer.effectAllowed = "move";
-                  setDragPath(tab.path);
-                }}
-                onDragEnd={() => {
-                  setDragPath(null);
-                  setIndicator(null);
-                }}
-                onDragOver={(e) => {
-                  if (!e.dataTransfer.types.includes(TAB_MIME)) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const before = e.clientX < rect.left + rect.width / 2;
-                  setIndicator((prev) => (prev?.path === tab.path && prev.before === before ? prev : { path: tab.path, before }));
-                }}
-                onDrop={(e) => {
-                  const path = e.dataTransfer.getData(TAB_MIME);
-                  if (!path) return;
-                  e.preventDefault();
-                  setIndicator(null);
-                  const from = tabs.findIndex((t) => t.path === path);
-                  if (from === -1) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const before = e.clientX < rect.left + rect.width / 2;
-                  let to = tabs.findIndex((t) => t.path === tab.path) + (before ? 0 : 1);
-                  if (from < to) to -= 1;
-                  if (to !== from) onReorder(path, to);
-                }}
-                onClick={() => onSelect(tab.path)}
-                onAuxClick={(e) => {
-                  if (e.button === 1) onClose(tab.path);
-                }}
-                title={tab.path}
-                className={`group relative flex items-center gap-1.5 pl-3 pr-2 text-xs cursor-pointer select-none whitespace-nowrap flex-shrink-0 border-r border-line/40 transition-colors ${
-                  active ? "text-primary bg-tint/[0.06]" : "text-muted hover:text-secondary hover:bg-tint/[0.03]"
-                } ${dragPath === tab.path ? "opacity-40" : ""} ${
-                  showBefore || showAfter
-                    ? `before:absolute before:top-1 before:bottom-1 before:w-0.5 before:bg-[var(--accent)] before:content-[''] ${showBefore ? "before:-left-px" : "before:-right-px"}`
-                    : ""
-                } after:absolute after:left-0 after:right-0 after:bottom-0 after:h-0.5 after:bg-[var(--accent)] after:transition-opacity ${active ? "after:opacity-100" : "after:opacity-0"}`}
-              >
-                <FileText size={12} className={active ? "text-[var(--accent-text)]" : ""} />
-                <span className="max-w-[160px] truncate">{tab.title}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onClose(tab.path);
-                  }}
-                  title={closeLabel}
-                  className={`p-0.5 rounded transition-colors hover:bg-hover/60 ${
-                    active ? "text-muted hover:text-primary" : "text-faint hover:text-primary"
-                  }`}
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            );
-          })}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveDragPath(null)}
+    >
+      <div className="h-9 flex-shrink-0 flex items-stretch border-b border-line/50 glass bg-tint/[0.04]">
+        <div className="relative flex-1 min-w-0 flex">
+          <div
+            ref={scrollRef}
+            onScroll={updateOverflow}
+            className="flex-1 flex items-stretch overflow-x-auto scrollbar-none"
+          >
+            <SortableContext items={tabs.map((tab) => tab.path)} strategy={horizontalListSortingStrategy}>
+              {tabs.map((tab) => (
+                <SortableTab
+                  key={tab.path}
+                  tab={tab}
+                  active={tab.path === activePath}
+                  closeLabel={closeLabel}
+                  onSelect={() => onSelect(tab.path)}
+                  onClose={() => onClose(tab.path)}
+                />
+              ))}
+            </SortableContext>
+          </div>
+          {overflow.left && (
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-base/75 to-transparent" />
+          )}
+          {overflow.right && (
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-base/75 to-transparent" />
+          )}
         </div>
-        {overflow.left && (
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-base/75 to-transparent" />
-        )}
-        {overflow.right && (
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-base/75 to-transparent" />
-        )}
+        {/* Right-side actions: always visible, even with no open tabs */}
+        <div className="flex items-center flex-shrink-0 border-l border-line/30">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onNewNote}
+            title={newLabel}
+            className="h-full !rounded-none !px-2.5 !py-0 hover:!text-primary"
+          >
+            <Plus size={14} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onNewCollection}
+            title={t["collections.new"]}
+            className="h-full !rounded-none !px-2.5 !py-0 hover:!text-primary"
+          >
+            <FolderPlus size={14} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onToggleSidebar}
+            title={sidebarCollapsed ? t["collections.expandSidebar"] : t["collections.collapseSidebar"]}
+            className="h-full !rounded-none !px-2.5 !py-0 hover:!text-primary"
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          </Button>
+        </div>
       </div>
-      {/* Right-side actions: always visible, even with no open tabs */}
-      <div className="flex items-center flex-shrink-0 border-l border-line/40">
-        <button
-          onClick={onNewNote}
-          title={newLabel}
-          className="h-full px-2.5 text-muted hover:text-primary transition-colors"
-        >
-          <Plus size={14} />
-        </button>
-        <button
-          onClick={onNewCollection}
-          title={t["collections.new"]}
-          className="h-full px-2.5 text-muted hover:text-primary transition-colors"
-        >
-          <FolderPlus size={14} />
-        </button>
-        <button
-          onClick={onToggleSidebar}
-          title={sidebarCollapsed ? t["collections.expandSidebar"] : t["collections.collapseSidebar"]}
-          className="h-full px-2.5 text-muted hover:text-primary transition-colors"
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-        </button>
-      </div>
-    </div>
+
+      {createPortal(
+        <DragOverlay dropAnimation={null}>
+          {activeDragTab ? <TabOverlay tab={activeDragTab} /> : null}
+        </DragOverlay>,
+        document.body,
+      )}
+    </DndContext>
   );
 }

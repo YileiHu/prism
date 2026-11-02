@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
+import Input, { Textarea } from "./Input";
 import { useT } from "../i18n";
 
 interface Props {
@@ -47,7 +48,7 @@ export default function RenameModal({ open, initialValue, onClose, onSubmit, tit
       }
     >
       {multiline ? (
-        <textarea
+        <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -59,17 +60,17 @@ export default function RenameModal({ open, initialValue, onClose, onSubmit, tit
           placeholder={placeholder}
           autoFocus
           rows={4}
-          className="w-full max-h-[50vh] min-h-[96px] resize-y overflow-y-auto bg-elevated border border-strong rounded-lg px-3 py-2 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full max-h-[50vh] min-h-[96px] resize-y overflow-y-auto"
         />
       ) : (
-        <input
+        <Input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
           placeholder={placeholder}
           autoFocus
-          className="w-full bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+          className="w-full"
         />
       )}
     </Modal>

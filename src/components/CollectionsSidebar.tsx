@@ -1,31 +1,28 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { useT } from "../i18n";
 import Sidebar from "./Sidebar";
+import NavItem from "./NavItem";
+import EmptyState from "./EmptyState";
 import { type MenuItem } from "./ContextMenu";
 import { useContextMenu } from "../lib/useContextMenu";
-import { Palette, Pencil, Trash2 } from "lucide-react";
-import { hashColor, resolveTagColor, TAG_COLORS } from "../lib/colors";
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { Pencil, Trash2 } from "lucide-react";
+import { resolveTagColor } from "../lib/colors";
+import { buildColorMenuItem } from "./ColorPicker";
+import { useDndContext } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragClickGuard } from "../lib/useDragClickGuard";
 
 export interface NoteGroup {
   id: string;
   name: string;
   notePaths: string[];
+  // Palette `bar` hex from TAG_COLORS; empty/undefined falls back to hashColor(name)
+  color?: string;
 }
 
 export interface CollectionData {
@@ -44,12 +41,10 @@ interface Props {
   onSelect: (id: string | null) => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
-  onReorder: (fromIndex: number, toIndex: number) => void;
-  onDropNote: (collectionId: string, notePaths: string[]) => void;
   onSetColor: (id: string, color: string) => void;
 }
 
-function makeCollId(id: string) { return `coll-${id}`; }
+export function makeCollId(id: string) { return `coll-${id}`; }
 
 function SortableCollectionItem({
   coll,
@@ -59,7 +54,6 @@ function SortableCollectionItem({
   onRename,
   onDelete,
   onSetColor,
-  onDropNote,
 }: {
   coll: CollectionData;
   isSelected: boolean;
@@ -68,30 +62,20 @@ function SortableCollectionItem({
   onRename: () => void;
   onDelete: () => void;
   onSetColor: (id: string, color: string) => void;
-  onDropNote: (collectionId: string, notePaths: string[]) => void;
 }) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
+  const { active, over } = useDndContext();
+  const isDropTarget = active?.data.current?.kind === "note" && over?.id === makeCollId(coll.id);
 
   const menuItems: MenuItem[] = [
-    {
+    buildColorMenuItem(t, {
       label: t["collections.color"],
-      icon: <Palette size={14} />,
-      children: [
-        {
-          label: t["collections.colorAuto"],
-          icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: hashColor(coll.name).bar }} />,
-          checked: !coll.color,
-          onClick: () => onSetColor(coll.id, ""),
-        },
-        ...TAG_COLORS.map((c) => ({
-          label: t[`tagColor.${c.key}`],
-          icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.bar }} />,
-          checked: coll.color?.toLowerCase() === c.bar,
-          onClick: () => onSetColor(coll.id, c.bar),
-        })),
-      ],
-    },
+      autoLabel: t["collections.colorAuto"],
+      autoSource: coll.name,
+      current: coll.color,
+      onSelect: (color) => onSetColor(coll.id, color),
+    }),
     { label: t["collections.rename"], icon: <Pencil size={14} />, onClick: onRename },
     { label: t["collections.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
@@ -103,7 +87,9 @@ function SortableCollectionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: makeCollId(coll.id) });
+  } = useSortable({ id: makeCollId(coll.id), data: { kind: "collection", id: coll.id } });
+
+  const clickGuard = useDragClickGuard(isDragging);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -115,55 +101,40 @@ function SortableCollectionItem({
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
 
   return (
-    <div
+    <NavItem
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative flex items-center gap-1.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm stagger-in ${
-        isSelected
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-          : "text-tertiary hover:text-primary hover:bg-elevated/50"
+      {...clickGuard}
+      active={isSelected}
+      className={`group cursor-pointer stagger-in ${
+        isDropTarget ? "ring-1 ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
       }`}
       onClick={onSelect}
-      onDragOver={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer.types.includes("text/x-note-paths")) {
-          e.dataTransfer.dropEffect = "copy";
-        }
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        const noteData = e.dataTransfer.getData("text/x-note-paths");
-        if (noteData) {
-          try {
-            const paths: string[] = JSON.parse(noteData);
-            onDropNote(coll.id, paths);
-          } catch { /* ignore */ }
-        }
-      }}
       onContextMenu={(e) => onContextMenu(e, menuItems)}
-    >
-      <span
-        className="w-2 h-2 rounded-full flex-shrink-0"
-        style={{ backgroundColor: resolveTagColor(coll.name, coll.color).bar }}
-      />
-      <span className="flex-1 text-sm truncate">{coll.name}</span>
-      <span className="text-xs text-faint flex-shrink-0">{totalNotes}</span>
-    </div>
+      leading={
+        <span
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: resolveTagColor(coll.name, coll.color).bar }}
+        />
+      }
+      label={coll.name}
+      trailing={totalNotes}
+    />
   );
 }
 
-function DragOverlayCollection({ coll }: { coll: CollectionData }) {
+export function CollectionDragOverlay({ coll }: { coll: CollectionData }) {
   const totalNotes = coll.notePaths.length + (coll.groups?.reduce((s, g) => s + g.notePaths.length, 0) ?? 0);
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-elevated border border-[var(--accent)] shadow-xl opacity-90">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
       <span
         className="w-2 h-2 rounded-full flex-shrink-0"
         style={{ backgroundColor: resolveTagColor(coll.name, coll.color).bar }}
       />
-      <span className="flex-1 text-sm text-primary">{coll.name}</span>
-      <span className="text-xs text-muted">{totalNotes}</span>
+      <span className="flex-1 text-body text-primary">{coll.name}</span>
+      <span className="text-caption text-muted">{totalNotes}</span>
     </div>
   );
 }
@@ -175,82 +146,42 @@ export default function CollectionsSidebar({
   onSelect,
   onRename,
   onDelete,
-  onReorder,
-  onDropNote,
   onSetColor,
 }: Props) {
   const { t } = useT();
-  const [activeDrag, setActiveDrag] = useState<CollectionData | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
 
   const collIds = useMemo(() => collections.map((c) => makeCollId(c.id)), [collections]);
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const id = (event.active.id as string).slice(5); // remove "coll-" prefix
-    const coll = collections.find((c) => c.id === id);
-    if (coll) setActiveDrag(coll);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    setActiveDrag(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const fromIdx = collections.findIndex((c) => makeCollId(c.id) === active.id);
-    const toIdx = collections.findIndex((c) => makeCollId(c.id) === over.id);
-    if (fromIdx !== -1 && toIdx !== -1) {
-      onReorder(fromIdx, toIdx);
-    }
-  };
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <Sidebar storageKey="vault">
-        <div
-          onClick={() => onSelect(null)}
-          className={`w-full flex items-center gap-1.5 px-3 py-2 text-sm transition-colors rounded-lg cursor-pointer mb-1 pb-2 border-b border-line/50 ${
-            selectedId === null
-              ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-              : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
-          }`}
-        >
-          <span className="flex-1 text-sm truncate text-left">{t["collections.allNotes"]}</span>
-          <span className="text-xs text-faint flex-shrink-0">{allNotesCount}</span>
-        </div>
+    <Sidebar storageKey="vault">
+      <div
+        onClick={() => onSelect(null)}
+        className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer mb-1 pb-2 border-b border-line/50 ${
+          selectedId === null
+            ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
+            : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
+        }`}
+      >
+        <span className="flex-1 text-body truncate text-left">{t["collections.allNotes"]}</span>
+        <span className="text-caption text-faint flex-shrink-0">{allNotesCount}</span>
+      </div>
 
-        <SortableContext items={collIds} strategy={verticalListSortingStrategy}>
-          {collections.length === 0 && (
-            <p className="px-3 py-8 text-center text-xs text-muted leading-relaxed">
-              {t["collections.emptyHint"]}
-            </p>
-          )}
+      <SortableContext items={collIds} strategy={verticalListSortingStrategy}>
+        {collections.length === 0 && <EmptyState size="card" text={t["collections.emptyHint"]} />}
 
-          {collections.map((coll, i) => (
-            <SortableCollectionItem
-              key={coll.id}
-              coll={coll}
-              isSelected={selectedId === coll.id}
-              staggerIndex={i}
-              onSelect={() => onSelect(coll.id)}
-              onRename={() => onRename(coll.id)}
-              onDelete={() => onDelete(coll.id)}
-              onSetColor={onSetColor}
-              onDropNote={onDropNote}
-            />
-          ))}
-        </SortableContext>
-      </Sidebar>
-
-      <DragOverlay dropAnimation={null}>
-        {activeDrag && <DragOverlayCollection coll={activeDrag} />}
-      </DragOverlay>
-    </DndContext>
+        {collections.map((coll, i) => (
+          <SortableCollectionItem
+            key={coll.id}
+            coll={coll}
+            isSelected={selectedId === coll.id}
+            staggerIndex={i}
+            onSelect={() => onSelect(coll.id)}
+            onRename={() => onRename(coll.id)}
+            onDelete={() => onDelete(coll.id)}
+            onSetColor={onSetColor}
+          />
+        ))}
+      </SortableContext>
+    </Sidebar>
   );
 }

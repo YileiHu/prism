@@ -1,366 +1,129 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Trash2, FolderOpen, ExternalLink, Monitor, Palette, Database, Wrench, ChevronDown } from "lucide-react";
-import { useT, langOptions } from "../i18n";
+import { useCallback, useEffect, useState } from "react";
+import { Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
-import { themes } from "../theme/themes";
+import { useSettings } from "../lib/settings";
 import Button from "./Button";
 import Sidebar from "./Sidebar";
-import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
-import { type VaultEntry } from "../types";
+import NavItem from "./NavItem";
+import ConfirmDialog from "./ConfirmDialog";
+import GeneralSection from "./settings/GeneralSection";
+import VaultsSection from "./settings/VaultsSection";
+import EditorSection from "./settings/EditorSection";
+import AppearanceSection from "./settings/AppearanceSection";
+import SearchSection from "./settings/SearchSection";
+import ExternalSection from "./settings/ExternalSection";
+import ShortcutsSection from "./settings/ShortcutsSection";
 
-type SettingsCategory = "vaults" | "external" | "appearance";
+type SettingsCategory = "general" | "vaults" | "editor" | "appearance" | "search" | "external" | "shortcuts";
+
+const CATEGORY_KEY = "prism_settings_category";
 
 export default function Settings() {
-  const { t, lang, setLang } = useT();
-  const { theme: currentTheme, setTheme, themeId } = useTheme();
-  const [category, setCategory] = useState<SettingsCategory>("vaults");
-  const [vaults, setVaults] = useState<VaultEntry[]>([]);
-  const [newName, setNewName] = useState("");
-  const [newPath, setNewPath] = useState("");
+  const { t, setLang } = useT();
+  const { setTheme, setMode } = useTheme();
+  const { reset } = useSettings();
+  const [category, setCategory] = useState<SettingsCategory>(() => {
+    try {
+      const saved = localStorage.getItem(CATEGORY_KEY);
+      const valid: SettingsCategory[] = ["general", "vaults", "editor", "appearance", "search", "external", "shortcuts"];
+      return valid.includes(saved as SettingsCategory) ? (saved as SettingsCategory) : "general";
+    } catch {
+      return "general";
+    }
+  });
   const [saved, setSaved] = useState(false);
-  const [browserPath, setBrowserPath] = useState("");
-  const [defaultNotesDir, setDefaultNotesDir] = useState("");
-  const [imagePathStyle, setImagePathStyle] = useState("note");
-  const [langOpen, setLangOpen] = useState(false);
-  const [imageStyleOpen, setImageStyleOpen] = useState(false);
-  const [addError, setAddError] = useState("");
-  const langAnchorRef = useRef<HTMLDivElement>(null);
-  const imageStyleAnchorRef = useRef<HTMLDivElement>(null);
-
-  const imageStyleOptions = [
-    { value: "note", label: t["settings.imagePathStyleNote"] },
-    { value: "vault", label: t["settings.imagePathStyleVault"] },
-    { value: "name", label: t["settings.imagePathStyleName"] },
-  ];
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    try { localStorage.setItem(CATEGORY_KEY, category); } catch { /* ignore */ }
+  }, [category]);
 
-  const loadSettings = async () => {
-    const rawVaults = await window.prism.getSetting("vault_paths");
-    if (rawVaults) {
-      try { setVaults(JSON.parse(rawVaults)); } catch { setVaults([]); }
-    }
-    const bp = await window.prism.getSetting("browser_path");
-    if (bp) setBrowserPath(bp);
-    const dnd = await window.prism.getSetting("default_notes_dir");
-    if (dnd) setDefaultNotesDir(dnd);
-    const ips = await window.prism.getSetting("image_path_style");
-    if (ips) setImagePathStyle(ips);
-  };
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setSaved(false), 2000);
+    return () => clearTimeout(timer);
+  }, [saved]);
 
-  const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const flashSaved = useCallback(() => setSaved(true), []);
 
-  const saveVaults = useCallback(async (updated: VaultEntry[]) => {
-    await window.prism.setSetting("vault_paths", JSON.stringify(updated));
-    setVaults(updated);
-    window.dispatchEvent(new CustomEvent("vaults-changed"));
-    flashSaved();
-  }, []);
+  useEffect(() => {
+    const handler = () => flashSaved();
+    window.addEventListener("settings-saved", handler);
+    return () => window.removeEventListener("settings-saved", handler);
+  }, [flashSaved]);
 
-  const saveSetting = async (key: string, value: string) => {
-    await window.prism.setSetting(key, value);
+  const handleReset = async () => {
+    await reset();
+    setTheme("violet");
+    setMode("dark");
+    setLang("zh");
     flashSaved();
   };
-
-  const normalizePath = (p: string) => p.trim().replace(/[\\/]+$/, "");
-
-  const handleAddVault = async () => {
-    const name = newName.trim();
-    const normalizedPath = normalizePath(newPath);
-    if (!name || !normalizedPath) return;
-    if (vaults.some((v) => normalizePath(v.path).toLowerCase() === normalizedPath.toLowerCase())) {
-      setAddError(t["settings.vaultExists"]);
-      return;
-    }
-    setAddError("");
-    await saveVaults([...vaults, { name, path: normalizedPath }]);
-    setNewName(""); setNewPath("");
-  };
-
-  const handleRemoveVault = async (index: number) => {
-    const removed = vaults[index];
-    await saveVaults(vaults.filter((_, i) => i !== index));
-    if (removed) {
-      const last = await window.prism.getSetting("last_vault_path");
-      if (last === removed.path) await window.prism.setSetting("last_vault_path", "");
-    }
-  };
-
-  const handleSelectDir = async () => {
-    const dir = await window.prism.selectDirectory();
-    if (dir) setNewPath(dir);
-  };
-
-  const handleSelectFile = async (setter: (v: string) => void, key: string) => {
-    const file = await window.prism.selectFile();
-    if (file) { setter(file); saveSetting(key, file); }
-  };
-
-  const handleTestBrowser = () => { window.prism.openUrl("https://example.com"); };
 
   const categories: { key: SettingsCategory; label: string; icon: typeof Database }[] = [
+    { key: "general", label: t["settings.catGeneral"], icon: SlidersHorizontal },
     { key: "vaults", label: t["settings.catVaults"], icon: Database },
-    { key: "external", label: t["settings.catExternal"], icon: Wrench },
+    { key: "editor", label: t["settings.catEditor"], icon: SquarePen },
     { key: "appearance", label: t["settings.catAppearance"], icon: Palette },
+    { key: "search", label: t["settings.catSearch"], icon: Search },
+    { key: "shortcuts", label: t["settings.catShortcuts"], icon: Keyboard },
+    { key: "external", label: t["settings.catExternal"], icon: Wrench },
   ];
 
   return (
     <div className="h-full flex">
-      {/* Sidebar */}
       <Sidebar storageKey="settings">
         <nav className="space-y-0.5">
           {categories.map(({ key, label, icon: Icon }) => (
-            <button
+            <NavItem
               key={key}
               onClick={() => setCategory(key)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                category === key
-                  ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                  : "text-tertiary hover:text-primary hover:bg-elevated/50"
-              }`}
-            >
-              <Icon size={16} />
-              {label}
-            </button>
+              active={category === key}
+              leading={<Icon size={16} />}
+              label={label}
+            />
           ))}
         </nav>
         {saved && (
           <div className="px-4 pt-2 mt-2 border-t border-line/50">
-            <span className="text-xs text-green-400">{t["settings.saved"]}</span>
+            <span className="text-caption text-success">{t["settings.saved"]}</span>
           </div>
         )}
       </Sidebar>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-8">
-        {category === "vaults" && (
-          <section>
-            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.vaults"]}</h3>
-            <p className="text-xs text-muted mb-5">{t["settings.vaultsDesc"]}</p>
+        <div className="max-w-3xl">
+          {category === "general" && <GeneralSection />}
+          {category === "vaults" && <VaultsSection onSaved={flashSaved} />}
+          {category === "editor" && <EditorSection />}
+          {category === "appearance" && <AppearanceSection />}
+          {category === "search" && <SearchSection />}
+          {category === "shortcuts" && <ShortcutsSection />}
+          {category === "external" && <ExternalSection onSaved={flashSaved} />}
 
-            <div className="space-y-2 mb-5">
-              {vaults.length === 0 && (
-                <div className="text-center text-muted py-8 text-sm bg-surface/30 rounded-lg border border-line/50">
-                  {t["settings.noVaults"]}
-                </div>
-              )}
-              {vaults.map((v, i) => (
-                <div key={v.path} className="flex items-center gap-3 p-3 bg-surface/50 rounded-lg border border-line/50">
-                  <FolderOpen size={16} className="text-amber-500 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-primary font-medium truncate">{v.name}</div>
-                    <div className="text-xs text-muted truncate">{v.path}</div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handleRemoveVault(i)}
-                    className="hover:text-red-400"
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              ))}
+          <div className="mt-10 pt-5 border-t border-line/50 flex items-center justify-between gap-6">
+            <div>
+              <div className="text-body font-medium text-secondary">{t["settings.reset"]}</div>
+              <p className="text-caption text-muted mt-0.5">{t["settings.resetDesc"]}</p>
             </div>
-
-            <div className="p-4 bg-surface/30 rounded-lg border border-line/50 mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <FolderOpen size={14} className="text-amber-500" />
-                <span className="text-sm font-medium text-secondary">{t["settings.defaultNotesDir"]}</span>
-              </div>
-              <p className="text-xs text-muted mb-3">{t["settings.defaultNotesDirDesc"]}</p>
-              <input
-                value={defaultNotesDir}
-                onChange={(e) => setDefaultNotesDir(e.target.value)}
-                onBlur={() => saveSetting("default_notes_dir", defaultNotesDir)}
-                placeholder={t["settings.defaultNotesDirPlaceholder"]}
-                className="w-full bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-              />
-            </div>
-
-            <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
-              <div className="flex items-center gap-2 mb-3">
-                <FolderOpen size={14} className="text-[var(--accent-text)]" />
-                <span className="text-sm font-medium text-secondary">{t["settings.imagePathStyle"]}</span>
-              </div>
-              <p className="text-xs text-muted mb-3">{t["settings.imagePathStyleDesc"]}</p>
-              <div ref={imageStyleAnchorRef}>
-                <button
-                  type="button"
-                  onClick={() => setImageStyleOpen(!imageStyleOpen)}
-                  className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm text-primary transition-colors hover:border-strong"
-                >
-                  <span>{imageStyleOptions.find((o) => o.value === imagePathStyle)?.label}</span>
-                  <ChevronDown size={14} className="text-muted flex-shrink-0" />
-                </button>
-                <DropdownMenu open={imageStyleOpen} onClose={() => setImageStyleOpen(false)} anchorRef={imageStyleAnchorRef} matchWidth>
-                  {imageStyleOptions.map((opt) => (
-                    <DropdownMenuItem
-                      key={opt.value}
-                      onClick={() => {
-                        setImagePathStyle(opt.value);
-                        saveSetting("image_path_style", opt.value);
-                        setImageStyleOpen(false);
-                      }}
-                      active={imagePathStyle === opt.value}
-                    >
-                      {opt.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenu>
-              </div>
-            </div>
-
-            <div className="p-4 bg-surface/30 rounded-lg border border-line/50 space-y-3">
-              <p className="text-xs text-tertiary font-medium">{t["settings.addVault"]}</p>
-              <div className="flex gap-2">
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder={t["settings.vaultNamePlaceholder"]}
-                  className="w-44 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-                />
-                <div className="flex-1 flex gap-2">
-                  <input
-                    value={newPath}
-                    onChange={(e) => setNewPath(e.target.value)}
-                    placeholder={t["settings.vaultPath"]}
-                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-                  />
-                  <Button variant="ghost" size="icon-md" onClick={handleSelectDir}>
-                    <FolderOpen size={16} />
-                  </Button>
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleAddVault}
-                  disabled={!newName.trim() || !newPath.trim()}
-                >
-                  <Plus size={16} />
-                  {t["settings.addVault"]}
-                </Button>
-              </div>
-              {addError && <p className="text-xs text-red-400">{addError}</p>}
-            </div>
-          </section>
-        )}
-
-        {category === "external" && (
-          <section>
-            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.external"]}</h3>
-            <p className="text-xs text-muted mb-5">{t["settings.externalDesc"]}</p>
-
-            <div className="space-y-4">
-              <div className="p-4 bg-surface/50 rounded-lg border border-line/50">
-                <div className="flex items-center gap-2 mb-3">
-                  <Monitor size={14} className="text-blue-400" />
-                  <span className="text-sm font-medium text-secondary">{t["settings.browserPath"]}</span>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    value={browserPath}
-                    onChange={(e) => setBrowserPath(e.target.value)}
-                    onBlur={() => saveSetting("browser_path", browserPath)}
-                    placeholder={t["settings.browserPathPlaceholder"]}
-                    className="flex-1 bg-elevated border border-strong rounded-lg px-3 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
-                  />
-                  <Button variant="secondary" size="xs" onClick={() => handleSelectFile(setBrowserPath, "browser_path")}>
-                    {t["settings.selectFile"]}
-                  </Button>
-                  <Button variant="secondary" size="xs" onClick={handleTestBrowser} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20">
-                    <ExternalLink size={12} />
-                    {t["settings.browserTest"]}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {category === "appearance" && (
-          <section>
-            <h3 className="text-base font-semibold text-primary mb-1">{t["settings.appearance"]}</h3>
-            <p className="text-xs text-muted mb-5">{t["settings.appearanceDesc"]}</p>
-
-            <div className="p-4 bg-surface/50 rounded-lg border border-line/50 mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Palette size={14} className="text-[var(--accent-text)]" />
-                <span className="text-sm font-medium text-secondary">{t["settings.language"]}</span>
-              </div>
-              <p className="text-xs text-muted mb-3">{t["settings.languageDesc"]}</p>
-              <div ref={langAnchorRef}>
-                <button
-                  type="button"
-                  onClick={() => setLangOpen(!langOpen)}
-                  className="w-full flex items-center justify-between bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm text-primary transition-colors hover:border-strong"
-                >
-                  <span>{langOptions.find((o) => o.value === lang)?.label}</span>
-                  <ChevronDown size={14} className="text-muted flex-shrink-0" />
-                </button>
-                <DropdownMenu open={langOpen} onClose={() => setLangOpen(false)} anchorRef={langAnchorRef} matchWidth>
-                  {langOptions.map((opt) => (
-                    <DropdownMenuItem
-                      key={opt.value}
-                      onClick={() => { setLang(opt.value); setLangOpen(false); }}
-                      active={lang === opt.value}
-                    >
-                      {opt.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenu>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {themes.map((th) => (
-                <button
-                  key={th.id}
-                  onClick={() => setTheme(th.id)}
-                  className={`p-4 rounded-xl border transition-all text-left ${
-                    themeId === th.id
-                      ? "border-[var(--accent)] bg-[var(--accent-muted)]"
-                      : "border-line bg-surface/50 hover:border-strong"
-                  }`}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div
-                      className="w-8 h-8 rounded-full border-2 border-strong flex-shrink-0"
-                      style={{ backgroundColor: th.primary }}
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-primary">{th.name}</div>
-                      <div className="text-xs text-muted">{th.nameEn}</div>
-                    </div>
-                    {themeId === th.id && (
-                      <div
-                        className="ml-auto w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: th.primary }}
-                      />
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    {[
-                      th.primaryHover,
-                      th.primary,
-                      th.primaryText,
-                      th.primaryBorder,
-                    ].map((c, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 h-2 rounded"
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
+            <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)}>
+              <RotateCcw size={14} />
+              {t["settings.reset"]}
+            </Button>
+          </div>
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title={t["settings.reset"]}
+        message={t["settings.resetConfirm"]}
+        confirmLabel={t["settings.reset"]}
+        tone="default"
+        onConfirm={handleReset}
+        onClose={() => setConfirmReset(false)}
+      />
     </div>
   );
 }

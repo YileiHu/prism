@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import Button from "./Button";
 
 interface Props {
   children: ReactNode;
@@ -20,14 +21,15 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="h-screen flex items-center justify-center bg-base text-primary select-none">
           <div className="text-center max-w-md">
-            <p className="text-base font-semibold text-primary mb-2">Something went wrong</p>
-            <p className="text-sm text-muted mb-4 break-all">{this.state.error.message}</p>
-            <button
+            <p className="text-section font-semibold text-primary mb-2">Something went wrong</p>
+            <p className="text-body text-muted mb-4 break-all">{this.state.error.message}</p>
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => { this.setState({ error: null }); window.location.reload(); }}
-              className="px-4 py-2 text-sm rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white transition-colors"
             >
               Reload
-            </button>
+            </Button>
           </div>
         </div>
       );

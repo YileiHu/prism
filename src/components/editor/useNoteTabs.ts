@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSettings } from "../../lib/settings";
 
 export interface NoteTab {
   path: string;
@@ -11,6 +12,7 @@ const settingKey = (vaultPath: string) => `note_tabs_${vaultPath}`;
 // in the settings table as { paths, active } and revalidated against the
 // vault's notes on restore, so tabs for externally deleted notes are dropped.
 export function useNoteTabs(vaultPath: string) {
+  const { get } = useSettings();
   const [tabs, setTabs] = useState<NoteTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const restoredRef = useRef(false);
@@ -20,17 +22,21 @@ export function useNoteTabs(vaultPath: string) {
   activeRef.current = activePath;
 
   useEffect(() => {
-    if (!restoredRef.current) return;
+    if (!restoredRef.current || !get("restore_note_tabs")) return;
     void window.prism.setSetting(settingKey(vaultPath), JSON.stringify({
       paths: tabs.map((t) => t.path),
       active: activePath,
     }));
-  }, [vaultPath, tabs, activePath]);
+  }, [vaultPath, tabs, activePath, get]);
 
   // Merge persisted tabs with whatever is already open (an early openNote from
   // a deep link may land before the async restore resolves)
   const restoreFrom = useCallback((notes: { path: string; title: string }[]) => {
     restoredRef.current = false;
+    if (!get("restore_note_tabs")) {
+      restoredRef.current = true;
+      return;
+    }
     (async () => {
       let persisted: { paths?: string[]; active?: string | null } | null = null;
       try {
@@ -53,7 +59,7 @@ export function useNoteTabs(vaultPath: string) {
       );
       restoredRef.current = true;
     })();
-  }, [vaultPath]);
+  }, [vaultPath, get]);
 
   const openNote = useCallback((note: { path: string; title: string }) => {
     setTabs((prev) => {

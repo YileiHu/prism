@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ListTree } from "lucide-react";
 import { useT } from "../../i18n";
+import Button from "../Button";
 
 export interface OutlineItem {
   id: string;
@@ -14,12 +15,12 @@ const COLLAPSED_KEY = "prism_outline_collapsed";
 // the sole horizontal cue, so narrow cards keep as much text width as possible
 function outlineItemClass(level: number): string {
   const base =
-    "block w-full text-left pr-1.5 rounded truncate transition-colors hover:text-primary";
+    "block w-full text-left pr-1.5 rounded-chip truncate transition-colors hover:text-primary";
   if (level === 1) {
-    return `${base} mt-1.5 first:mt-0 py-[5px] text-[12.5px] font-semibold text-primary bg-[rgb(var(--accent-rgb)/0.11)] hover:bg-[rgb(var(--accent-rgb)/0.18)]`;
+    return `${base} mt-1.5 first:mt-0 py-[5px] text-control font-semibold text-primary bg-[rgb(var(--accent-rgb)/0.11)] hover:bg-[rgb(var(--accent-rgb)/0.18)]`;
   }
-  if (level === 2) return `${base} py-1 text-[12px] font-medium text-secondary hover:bg-hover/40`;
-  return `${base} py-[3px] text-[12px] text-muted hover:bg-hover/40`;
+  if (level === 2) return `${base} py-1 text-caption font-medium text-secondary hover:bg-hover/50`;
+  return `${base} py-[3px] text-caption text-muted hover:bg-hover/50`;
 }
 
 // Floating outline card shown to the left of the reading view. Clicking an
@@ -41,7 +42,7 @@ export default function OutlineCard({ items, onJump }: { items: OutlineItem[]; o
       <button
         onClick={() => setCollapsedPersisted(false)}
         title={t["editor.outline"]}
-        className="absolute left-3 top-3 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-line/60 bg-surface/85 glass text-muted hover:text-primary shadow-lg"
+        className="absolute left-3 top-3 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-control border border-line/50 bg-surface/85 glass text-muted hover:text-primary shadow-popover"
       >
         <ListTree size={13} />
       </button>
@@ -49,17 +50,18 @@ export default function OutlineCard({ items, onJump }: { items: OutlineItem[]; o
   }
 
   return (
-    <div className="absolute left-3 top-3 bottom-6 z-20 w-52 flex flex-col rounded-lg border border-line/60 bg-surface/85 glass shadow-lg overflow-hidden">
+    <div className="absolute left-3 top-3 bottom-6 z-20 w-52 flex flex-col rounded-control border border-line/50 bg-surface/85 glass shadow-popover overflow-hidden">
       <div className="flex items-center gap-1.5 px-2.5 h-8 border-b border-line/50 flex-shrink-0">
         <ListTree size={13} className="text-muted flex-shrink-0" />
-        <span className="text-xs font-medium text-secondary flex-1 truncate">{t["editor.outline"]}</span>
-        <button
+        <span className="text-caption font-medium text-secondary flex-1 truncate">{t["editor.outline"]}</span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={() => setCollapsedPersisted(true)}
-          className="p-0.5 rounded text-muted hover:text-primary hover:bg-hover/50"
           title={t["editor.foldCard"]}
         >
           <ChevronLeft size={13} />
-        </button>
+        </Button>
       </div>
       <div className="flex-1 overflow-y-auto py-1 pl-1 pr-1">
         {items.map((item) => (

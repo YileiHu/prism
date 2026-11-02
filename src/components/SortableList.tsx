@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -12,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragClickGuard } from "../lib/useDragClickGuard";
 
 interface Props<T> {
   items: T[];
@@ -24,12 +25,7 @@ interface Props<T> {
 
 function SortableRow({ id, children }: { id: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  // A pointer drag ends with a click on the row; swallow it so dragging a
-  // clickable row (e.g. a tag filter) doesn't also trigger its action.
-  const dragged = useRef(false);
-  useEffect(() => {
-    if (isDragging) dragged.current = true;
-  }, [isDragging]);
+  const clickGuard = useDragClickGuard(isDragging);
 
   return (
     <div
@@ -37,13 +33,7 @@ function SortableRow({ id, children }: { id: string; children: ReactNode }) {
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       {...attributes}
       {...listeners}
-      onPointerDownCapture={() => { dragged.current = false; }}
-      onClickCapture={(e) => {
-        if (!dragged.current) return;
-        dragged.current = false;
-        e.preventDefault();
-        e.stopPropagation();
-      }}
+      {...clickGuard}
     >
       {children}
     </div>
@@ -94,7 +84,7 @@ export default function SortableList<T>({ items, itemId, onReorder, renderItem, 
       {createPortal(
         <DragOverlay>
           {activeItem !== undefined && (
-            <div className="rounded-lg bg-elevated border border-[var(--accent)] shadow-xl opacity-90">
+            <div className="rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
               {renderOverlay(activeItem)}
             </div>
           )}

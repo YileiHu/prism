@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useT } from "../i18n";
 import Button from "./Button";
+import Input from "./Input";
 import Modal from "./Modal";
 
 interface Props {
@@ -21,7 +22,7 @@ export default function CreateCollectionModal({ title, initialName = "", onSave,
   };
 
   return (
-    <Modal open title={title} onClose={onClose} width="400px"
+    <Modal open title={title} onClose={onClose} size="sm"
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>{t["resources.cancel"]}</Button>
@@ -29,14 +30,14 @@ export default function CreateCollectionModal({ title, initialName = "", onSave,
         </>
       }
     >
-      <input
+      <Input
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
         placeholder={t["collections.namePlaceholder"]}
         autoFocus
-        className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+        className="w-full"
       />
     </Modal>
   );

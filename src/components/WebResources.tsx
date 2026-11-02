@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus, Trash2, Edit3, ExternalLink, Link2, Palette, Pencil } from "lucide-react";
+import { Plus, Trash2, Edit3, ExternalLink, Link2, Pencil } from "lucide-react";
 import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { useSettings } from "../lib/settings";
 import { useToast } from "../lib/toast";
-import { hashColor, resolveTagColor, TAG_COLORS, type PaletteColor } from "../lib/colors";
+import { hashColor, resolveTagColor, type PaletteColor } from "../lib/colors";
+import { buildColorMenuItem } from "./ColorPicker";
 import { useContextMenu } from "../lib/useContextMenu";
 import RenameModal from "./RenameModal";
 import Button from "./Button";
@@ -15,10 +17,14 @@ import ItemRow from "./ItemRow";
 import SectionCard from "./SectionCard";
 import SearchInput from "./SearchInput";
 import EmptyState from "./EmptyState";
+import { SkeletonRows } from "./Skeleton";
 import ConfirmDialog from "./ConfirmDialog";
 import { useSetToggle } from "../lib/useToggleSet";
 import { arrayMove } from "@dnd-kit/sortable";
 import SortableList from "./SortableList";
+import NavItem from "./NavItem";
+import Badge from "./Badge";
+import Input, { Textarea } from "./Input";
 
 interface Resource {
   id: number;
@@ -75,7 +81,7 @@ function ResourceRowView({
   return (
     <ItemRow
       variant="list"
-      className={flat ? "border-b border-line/30" : "rounded-lg"}
+      className={flat ? "border-b border-line/30" : "rounded-control"}
       onPrimaryClick={() => window.prism.openUrl(r.url)}
       menuItems={menuItems}
       tooltip={r.notes ? `${r.title}\n${r.notes}\n${r.url}` : r.url}
@@ -89,7 +95,7 @@ function ResourceRowView({
         <>
           <button
             onClick={(e) => { e.stopPropagation(); window.prism.openUrl(r.url); }}
-            className="text-xs text-faint hover:text-tertiary truncate flex items-center gap-1 flex-shrink-0 max-w-[160px]"
+            className="text-caption text-faint hover:text-tertiary truncate flex items-center gap-1 flex-shrink-0 max-w-[160px]"
           >
             <Link2 size={10} />
             {extractDomain(r.url)}
@@ -99,17 +105,17 @@ function ResourceRowView({
               {r.tags.slice(0, 3).map((tag) => {
                 const c = colorForTag(tag);
                 return (
-                  <span
+                  <Badge
                     key={tag}
+                    palette={c}
                     onClick={(e) => { e.stopPropagation(); onOpenTag(tag); }}
-                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 whitespace-nowrap"
-                    style={{ color: c.name, backgroundColor: c.bg }}
+                    className="cursor-pointer hover:opacity-80"
                   >
                     {tag}
-                  </span>
+                  </Badge>
                 );
               })}
-              {r.tags.length > 3 && <span className="text-[10px] text-faint">+{r.tags.length - 3}</span>}
+              {r.tags.length > 3 && <span className="text-meta text-faint">+{r.tags.length - 3}</span>}
             </span>
           )}
         </>
@@ -151,9 +157,9 @@ function ResourceList({
         />
       )}
       renderOverlay={(r) => (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-primary">
+        <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
           <span className="truncate">{r.title}</span>
-          <span className="ml-auto text-xs text-faint flex-shrink-0">{extractDomain(r.url)}</span>
+          <span className="ml-auto text-caption text-faint flex-shrink-0">{extractDomain(r.url)}</span>
         </div>
       )}
     />
@@ -162,11 +168,14 @@ function ResourceList({
 
 export default function WebResources({ onReady }: { onReady?: () => void }) {
   const { t } = useT();
+  const { values: settings } = useSettings();
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
   const readyFired = useRef(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
+  const [resourcesLoaded, setResourcesLoaded] = useState(false);
+  const [tagsLoaded, setTagsLoaded] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery);
@@ -199,26 +208,33 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
 
   const loadResources = useCallback(async () => {
-    let results: Resource[];
-    if (debouncedQuery.trim()) {
-      results = await window.prism.searchResources(debouncedQuery);
-    } else {
-      results = await window.prism.getResources();
-      setTotalCount(results.length);
-    }
-    if (activeTag) {
-      results = results.filter((r) => r.tags.includes(activeTag));
-    }
-    setResources(results);
-    if (!readyFired.current) {
-      readyFired.current = true;
-      onReady?.();
+    try {
+      let results: Resource[];
+      if (debouncedQuery.trim()) {
+        results = await window.prism.searchResources(debouncedQuery);
+      } else {
+        results = await window.prism.getResources();
+        setTotalCount(results.length);
+      }
+      if (activeTag) {
+        results = results.filter((r) => r.tags.includes(activeTag));
+      }
+      setResources(results);
+    } finally {
+      setResourcesLoaded(true);
+      if (!readyFired.current) {
+        readyFired.current = true;
+        onReady?.();
+      }
     }
   }, [debouncedQuery, activeTag, onReady]);
 
   const loadTags = useCallback(async () => {
-    const tags = await window.prism.getAllTags();
-    setAllTags(tags);
+    try {
+      setAllTags(await window.prism.getAllTags());
+    } finally {
+      setTagsLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -268,7 +284,12 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
   const handleDelete = async () => {
     if (!deleting) return;
-    await window.prism.deleteResource(deleting.id);
+    try {
+      await window.prism.deleteResource(deleting.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     showToast(t["common.deleted"]);
     loadResources();
     loadTags();
@@ -307,30 +328,24 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   };
 
   const applyTagColor = async (name: string, color: string) => {
-    await window.prism.setTagColor(name, color);
+    try {
+      await window.prism.setTagColor(name, color);
+    } catch {
+      showToast(t["common.actionFailed"], "error");
+      return;
+    }
     loadTags();
   };
 
   const openTagMenu = (e: React.MouseEvent, tag: TagInfo) => {
     onContextMenu(e, [
-      {
+      buildColorMenuItem(t, {
         label: t["resources.tagColor"],
-        icon: <Palette size={14} />,
-        children: [
-          {
-            label: t["resources.tagColorAuto"],
-            icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: hashColor(tag.name).bar }} />,
-            checked: !tag.color,
-            onClick: () => applyTagColor(tag.name, ""),
-          },
-          ...TAG_COLORS.map((c) => ({
-            label: t[`tagColor.${c.key}`],
-            icon: <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.bar }} />,
-            checked: tag.color.toLowerCase() === c.bar,
-            onClick: () => applyTagColor(tag.name, c.bar),
-          })),
-        ],
-      },
+        autoLabel: t["resources.tagColorAuto"],
+        autoSource: tag.name,
+        current: tag.color,
+        onSelect: (color) => applyTagColor(tag.name, color),
+      }),
       { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenamingTag(tag.name) },
       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeletingTag(tag.name) },
     ]);
@@ -338,7 +353,13 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
   const handleRenameTag = async (newName: string) => {
     if (!renamingTag) return;
-    await window.prism.renameTag(renamingTag, newName);
+    try {
+      await window.prism.renameTag(renamingTag, newName);
+    } catch {
+      showToast(t["common.actionFailed"], "error");
+      setRenamingTag(null);
+      return;
+    }
     if (activeTag === renamingTag) setActiveTag(newName);
     setRenamingTag(null);
     showToast(t["resources.tagRenamed"]);
@@ -348,7 +369,12 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
   const handleDeleteTag = async () => {
     if (!deletingTag) return;
-    await window.prism.deleteTag(deletingTag);
+    try {
+      await window.prism.deleteTag(deletingTag);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
     if (activeTag === deletingTag) setActiveTag(null);
     setDeletingTag(null);
     showToast(t["resources.tagDeleted"]);
@@ -359,7 +385,9 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   const reorderTagList = (from: number, to: number) => {
     const next = arrayMove(allTags, from, to);
     setAllTags(next);
-    void window.prism.reorderTags(next.map((tag) => tag.name));
+    void window.prism.reorderTags(next.map((tag) => tag.name)).catch(() => {
+      showToast(t["common.actionFailed"], "error");
+    });
   };
 
   // Group resources by tag for card view, following the sidebar's tag order
@@ -397,24 +425,27 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       let i = 0;
       return prev.map((r) => (subset.has(r.id) ? next[i++] : r));
     });
-    await window.prism.reorderResources(next.map((r) => r.id));
+    try {
+      await window.prism.reorderResources(next.map((r) => r.id));
+    } catch {
+      showToast(t["common.actionFailed"], "error");
+      loadResources();
+    }
   };
 
   return (
     <div className="h-full flex">
       {/* Tag sidebar */}
       <Sidebar storageKey="resources">
-          <button
+          <NavItem
             onClick={() => setActiveTag(null)}
-            className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1 pb-2 border-b border-line/50 ${
-              !activeTag
-                ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                : "text-secondary hover:text-primary hover:bg-elevated/50 font-medium"
-            }`}
-          >
-            <span className="flex-1 text-left truncate">{t["resources.allTags"]}</span>
-            <span className="text-xs text-muted">{totalCount}</span>
-          </button>
+            active={!activeTag}
+            className="mb-1 pb-2 border-b border-line/50 font-medium"
+            label={t["resources.allTags"]}
+            trailing={totalCount}
+          />
+          {!tagsLoaded && <SkeletonRows count={6} />}
+          {tagsLoaded && (
           <SortableList
             items={allTags}
             itemId={(tag) => tag.name}
@@ -423,39 +454,31 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               const c = colorForTag(tag.name);
               const isActive = activeTag === tag.name;
               return (
-                <button
+                <NavItem
                   onClick={() => setActiveTag(isActive ? null : tag.name)}
                   onContextMenu={(e) => openTagMenu(e, tag)}
                   style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors stagger-in ${
-                    isActive
-                      ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium active-bar"
-                      : "text-tertiary hover:text-primary hover:bg-elevated/50"
-                  }`}
-                >
-                  <div
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: c.bar }}
-                  />
-                  <span className="flex-1 text-left truncate">{tag.name}</span>
-                  <span className="text-xs text-muted">{tag.count}</span>
-                </button>
+                  active={isActive}
+                  className="stagger-in"
+                  leading={<span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.bar }} />}
+                  label={tag.name}
+                  trailing={tag.count}
+                />
               );
             }}
             renderOverlay={(tag) => (
-              <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-primary">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-control text-body text-primary">
                 <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: colorForTag(tag.name).bar }}
                 />
                 <span className="flex-1 truncate">{tag.name}</span>
-                <span className="text-xs text-muted">{tag.count}</span>
+                <span className="text-caption text-muted">{tag.count}</span>
               </div>
             )}
-          />
-          {allTags.length === 0 && (
-            <p className="px-3 py-8 text-center text-xs text-muted leading-relaxed">{t["resources.empty"]}</p>
+            />
           )}
+          {tagsLoaded && allTags.length === 0 && <EmptyState size="card" text={t["resources.noTags"]} />}
       </Sidebar>
 
       {/* Main content */}
@@ -475,7 +498,13 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
 
         {/* Content area */}
         <div className="flex-1 overflow-y-auto">
-          {resources.length === 0 && (
+          {debouncedQuery.trim() && resources.length >= settings.search_result_limit && (
+            <div className="px-4 py-1.5 text-caption text-faint">
+              {t["vault.resultLimitHint"].replace("{count}", String(settings.search_result_limit))}
+            </div>
+          )}
+          {!resourcesLoaded && <SkeletonRows count={8} className="p-3" />}
+          {resourcesLoaded && resources.length === 0 && (
             <EmptyState
               size="module"
               text={searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
@@ -484,7 +513,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
           )}
 
           {/* Card view (All) */}
-          {!activeTag && resources.length > 0 && (
+          {resourcesLoaded && !activeTag && resources.length > 0 && (
             <div className="p-3">
               {tagGroups.groups.map(({ tag, resources: items, color }) => (
                 <SectionCard
@@ -496,12 +525,16 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
                   collapsed={collapsedTags.has(tag)}
                   onToggle={() => toggleCollapse(tag)}
                   headerActions={
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
                       onClick={(e) => { e.stopPropagation(); setActiveTag(tag); }}
-                      className="text-xs text-faint hover:text-tertiary transition-colors"
+                      title={tag}
+                      aria-label={tag}
+                      className="!text-faint hover:!text-tertiary"
                     >
                       <ExternalLink size={12} />
-                    </button>
+                    </Button>
                   }
                 >
                   <ResourceList
@@ -536,7 +569,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
           )}
 
           {/* Flat list (tag filtered) */}
-          {activeTag && (
+          {resourcesLoaded && activeTag && (
             <ResourceList
               items={resources}
               flat
@@ -555,7 +588,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
         open={showModal}
         title={t["resources.addTitle"]}
         onClose={closeModal}
-        width="560px"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" size="sm" onClick={closeModal}>{t["resources.cancel"]}</Button>
@@ -565,7 +598,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
         <div className="space-y-4">
           <div>
-            <input
+            <Input
               type="text"
               value={modalUrl}
               onChange={(e) => setModalUrl(e.target.value)}
@@ -574,25 +607,25 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               }}
               placeholder={t["resources.addUrl"]}
               autoFocus
-              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full"
             />
           </div>
           <div>
-            <input
+            <Input
               type="text"
               value={modalTitle}
               onChange={(e) => setModalTitle(e.target.value)}
               placeholder={t["resources.title"]}
-              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full"
             />
           </div>
           <div>
-            <textarea
+            <Textarea
               value={modalNotes}
               onChange={(e) => setModalNotes(e.target.value)}
               placeholder={t["resources.notesPlaceholder"]}
               rows={3}
-              className="w-full resize-none bg-elevated border border-strong rounded-lg px-4 py-2 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full resize-none"
             />
           </div>
 
@@ -604,7 +637,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             placeholder={t["resources.tags"]}
             colorForTag={colorForTag}
           />
-          {modalError && <p className="text-xs text-red-400">{modalError}</p>}
+          {modalError && <p className="text-caption text-danger">{modalError}</p>}
         </div>
       </Modal>
 
@@ -613,7 +646,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
         open={editResource !== null}
         title={t["resources.editTitle"]}
         onClose={closeEditModal}
-        width="560px"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" size="sm" onClick={closeEditModal}>{t["resources.cancel"]}</Button>
@@ -623,18 +656,18 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-muted mb-1">{t["resources.addUrl"]}</label>
-            <input
+            <label className="block text-caption text-muted mb-1">{t["resources.addUrl"]}</label>
+            <Input
               type="text"
               value={editUrl}
               onChange={(e) => setEditUrl(e.target.value)}
               placeholder={t["resources.addUrl"]}
-              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full"
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">{t["resources.title"]}</label>
-            <input
+            <label className="block text-caption text-muted mb-1">{t["resources.title"]}</label>
+            <Input
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
@@ -643,17 +676,17 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               }}
               placeholder={t["resources.title"]}
               autoFocus
-              className="w-full bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full"
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">{t["resources.notes"]}</label>
-            <textarea
+            <label className="block text-caption text-muted mb-1">{t["resources.notes"]}</label>
+            <Textarea
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               placeholder={t["resources.notesPlaceholder"]}
               rows={4}
-              className="w-full resize-none bg-elevated border border-strong rounded-lg px-4 py-2.5 text-sm leading-relaxed placeholder-muted focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full resize-none"
             />
           </div>
 
@@ -665,7 +698,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             placeholder={t["resources.tags"]}
             colorForTag={colorForTag}
           />
-          {editError && <p className="text-xs text-red-400">{editError}</p>}
+          {editError && <p className="text-caption text-danger">{editError}</p>}
         </div>
       </Modal>
 

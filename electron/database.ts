@@ -278,14 +278,14 @@ function escapeLike(term: string): string {
   return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-export function searchResources(query: string): Resource[] {
+export function searchResources(query: string, limit = 200): Resource[] {
   const terms = query.split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
 
   const clauses = terms.map(() => "r.title LIKE ? ESCAPE '\\'").join(" AND ");
   const params = terms.map((t) => `%${escapeLike(t)}%`);
 
-  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.sort_order ASC, r.id ASC`).all(...params) as ResourceRow[];
+  const rows = db.prepare(`${RESOURCE_SELECT} WHERE ${clauses} ORDER BY r.sort_order ASC, r.id ASC LIMIT ?`).all(...params, limit) as ResourceRow[];
   return rows.map(rowToResource);
 }
 
@@ -368,7 +368,7 @@ export function getNoteList(vaultPath: string): NoteBrief[] {
   return db.prepare("SELECT id, path, title, tags, modified_at FROM notes WHERE vault_path = ? ORDER BY modified_at DESC").all(vaultPath) as NoteBrief[];
 }
 
-export function searchNotes(vaultPath: string, query: string): NoteBrief[] {
+export function searchNotes(vaultPath: string, query: string, limit = 200): NoteBrief[] {
   const terms = query.split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
 
@@ -379,7 +379,8 @@ export function searchNotes(vaultPath: string, query: string): NoteBrief[] {
     SELECT id, path, title, tags, modified_at FROM notes
     WHERE vault_path = ? AND ${clauses}
     ORDER BY modified_at DESC
-  `).all(vaultPath, ...params) as NoteBrief[];
+    LIMIT ?
+  `).all(vaultPath, ...params, limit) as NoteBrief[];
 }
 
 export interface NoteContentHit {
@@ -414,7 +415,7 @@ function makeSnippet(content: string, terms: string[]): string {
   return snippet;
 }
 
-export function searchNoteContents(vaultPath: string, query: string): NoteContentHit[] {
+export function searchNoteContents(vaultPath: string, query: string, limit = 200): NoteContentHit[] {
   const terms = query.split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
 
@@ -425,7 +426,8 @@ export function searchNoteContents(vaultPath: string, query: string): NoteConten
     SELECT path, title, content FROM notes
     WHERE vault_path = ? AND ${clauses}
     ORDER BY modified_at DESC
-  `).all(vaultPath, ...params) as { path: string; title: string; content: string }[];
+    LIMIT ?
+  `).all(vaultPath, ...params, limit) as { path: string; title: string; content: string }[];
 
   return rows.map(({ path, title, content }) => ({
     path,
@@ -473,6 +475,11 @@ export function getSetting(key: string): string | null {
 
 export function setSetting(key: string, value: string): void {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+}
+
+export function getAllSettings(): Record<string, string> {
+  const rows = db.prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[];
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
 }
 
 export interface TagInfo {
