@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Check, Star, Pencil, Trash2 } from "lucide-react";
 import Button from "../Button";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
+import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import ItemRow from "../ItemRow";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
@@ -154,13 +155,21 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
     onChanged();
   };
 
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <>
+        <span className="min-w-0 text-body font-medium text-primary truncate">{project.title}</span>
+        {project.action_count > 0 && (
+          <span className="text-caption text-muted flex-shrink-0 whitespace-nowrap">{progress}</span>
+        )}
+      </>
+    ),
+  }), [project.action_count, project.title, progress]);
+
+  useToolbarContribution("module:gtd", toolbar);
+
   return (
     <>
-      <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-        <span className="flex-1 text-body font-medium text-primary truncate">{project.title}</span>
-        {project.action_count > 0 && <span className="text-caption text-muted flex-shrink-0">{progress}</span>}
-      </div>
-
       <div className="px-4 py-2 border-b border-line/30 flex-shrink-0">
         <Textarea
           ref={inputRef}

@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { type CollectionData } from "./CollectionsSidebar";
+import { type CollectionData } from "./collectionTypes";
 import { useT } from "../i18n";
 import { useToast } from "../lib/toast";
 
@@ -14,6 +14,19 @@ export function toRelativePath(absPath: string, vaultPath: string): string {
     return absPath.slice(vaultPath.length).replace(/^[/\\]/, "").replace(/\\/g, "/");
   }
   return absPath.replace(/\\/g, "/");
+}
+
+// Like toRelativePath, but returns null for paths outside the vault. Collection
+// files may only ever reference notes inside their own vault; anything else is
+// a cross-vault leak and must never be persisted.
+export function relativePathInsideVault(absPath: string, vaultPath: string): string | null {
+  const vp = vaultPath.replace(/[\\/]+$/, "");
+  if (!vp) return null;
+  const vpNorm = vp.replace(/\\/g, "/").toLowerCase();
+  const apNorm = absPath.replace(/\\/g, "/").toLowerCase();
+  if (apNorm === vpNorm) return "";
+  if (!apNorm.startsWith(vpNorm + "/")) return null;
+  return absPath.slice(vp.length).replace(/^[/\\]+/, "").replace(/\\/g, "/");
 }
 
 interface VaultNote {
@@ -38,11 +51,12 @@ function collectionHasNote(c: CollectionData, relPath: string): boolean {
 
 interface UseCollectionsOptions {
   vaultPath: string;
+  dataVaultPath: string;
   notes: VaultNote[];
   loadNotes: () => Promise<void>;
 }
 
-export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOptions) {
+export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes }: UseCollectionsOptions) {
   const { t } = useT();
   const showToast = useToast();
   const [collections, setCollections] = useState<CollectionData[]>([]);
@@ -52,6 +66,12 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   const saveFailedRef = useRef(false);
 
   const persistCollections = useCallback((colls: CollectionData[]) => {
+    // Never write collections that belong to a different vault than the target.
+    // Dropping the save is strictly safer than overwriting another vault's file.
+    if (dataVaultPath !== vaultPath) {
+      console.warn("Skipped collections save: state/vault mismatch", { dataVaultPath, vaultPath });
+      return Promise.resolve();
+    }
     return window.prism.saveCollections(vaultPath, { version: 1, collections: colls })
       .then(() => { saveFailedRef.current = false; })
       .catch(() => {
@@ -60,7 +80,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
         showToast(t["common.saveFailed"], "error");
         setTimeout(() => { saveFailedRef.current = false; }, 4000);
       });
-  }, [vaultPath, showToast, t]);
+  }, [vaultPath, dataVaultPath, showToast, t]);
 
   const saveCollections = useCallback((colls: CollectionData[]) => {
     pendingRef.current = colls;
@@ -380,6 +400,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
   // A missing path is relinked only when exactly one note in the vault shares the
   // same file name — ambiguous or absent matches keep the "missing" marker.
   useEffect(() => {
+    if (dataVaultPath !== vaultPath) return;
     if (notes.length === 0 || collections.length === 0) return;
 
     const missing = new Set<string>();
@@ -408,7 +429,8 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
       if (!title) continue;
       const candidates = notesByTitle.get(title) ?? [];
       if (candidates.length === 1) {
-        renames.set(oldRel, toRelativePath(candidates[0].path, vaultPath));
+        const rel = relativePathInsideVault(candidates[0].path, vaultPath);
+        if (rel) renames.set(oldRel, rel);
       }
     }
     if (renames.size === 0) return;
@@ -423,7 +445,7 @@ export function useCollections({ vaultPath, notes, loadNotes }: UseCollectionsOp
       saveCollections(updated);
       return updated;
     });
-  }, [notes, collections, notesByRelPath, vaultPath, saveCollections]);
+  }, [notes, collections, notesByRelPath, vaultPath, dataVaultPath, saveCollections]);
 
   const mapNotes = useCallback((notePaths: string[]) => {
     return notePaths.map((relPath) => {

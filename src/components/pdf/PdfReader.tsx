@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   ArrowLeft,
   Columns2,
+  Columns3,
   FolderOpen,
   Maximize2,
   TriangleAlert,
 } from "lucide-react";
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
+import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import Button from "../Button";
 import Spinner from "../Spinner";
 import { loadPdf } from "./pdfjs";
@@ -18,6 +20,10 @@ import { pdfDocumentUrl, type PdfDocument } from "./types";
 interface Props {
   doc: PdfDocument;
   active: boolean;
+  focused: boolean;
+  toolbarScope: string;
+  splitOpen: boolean;
+  onToggleSplit: () => void;
   onClose: () => void;
   onShowInFolder: () => void;
 }
@@ -30,20 +36,43 @@ function clampZoom(value: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
 }
 
-export default function PdfReader({ doc, active, onClose, onShowInFolder }: Props) {
+interface ReaderState {
+  page: number;
+  zoom: number;
+  spread: boolean;
+}
+
+// Readers unmount when their tab is replaced by another document; keep the
+// page/zoom/spread per document so switching back lands where the user left.
+const readerStates = new Map<number, ReaderState>();
+
+export default function PdfReader({
+  doc,
+  active,
+  focused,
+  toolbarScope,
+  splitOpen,
+  onToggleSplit,
+  onClose,
+  onShowInFolder,
+}: Props) {
   const { t } = useT();
   const { values } = useSettings();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pageEls = useRef(new Map<number, HTMLDivElement>());
   const currentPageRef = useRef(1);
   const frameRef = useRef<number | null>(null);
+  const restoredRef = useRef(false);
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [baseWidth, setBaseWidth] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [spread, setSpread] = useState(false);
+  const [zoom, setZoom] = useState(() => {
+    const saved = readerStates.get(doc.id);
+    return saved ? saved.zoom : clampZoom(values.pdf_default_zoom / 100);
+  });
+  const [spread, setSpread] = useState(() => readerStates.get(doc.id)?.spread ?? false);
   const [pageDraft, setPageDraft] = useState("1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -51,12 +80,15 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
   useEffect(() => {
     let cancelled = false;
     let proxy: PDFDocumentProxy | null = null;
+    const saved = readerStates.get(doc.id);
+    const startPage = saved?.page ?? 1;
     setPdf(null);
     setNumPages(0);
     setBaseWidth(0);
-    currentPageRef.current = 1;
-    setPageDraft("1");
-    setZoom(clampZoom(values.pdf_default_zoom / 100));
+    currentPageRef.current = startPage;
+    setPageDraft(String(startPage));
+    setZoom(saved ? saved.zoom : clampZoom(values.pdf_default_zoom / 100));
+    setSpread(saved?.spread ?? false);
     setError("");
     setLoading(true);
 
@@ -152,8 +184,25 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
     jumpToPage(Math.floor(parsed));
   }, [jumpToPage, pageDraft]);
 
+  // Page elements register after paint, so restore the saved page on the next
+  // frame instead of scrolling during the initial layout.
   useEffect(() => {
-    if (!active) return;
+    if (!pdf || restoredRef.current) return;
+    restoredRef.current = true;
+    const saved = readerStates.get(doc.id);
+    if (!saved || saved.page <= 1) return;
+    const target = saved.page;
+    requestAnimationFrame(() => jumpToPage(target));
+  }, [pdf, doc.id, jumpToPage]);
+
+  useEffect(() => {
+    return () => {
+      readerStates.set(doc.id, { page: currentPageRef.current, zoom, spread });
+    };
+  }, [doc.id, zoom, spread]);
+
+  useEffect(() => {
+    if (!focused) return;
     const handler = (e: KeyboardEvent) => {
       // A dialog owns the keyboard while it is open (its own Esc handling
       // runs on document, so ours must not also leave the reader).
@@ -177,7 +226,7 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [active, jumpToPage, onClose, spread]);
+  }, [focused, jumpToPage, onClose, spread]);
 
   const availableWidth = Math.max(200, containerWidth - 48);
   const spreadGap = 16;
@@ -188,18 +237,19 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
   const pageWidth = baseWidth > 0 ? Math.round(baseWidth * scale) : 0;
   const rowCount = spread ? Math.ceil(numPages / 2) : numPages;
 
-  return (
-    <div className="h-full flex flex-col">
-      <div className="h-11 flex items-center gap-2 px-2 border-b border-line bg-surface/60 flex-shrink-0">
-        <Button variant="ghost" size="icon-md" onClick={onClose} title={t["pdf.reader.back"]}>
-          <ArrowLeft size={16} />
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} title={t["pdf.reader.back"]}>
+          <ArrowLeft size={15} />
         </Button>
-        <div className="min-w-0 flex-1 truncate text-body font-medium text-primary px-1" title={doc.title}>
+        <span className="min-w-0 text-body font-medium text-primary truncate" title={doc.title}>
           {doc.title}
-        </div>
-
-        <div className="w-px h-5 bg-line/70 flex-shrink-0" />
-
+        </span>
+      </>
+    ),
+    controls: (
+      <>
         <div className="flex items-center gap-1.5">
           <span className="text-caption text-muted whitespace-nowrap">{t["pdf.reader.page"]}</span>
           <input
@@ -221,9 +271,7 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
             / {numPages || "—"}
           </span>
         </div>
-
         <div className="w-px h-5 bg-line/70 flex-shrink-0" />
-
         <div className="flex items-center gap-1.5">
           <span className="text-caption text-muted whitespace-nowrap">{t["pdf.reader.zoom"]}</span>
           <input
@@ -246,33 +294,45 @@ export default function PdfReader({ doc, active, onClose, onShowInFolder }: Prop
             {Math.round(zoom * 100)}%
           </span>
         </div>
+      </>
+    ),
+    actions: (
+      <>
+        <Button variant="ghost" size="icon-sm" onClick={() => setZoom(1)} title={t["pdf.reader.fitWidth"]}>
+          <Maximize2 size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          active={spread}
+          onClick={() => setSpread((value) => !value)}
+          title={spread ? t["pdf.reader.single"] : t["pdf.reader.spread"]}
+        >
+          <Columns2 size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          active={splitOpen}
+          onClick={onToggleSplit}
+          title={splitOpen ? t["workspace.closeSplit"] : t["workspace.openSplit"]}
+        >
+          <Columns3 size={15} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onShowInFolder} title={t["pdf.showInFolder"]}>
+          <FolderOpen size={15} />
+        </Button>
+      </>
+    ),
+  }), [
+    commitPageDraft, doc.title, numPages, onClose, onShowInFolder, onToggleSplit, pageDraft,
+    splitOpen, spread, t, zoom,
+  ]);
 
-        <div className="w-px h-5 bg-line/70 flex-shrink-0" />
+  useToolbarContribution(toolbarScope, toolbar);
 
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-md"
-            onClick={() => setZoom(1)}
-            title={t["pdf.reader.fitWidth"]}
-          >
-            <Maximize2 size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-md"
-            active={spread}
-            onClick={() => setSpread((v) => !v)}
-            title={spread ? t["pdf.reader.single"] : t["pdf.reader.spread"]}
-          >
-            <Columns2 size={16} />
-          </Button>
-          <Button variant="ghost" size="icon-md" onClick={onShowInFolder} title={t["pdf.showInFolder"]}>
-            <FolderOpen size={16} />
-          </Button>
-        </div>
-      </div>
-
+  return (
+    <div className="h-full flex flex-col">
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted">
           <Spinner size={22} />

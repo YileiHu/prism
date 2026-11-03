@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } 
 interface SidebarProps {
   children: ReactNode;
   footer?: ReactNode;
+  // Let the body fill the remaining height instead of scrolling as one block,
+  // so an inner list can stretch to the bottom edge.
+  fill?: boolean;
 }
 
 const MIN_WIDTH = 160;
@@ -55,7 +58,7 @@ function setSharedWidth(next: number, persist: boolean) {
   if (persist) localStorage.setItem(STORAGE_KEY, String(sharedWidth));
 }
 
-export default function Sidebar({ children, footer }: SidebarProps) {
+export default function Sidebar({ children, footer, fill = false }: SidebarProps) {
   // All mounted sidebars (including hidden module tabs) share the same width.
   const width = useSyncExternalStore(subscribe, () => sharedWidth);
   const dragging = useRef(false);
@@ -87,7 +90,13 @@ export default function Sidebar({ children, footer }: SidebarProps) {
       className="flex-shrink-0 border-r border-line glass bg-base/50 flex flex-col select-none relative group"
       style={{ width }}
     >
-      <div className="flex-1 overflow-y-auto py-1.5 px-2">{children}</div>
+      <div
+        className={`flex-1 min-h-0 py-1.5 px-2 ${
+          fill ? "flex flex-col overflow-hidden" : "overflow-y-auto"
+        }`}
+      >
+        {children}
+      </div>
       {footer && (
         <div className="border-t border-line px-2 py-2">{footer}</div>
       )}

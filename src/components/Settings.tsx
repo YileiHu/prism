@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BookOpen, Database, History, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { useSettings } from "../lib/settings";
+import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
 import Button from "./Button";
-import Sidebar from "./Sidebar";
+import CollapsibleSidebar from "./CollapsibleSidebar";
 import NavItem from "./NavItem";
+import ChangelogModal from "./ChangelogModal";
 import ConfirmDialog from "./ConfirmDialog";
 import GeneralSection from "./settings/GeneralSection";
 import VaultsSection from "./settings/VaultsSection";
@@ -35,6 +37,7 @@ export default function Settings() {
   });
   const [saved, setSaved] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(CATEGORY_KEY, category); } catch { /* ignore */ }
@@ -73,9 +76,30 @@ export default function Settings() {
     { key: "external", label: t["settings.catExternal"], icon: Wrench },
   ];
 
+  const toolbar = useMemo<ToolbarContribution>(() => {
+    const label = categories.find((entry) => entry.key === category)?.label ?? t["nav.settings"];
+    return {
+      title: (
+        <span className="min-w-0 text-body font-medium text-primary truncate">{label}</span>
+      ),
+      subtitle: saved
+        ? <span className="text-caption text-success whitespace-nowrap">{t["settings.saved"]}</span>
+        : undefined,
+      actions: (
+        <Button variant="ghost" size="icon-sm" onClick={() => setShowChangelog(true)} title={t["changelog.title"]}>
+          <History size={15} />
+        </Button>
+      ),
+    };
+    // categories is rebuilt each render; category/saved/t drive the visible model
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, saved, t]);
+
+  useToolbarContribution("module:settings", toolbar);
+
   return (
     <div className="h-full flex">
-      <Sidebar>
+      <CollapsibleSidebar>
         <nav className="space-y-0.5">
           {categories.map(({ key, label, icon: Icon }) => (
             <NavItem
@@ -92,7 +116,7 @@ export default function Settings() {
             <span className="text-caption text-success">{t["settings.saved"]}</span>
           </div>
         )}
-      </Sidebar>
+      </CollapsibleSidebar>
 
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl">
@@ -110,10 +134,16 @@ export default function Settings() {
               <div className="text-body font-medium text-secondary">{t["settings.reset"]}</div>
               <p className="text-caption text-muted mt-0.5">{t["settings.resetDesc"]}</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)}>
-              <RotateCcw size={14} />
-              {t["settings.reset"]}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowChangelog(true)}>
+                <History size={14} />
+                {t["changelog.title"]}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)}>
+                <RotateCcw size={14} />
+                {t["settings.reset"]}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -127,6 +157,8 @@ export default function Settings() {
         onConfirm={handleReset}
         onClose={() => setConfirmReset(false)}
       />
+
+      <ChangelogModal open={showChangelog} onClose={() => setShowChangelog(false)} />
     </div>
   );
 }

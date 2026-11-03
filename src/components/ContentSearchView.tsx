@@ -5,7 +5,7 @@ import { useT } from "../i18n";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useSettings } from "../lib/settings";
 import { resolveTagColor, type PaletteColor } from "../lib/colors";
-import { type CollectionData } from "./CollectionsSidebar";
+import { type CollectionData } from "./collectionTypes";
 import { toRelativePath } from "./useCollections";
 import EmptyState from "./EmptyState";
 import { SkeletonRows } from "./Skeleton";

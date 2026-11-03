@@ -1,137 +1,124 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  BookOpen,
+  Columns3,
+  Copy,
+  FileText,
+  Globe,
+  House,
+  Library,
+  ListChecks,
+  Minus,
+  Settings2,
+  Square,
+  X,
+} from "lucide-react";
 import WebResources from "./components/WebResources";
-import VaultView, { type NoteOpenRequest } from "./components/VaultView";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
 import HomeView from "./components/home/HomeView";
-import PdfLibrary from "./components/pdf/PdfLibrary";
-import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks, House, BookOpen } from "lucide-react";
-
-import { useT } from "./i18n";
+import LibraryView from "./components/library/LibraryView";
+import DocumentWorkspace from "./components/workspace/DocumentWorkspace";
+import { LibraryDataProvider } from "./components/library/LibraryDataProvider";
+import AppToolbar from "./components/toolbar/AppToolbar";
+import type { ToolbarContribution } from "./components/toolbar/ToolbarProvider";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Button from "./components/Button";
 import SplashScreen from "./components/SplashScreen";
-import { ContextMenuProvider } from "./lib/useContextMenu";
+import TabStrip from "./components/TabStrip";
+import { useContextMenu } from "./lib/useContextMenu";
 import { useGlobalShortcuts } from "./lib/useShortcuts";
 import { ToastProvider } from "./lib/toast";
-import ChangelogModal from "./components/ChangelogModal";
+import { useT } from "./i18n";
+import type { Translation } from "./i18n/zh";
+import { useWorkspace } from "./lib/workspace/WorkspaceProvider";
+import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState";
+import { makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
+import { usePdfDocuments } from "./components/pdf/PdfDocumentsProvider";
 import { type VaultEntry } from "./types";
 import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
+import { type MenuItem } from "./components/ContextMenu";
 import "./lib/api";
 
-type SpecialTab = "home" | "pdf" | "resources" | "gtd" | "settings";
-
-const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["home", "pdf", "resources", "gtd", "settings"]);
+const MODULES: { id: ModuleId; icon: typeof House; labelKey: keyof Translation }[] = [
+  { id: "home", icon: House, labelKey: "nav.home" },
+  { id: "library", icon: Library, labelKey: "nav.library" },
+  { id: "gtd", icon: ListChecks, labelKey: "nav.gtd" },
+  { id: "resources", icon: Globe, labelKey: "nav.resources" },
+];
 
 export default function App() {
   const { t } = useT();
-  const [activeTab, setActiveTab] = useState<string>("home");
+  const workspace = useWorkspace();
+  const { state, hydrate, showModule, activateDoc, openDoc, closeDoc, closeOthers, closeAll, openInSplit, closeSplit, closeVaultDocs, closePdfDocsExcept } = workspace;
+  const pdf = usePdfDocuments();
+  const { onContextMenu } = useContextMenu();
+  const sidebarCollapsed = useSidebarCollapsed();
+
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [maximized, setMaximized] = useState(false);
-  const [mountedVaults, setMountedVaults] = useState<Set<string>>(new Set());
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [gtdFocus, setGtdFocus] = useState<GtdFocus | null>(null);
-  const [noteOpenRequest, setNoteOpenRequest] = useState<NoteOpenRequest | null>(null);
   const splashHidden = useRef(false);
+  const vaultsRef = useRef(vaults);
+  vaultsRef.current = vaults;
+  const pendingNotesRef = useRef<{ path: string; title?: string }[]>([]);
 
-  useGlobalShortcuts(activeTab, !SPECIAL_TAB_KEYS.has(activeTab));
+  const dismissSplash = useCallback(() => {
+    if (splashHidden.current) return;
+    splashHidden.current = true;
+    setSplashFadeOut(true);
+    setTimeout(() => setSplashVisible(false), 500);
+  }, []);
 
   useEffect(() => {
     window.prism.isMaximized().then(setMaximized);
     return window.prism.onMaximizeChange(setMaximized);
   }, []);
 
-  // Load vaults + select initial tab (always the home dashboard)
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    void (async () => {
       const raw = await window.prism.getSetting("vault_paths");
       let parsed: VaultEntry[] = [];
       if (raw) {
-        try { parsed = JSON.parse(raw); } catch { parsed = []; }
+        try { parsed = JSON.parse(raw) as VaultEntry[]; } catch { parsed = []; }
       }
+      if (cancelled) return;
       setVaults(parsed);
-      // Seed the background preload chain: mounting the first vault triggers its
-      // scan, and each scan completion mounts the next vault (handleScanComplete)
-      if (parsed.length > 0) setMountedVaults(new Set([parsed[0].path]));
-      setActiveTab("home");
-      // WebResources may have finished loading while settings were being read
-      if (contentReadyRef.current) dismissSplash();
+      try {
+        await hydrate(parsed);
+      } finally {
+        if (!cancelled) dismissSplash();
+      }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [hydrate, dismissSplash]);
 
-  // Track mounted vaults so switching tabs doesn't unmount
-  useEffect(() => {
-    if (!SPECIAL_TAB_KEYS.has(activeTab)) {
-      setMountedVaults((prev) => {
-        if (prev.has(activeTab)) return prev;
-        return new Set([...prev, activeTab]);
-      });
-    }
-  }, [activeTab]);
-
-  // Preload: chain vault loads one at a time so setVaultPath doesn't conflict
-  const vaultsRef = useRef(vaults);
-  vaultsRef.current = vaults;
-  const mountedRef = useRef(mountedVaults);
-  mountedRef.current = mountedVaults;
-  const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
-  const contentReadyRef = useRef(false);
-
-  const dismissSplash = () => {
-    if (splashHidden.current) return;
-    splashHidden.current = true;
-    setSplashFadeOut(true);
-    setTimeout(() => setSplashVisible(false), 500);
-  };
-
-  const handleScanComplete = useCallback(() => {
-    dismissSplash();
-    const v = vaultsRef.current;
-    const m = mountedRef.current;
-    const a = activeTabRef.current;
-    const next = v.find((vault) => !m.has(vault.path) && vault.path !== a);
-    if (next) {
-      setMountedVaults((prev) => new Set([...prev, next.path]));
-    }
-  }, []);
-
-  const handleContentReady = useCallback(() => {
-    contentReadyRef.current = true;
-    // WebResources reports readiness; special tabs dismiss the splash on it,
-    // vault tabs dismiss on scan completion
-    if (SPECIAL_TAB_KEYS.has(activeTabRef.current)) {
-      dismissSplash();
-    }
-  }, []);
-
-  // Sync vault list from Settings (focus + custom event)
+  // Keep the vault list in sync with Settings, stop watchers for removed
+  // vaults and drop their document tabs.
   useEffect(() => {
     const syncVaults = async () => {
       const raw = await window.prism.getSetting("vault_paths");
       let parsed: VaultEntry[] = [];
       if (raw) {
-        try { parsed = JSON.parse(raw); } catch { return; }
+        try { parsed = JSON.parse(raw) as VaultEntry[]; } catch { return; }
       }
-      // Stop file watchers for removed vaults
-      const removed = vaultsRef.current.filter((p) => !parsed.some((v) => v.path === p.path));
-      for (const r of removed) window.prism.unwatchVault(r.path);
+      for (const removed of vaultsRef.current) {
+        if (parsed.some((vault) => normalizePath(vault.path) === normalizePath(removed.path))) continue;
+        void window.prism.unwatchVault(removed.path);
+        closeVaultDocs(removed.path);
+      }
+      for (const added of parsed) {
+        if (vaultsRef.current.some((vault) => normalizePath(vault.path) === normalizePath(added.path))) continue;
+        void window.prism.setVaultPath(added.path).catch(() => {});
+      }
       setVaults(parsed);
-
-      const current = activeTabRef.current;
-      if (!SPECIAL_TAB_KEYS.has(current)) {
-        const stillExists = parsed.some((v) => v.path === current);
-        if (!stillExists) {
-          const lastPath = await window.prism.getSetting("last_vault_path");
-          if (lastPath) {
-            const fallback = parsed.find((v) => v.path === lastPath);
-            if (fallback) { setActiveTab(fallback.path); return; }
-          }
-          if (parsed.length > 0) setActiveTab(parsed[0].path);
-          else setActiveTab("resources");
-        }
+      const notePath = state.library.kind === "note" ? state.library.vaultPath : "";
+      if (notePath && !parsed.some((vault) => normalizePath(vault.path) === normalizePath(notePath))) {
+        if (parsed.length > 0) workspace.setLibrary({ kind: "note", vaultPath: parsed[0].path });
+        else if (pdf.repoPath) workspace.setLibrary({ kind: "pdf", repoPath: pdf.repoPath });
       }
     };
     window.addEventListener("focus", syncVaults);
@@ -140,177 +127,221 @@ export default function App() {
       window.removeEventListener("focus", syncVaults);
       window.removeEventListener("vaults-changed", syncVaults);
     };
-  }, []);
+  }, [closeVaultDocs, pdf.repoPath, state.library, workspace]);
 
-  const handleTabClick = (tabId: string) => {
-    setActiveTab(tabId);
-    if (!SPECIAL_TAB_KEYS.has(tabId)) {
-      window.prism.setSetting("last_vault_path", tabId);
-    }
-  };
-
-  const handleNavigateToGtd = (req: GtdFocusRequest) => {
-    setGtdFocus({ ...req, seq: Date.now() });
-    handleTabClick("gtd");
-  };
-
-  // Home dashboard deep link: open a note in the in-app editor. The matching
-  // VaultView pane consumes the request via openRequest (it also covers
-  // vaults that are not mounted yet).
+  // A repository switch invalidates every PDF tab from the previous library.
   useEffect(() => {
-    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ path: string; title?: string }>).detail;
+    if (!pdf.repoPath) return;
+    closePdfDocsExcept(pdf.repoPath);
+  }, [closePdfDocsExcept, pdf.repoPath]);
+
+  const focusedDoc = useMemo(
+    () => (state.activeId ? state.tabs.find((tab) => tab.id === state.activeId) ?? null : null),
+    [state.activeId, state.tabs],
+  );
+
+  const shortcutVault = focusedDoc
+    ? focusedDoc.kind === "note" ? focusedDoc.vaultPath : ""
+    : !state.activeId && state.module === "library" && state.library.kind === "note"
+      ? state.library.vaultPath
+      : "";
+
+  useGlobalShortcuts(shortcutVault, shortcutVault !== "");
+
+  const handleNavigateToGtd = (request: GtdFocusRequest) => {
+    setGtdFocus({ ...request, seq: Date.now() });
+    showModule("gtd");
+  };
+
+  const openLinkedNote = useCallback((detail: { path: string; title?: string }) => {
+    const target = vaultsRef.current.find((vault) => {
+      const vaultPath = normalizePath(vault.path);
+      const notePath = normalizePath(detail.path);
+      return notePath === vaultPath || notePath.startsWith(`${vaultPath}/`);
+    });
+    if (!target) return false;
+    const fallbackTitle = detail.path.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ?? detail.path;
+    openDoc(makeNoteDoc(target.path, detail.path, detail.title || fallbackTitle));
+    return true;
+  }, [openDoc]);
+
+  // Deep links land before or after hydration; WorkspaceProvider merges both.
+  // A link that arrives before the vault list is known waits for it.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ path: string; title?: string }>).detail;
       if (!detail?.path) return;
-      const pNorm = norm(detail.path);
-      const target = vaultsRef.current.find((v) => {
-        const vNorm = norm(v.path);
-        return pNorm === vNorm || pNorm.startsWith(vNorm + "/");
-      });
-      if (!target) return;
-      const fallbackTitle = detail.path.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ?? detail.path;
-      setNoteOpenRequest({
-        seq: Date.now(),
-        vaultPath: target.path,
-        path: detail.path,
-        title: detail.title || fallbackTitle,
-      });
-      handleTabClick(target.path);
+      if (vaultsRef.current.length === 0) {
+        pendingNotesRef.current.push(detail);
+        return;
+      }
+      openLinkedNote(detail);
     };
     window.addEventListener("prism:open-note", handler);
     return () => window.removeEventListener("prism:open-note", handler);
-  }, []);
+  }, [openLinkedNote]);
 
-  const vaultTabs = vaults.map((v) => ({
-    key: v.path,
-    label: v.name,
-    icon: FolderSearch,
-  }));
-  const homeTab = { key: "home", label: t["nav.home"], icon: House };
-  const gtdTab = { key: "gtd", label: t["nav.gtd"], icon: ListChecks };
-  const specialTabs: { key: SpecialTab; label: string; icon: typeof Globe }[] = [
-    { key: "pdf", label: t["nav.pdf"], icon: BookOpen },
-    { key: "resources", label: t["nav.resources"], icon: Globe },
-    { key: "settings", label: t["nav.settings"], icon: Settings2 },
-  ];
-  const allTabs = [homeTab, gtdTab, ...vaultTabs, ...specialTabs];
+  useEffect(() => {
+    if (vaults.length === 0) return;
+    const pending = pendingNotesRef.current;
+    pendingNotesRef.current = [];
+    for (const detail of pending) openLinkedNote(detail);
+  }, [vaults, openLinkedNote]);
 
-  // Inactive panes stay laid out (visibility instead of display:none) so scroll
-  // positions and virtualizer measurements survive tab switches without flashes
+  const workspaceActive = state.activeId !== null;
+  const moduleActive = workspaceActive ? null : state.module;
+
   const paneStyle = (active: boolean): React.CSSProperties =>
     active
       ? { height: "100%" }
-      : { position: "absolute", inset: 0, height: "100%", visibility: "hidden" };
+      : { position: "absolute", inset: 0, height: "100%", visibility: "hidden", overflow: "hidden" };
+
+  const tabItems = state.tabs.map((tab) => ({
+    id: tab.id,
+    title: tab.title,
+    icon: tab.kind === "note" ? <FileText size={12} /> : <BookOpen size={12} />,
+  }));
+
+  const handleTabContextMenu = (id: string, event: React.MouseEvent) => {
+    const items: MenuItem[] = [
+      { label: t["workspace.closeTab"], icon: <X size={14} />, onClick: () => closeDoc(id) },
+      { label: t["workspace.closeOthers"], onClick: () => closeOthers(id) },
+      { label: t["workspace.closeAll"], onClick: closeAll },
+      { label: t["workspace.openSplit"], icon: <Columns3 size={14} />, onClick: () => openInSplit(id) },
+    ];
+    if (state.split) {
+      items.push({ label: t["workspace.closeSplit"], onClick: closeSplit });
+    }
+    onContextMenu(event, items);
+  };
+
+  const toolbarScope = workspaceActive
+    ? state.split ? `doc:${state.split.focused}` : "doc:single"
+    : `module:${state.module}`;
+
+  const fallbackToolbar: ToolbarContribution = {
+    title: (
+      <span className="text-body font-medium text-primary">
+        {t[MODULES.find((module) => module.id === state.module)?.labelKey ?? "nav.settings"]}
+      </span>
+    ),
+  };
 
   return (
     <ErrorBoundary>
-    <ContextMenuProvider>
-    <ToastProvider>
-    <div
-      className="h-screen flex flex-col app-shell text-primary select-none"
-      style={{ borderRadius: "8px", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
-    >
-      <header
-        className="flex items-center pl-2 pr-2 h-12 glass bg-surface/70 border-b border-line flex-shrink-0"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      >
-        <nav
-          className="flex items-center h-full flex-1 min-w-0 overflow-x-auto scrollbar-none"
-          onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY; }}
-        >
-          {allTabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => handleTabClick(key)}
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-              className={`relative h-full flex items-center gap-1.5 px-3 text-control font-medium transition-colors flex-shrink-0 ${
-                activeTab === key
-                  ? "text-[var(--accent-text)]"
-                  : "text-muted hover:text-secondary"
-              }`}
+      <LibraryDataProvider vaults={vaults}>
+        <ToastProvider>
+          <div
+            className="h-screen flex flex-col app-shell text-primary select-none"
+            style={{ borderRadius: "8px", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
+          >
+            <header
+              className="flex items-center h-12 glass bg-surface/70 border-b border-line flex-shrink-0"
+              style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
-              <Icon size={15} className="flex-shrink-0" />
-              <span className="max-w-[140px] truncate">{label}</span>
-              {activeTab === key && (
-                <span className="absolute bottom-0 left-3 right-3 h-[3px] rounded-full bg-[var(--accent)]" />
-              )}
-            </button>
-          ))}
-        </nav>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => setChangelogOpen(true)}
-          title={t["changelog.button"]}
-          className="w-8 h-8 mr-1"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <Megaphone size={15} strokeWidth={1.5} />
-        </Button>
-        <div
-          className="flex items-center gap-1 flex-shrink-0"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => window.prism.minimizeWindow()}
-            className="w-8 h-8"
-          >
-            <Minus size={14} strokeWidth={1.5} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => window.prism.maximizeWindow()}
-            className="w-8 h-8"
-          >
-            {maximized ? <Copy size={13} strokeWidth={1.5} /> : <Square size={13} strokeWidth={1.5} />}
-          </Button>
-          <button
-            onClick={() => window.prism.closeWindow()}
-            className="w-8 h-8 flex items-center justify-center rounded-control text-muted hover:text-on-accent hover:bg-danger/70 transition-colors"
-          >
-            <X size={15} strokeWidth={1.5} />
-          </button>
-        </div>
-      </header>
+              <nav
+                className="flex items-center gap-0.5 pl-2 pr-1 h-full flex-shrink-0"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              >
+                {MODULES.map(({ id, icon: Icon, labelKey }) => (
+                  <Button
+                    key={id}
+                    variant="ghost"
+                    size="icon-sm"
+                    active={!workspaceActive && state.module === id}
+                    onClick={() => showModule(id)}
+                    title={t[labelKey]}
+                  >
+                    <Icon size={17} strokeWidth={1.6} />
+                  </Button>
+                ))}
+              </nav>
 
-      <main className="flex-1 overflow-hidden relative">
-        <div style={paneStyle(activeTab === "home")} className={activeTab === "home" ? "pane-enter" : ""}>
-          <HomeView active={activeTab === "home"} onNavigateToGtd={handleNavigateToGtd} />
-        </div>
-        <div style={paneStyle(activeTab === "pdf")} className={activeTab === "pdf" ? "pane-enter" : ""}>
-          <PdfLibrary active={activeTab === "pdf"} onOpenSettings={() => handleTabClick("settings")} />
-        </div>
-        <div style={paneStyle(activeTab === "resources")} className={activeTab === "resources" ? "pane-enter" : ""}>
-          <WebResources onReady={handleContentReady} />
-        </div>
-        <div style={paneStyle(activeTab === "gtd")} className={activeTab === "gtd" ? "pane-enter" : ""}>
-          <GtdView focus={gtdFocus} />
-        </div>
-        <div style={paneStyle(activeTab === "settings")} className={activeTab === "settings" ? "pane-enter" : ""}>
-          <Settings />
-        </div>
-        {vaults.map((v) => {
-          const isMounted = mountedVaults.has(v.path) || activeTab === v.path;
-          if (!isMounted) return null;
-          return (
-            <div key={v.path} style={paneStyle(activeTab === v.path)} className={activeTab === v.path ? "pane-enter" : ""}>
-              <VaultView
-                vaultPath={v.path}
-                onScanComplete={handleScanComplete}
-                openRequest={noteOpenRequest}
+              <TabStrip
+                variant="chrome"
+                items={tabItems}
+                activeId={state.activeId}
+                closeLabel={t["workspace.closeTab"]}
+                onSelect={activateDoc}
+                onClose={closeDoc}
+                onReorder={workspace.reorderDocs}
+                onTabContextMenu={handleTabContextMenu}
+                rightActions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      active={!workspaceActive && state.module === "settings"}
+                      onClick={() => showModule("settings")}
+                      title={t["nav.settings"]}
+                      className="mx-1"
+                    >
+                      <Settings2 size={16} strokeWidth={1.5} />
+                    </Button>
+                    <div className="w-px h-5 bg-line/70" />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => window.prism.minimizeWindow()}
+                    >
+                      <Minus size={14} strokeWidth={1.5} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => window.prism.maximizeWindow()}
+                    >
+                      {maximized ? <Copy size={13} strokeWidth={1.5} /> : <Square size={13} strokeWidth={1.5} />}
+                    </Button>
+                    <button
+                      onClick={() => window.prism.closeWindow()}
+                      className="w-8 h-8 flex items-center justify-center rounded-control text-muted hover:text-on-accent hover:bg-danger/70 transition-colors"
+                    >
+                      <X size={15} strokeWidth={1.5} />
+                    </button>
+                  </>
+                }
               />
-            </div>
-          );
-        })}
-      </main>
-      {splashVisible && <SplashScreen fadeOut={splashFadeOut} />}
-      <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />
-    </div>
-    </ToastProvider>
-    </ContextMenuProvider>
+            </header>
+
+            <AppToolbar
+              scopeKey={toolbarScope}
+              fallback={fallbackToolbar}
+              sidebar={workspaceActive
+                || state.module === "library"
+                || state.module === "resources"
+                || state.module === "gtd"
+                || state.module === "settings"
+                ? { collapsed: sidebarCollapsed, onToggle: toggleSidebarCollapsed }
+                : undefined}
+            />
+
+            <main className="flex-1 overflow-hidden relative">
+              <div style={paneStyle(moduleActive === "home")} className={moduleActive === "home" ? "pane-enter" : ""}>
+                <HomeView active={moduleActive === "home"} onNavigateToGtd={handleNavigateToGtd} />
+              </div>
+              <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
+                <WebResources />
+              </div>
+              <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
+                <GtdView focus={gtdFocus} />
+              </div>
+              <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
+                <LibraryView onOpenSettings={() => showModule("settings")} />
+              </div>
+              <div style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
+                <Settings />
+              </div>
+
+              <div style={paneStyle(workspaceActive)}>
+                <DocumentWorkspace active={workspaceActive} />
+              </div>
+            </main>
+
+            {splashVisible && <SplashScreen fadeOut={splashFadeOut} />}
+          </div>
+        </ToastProvider>
+      </LibraryDataProvider>
     </ErrorBoundary>
   );
 }

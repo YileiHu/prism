@@ -78,7 +78,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export type SettingKey = keyof AppSettings;
-export type SettingValue = AppSettings[SettingKey];
 
 export type NumberRange = { min: number; max: number; step: number };
 

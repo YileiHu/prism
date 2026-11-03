@@ -9,6 +9,7 @@ import Input from "../Input";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import { type VaultEntry } from "../../types";
+import { VaultIcon } from "../../lib/vaultIcons";
 import { SectionHeader, Select, SettingBlock, TextField } from "./controls";
 
 interface Props {
@@ -38,6 +39,19 @@ export default function VaultsSection({ onSaved }: Props) {
       const style = await window.prism.getSetting("image_path_style");
       if (style) setImagePathStyle(style);
     })().finally(() => setLoaded(true));
+  }, []);
+
+  // The sidebar can change a vault's icon; re-read so saving here never
+  // writes back a stale list.
+  useEffect(() => {
+    const reload = () => {
+      void (async () => {
+        const raw = await window.prism.getSetting("vault_paths");
+        try { setVaults(raw ? JSON.parse(raw) as VaultEntry[] : []); } catch { /* ignore */ }
+      })();
+    };
+    window.addEventListener("vaults-changed", reload);
+    return () => window.removeEventListener("vaults-changed", reload);
   }, []);
 
   const saveVaults = useCallback(async (updated: VaultEntry[]) => {
@@ -100,7 +114,7 @@ export default function VaultsSection({ onSaved }: Props) {
         {loaded && vaults.length === 0 && <EmptyState size="card" text={t["settings.noVaults"]} />}
         {vaults.map((v, i) => (
           <div key={v.path} className="flex items-center gap-3 p-3 bg-surface/50 rounded-control border border-line/50">
-            <FolderOpen size={16} className="text-warning flex-shrink-0" />
+            <VaultIcon name={v.icon} size={16} className="text-warning flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-body text-primary font-medium truncate">{v.name}</div>
               <div className="text-caption text-muted truncate">{v.path}</div>

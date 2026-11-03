@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
-import { BookOpen, Pencil, Table, TextQuote } from "lucide-react";
+import { BookOpen, Columns3, Pencil, Table, TextQuote, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useSettings } from "../../lib/settings";
 import { useTheme } from "../../theme/ThemeProvider";
+import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { type MenuItem } from "../ContextMenu";
 import Button from "../Button";
+import SegmentedToggle from "../SegmentedToggle";
 import Spinner from "../Spinner";
 import { buildExtensions, indentCompartment, schemeCompartment, wrapCompartment } from "./cmExtensions";
 import { type ImageToolbarLabels } from "./livePreview";
@@ -51,6 +53,11 @@ interface Props {
   vaultPath: string;
   notePath: string;
   title: string;
+  focused: boolean;
+  toolbarScope: string;
+  splitOpen: boolean;
+  onToggleSplit: () => void;
+  onClose: () => void;
   onNoteGone: (path: string) => void;
   onOpenWikilink: (target: string) => void;
 }
@@ -186,7 +193,18 @@ function nearestRenderedTokenTop(
   return bestTop;
 }
 
-export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onOpenWikilink }: Props) {
+export default function NoteEditor({
+  vaultPath,
+  notePath,
+  title,
+  focused,
+  toolbarScope,
+  splitOpen,
+  onToggleSplit,
+  onClose,
+  onNoteGone,
+  onOpenWikilink,
+}: Props) {
   const { t } = useT();
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
@@ -565,11 +583,12 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<ShortcutEventDetail>).detail;
       if (detail?.action !== "toggleReadEdit" || detail.vaultPath !== vaultPath || !ready) return;
+      if (!focused) return;
       switchMode(mode === "edit" ? "read" : "edit");
     };
     window.addEventListener(SHORTCUT_EVENT, handler);
     return () => window.removeEventListener(SHORTCUT_EVENT, handler);
-  }, [vaultPath, ready, mode, switchMode]);
+  }, [vaultPath, ready, mode, switchMode, focused]);
 
   // Layout effect so the restored scroll position is applied before the first
   // paint — otherwise the switched-to view shows its stale/top position first
@@ -755,6 +774,53 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
     if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
   }, []);
 
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <>
+        <span className="min-w-0 text-body font-medium text-primary truncate" title={notePath}>
+          {title}
+        </span>
+        {dirty ? (
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" title={t["editor.unsaved"]} />
+        ) : savedAt ? (
+          <span className="text-meta text-faint flex-shrink-0 whitespace-nowrap">
+            {t["editor.savedAt"].replace("{time}", savedAt)}
+          </span>
+        ) : null}
+      </>
+    ),
+    controls: (
+      <SegmentedToggle
+        value={mode}
+        onChange={switchMode}
+        options={[
+          { value: "edit", label: t["editor.edit"], icon: Pencil },
+          { value: "read", label: t["editor.reading"], icon: BookOpen },
+        ]}
+      />
+    ),
+    actions: (
+      <>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          active={splitOpen}
+          onClick={onToggleSplit}
+          title={splitOpen ? t["workspace.closeSplit"] : t["workspace.openSplit"]}
+        >
+          <Columns3 size={15} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} title={t["editor.closeTab"]}>
+          <X size={15} />
+        </Button>
+      </>
+    ),
+  }), [
+    dirty, mode, notePath, onClose, onToggleSplit, savedAt, splitOpen, switchMode, t, title,
+  ]);
+
+  useToolbarContribution(toolbarScope, toolbar);
+
   if (loadFailed) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 anim-fade-in">
@@ -768,33 +834,6 @@ export default function NoteEditor({ vaultPath, notePath, title, onNoteGone, onO
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="h-11 flex-shrink-0 flex items-center gap-2 px-4 border-b border-line/50 glass bg-tint/[0.04]">
-        <span className="text-body font-medium text-primary truncate flex-1" title={notePath}>{title}</span>
-        {dirty ? (
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" title={t["editor.unsaved"]} />
-        ) : savedAt ? (
-          <span className="text-meta text-faint flex-shrink-0 whitespace-nowrap">
-            {t["editor.savedAt"].replace("{time}", savedAt)}
-          </span>
-        ) : null}
-        <div className="flex rounded-control border border-line/50 p-0.5 flex-shrink-0">
-          <button
-            className={`flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors ${mode === "edit" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
-            onClick={() => switchMode("edit")}
-          >
-            <Pencil size={12} />
-            {t["editor.edit"]}
-          </button>
-          <button
-            className={`flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors ${mode === "read" ? "bg-[var(--accent-muted)] text-[var(--accent-text)]" : "text-muted hover:text-secondary"}`}
-            onClick={() => switchMode("read")}
-          >
-            <BookOpen size={12} />
-            {t["editor.reading"]}
-          </button>
-        </div>
-      </div>
-
       <div className="flex-1 min-h-0 relative">
         {!ready ? (
           <div className="absolute inset-0 flex items-center justify-center">

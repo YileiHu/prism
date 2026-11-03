@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Star, Check, ListChecks, Trash2, Pencil } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
+import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { type MenuItem } from "../ContextMenu";
 import ItemRow from "../ItemRow";
 import Button from "../Button";
@@ -77,6 +78,20 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
     showToast(t["common.deleted"]);
     onChanged();
   };
+
+  const titleKey = status === "waiting"
+    ? "gtd.waiting"
+    : status === "someday" ? "gtd.someday" : "gtd.done";
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <span className="min-w-0 text-body font-medium text-primary truncate">
+        {t[titleKey]}
+        {loaded && <span className="ml-2 text-caption text-muted">{items.length}</span>}
+      </span>
+    ),
+  }), [items.length, loaded, t, titleKey]);
+
+  useToolbarContribution("module:gtd", toolbar);
 
   const menuFor = (item: GtdItem): MenuItem[] => {
     const moduleActions: MenuItem[] =

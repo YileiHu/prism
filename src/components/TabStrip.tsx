@@ -30,24 +30,30 @@ interface Props {
   items: TabStripItem[];
   activeId: string | null;
   closeLabel: string;
-  rightActions: ReactNode;
+  rightActions?: ReactNode;
+  variant?: "default" | "chrome";
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onReorder: (id: string, toIndex: number) => void;
+  onTabContextMenu?: (id: string, event: React.MouseEvent) => void;
 }
 
 function SortableTab({
   item,
   active,
+  chrome,
   closeLabel,
   onSelect,
   onClose,
+  onContextMenu,
 }: {
   item: TabStripItem;
   active: boolean;
+  chrome: boolean;
   closeLabel: string;
   onSelect: () => void;
   onClose: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
 }) {
   const {
     attributes,
@@ -63,17 +69,20 @@ function SortableTab({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Transform.toString(transform), transition, WebkitAppRegion: "no-drag" } as React.CSSProperties}
       {...attributes}
       {...listeners}
       {...clickGuard}
       data-tab-active={active ? "true" : undefined}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       onAuxClick={(e) => {
         if (e.button === 1) onClose();
       }}
       title={item.id}
-      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 h-7 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full transition-colors ${
+      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full transition-colors ${
+        chrome ? "h-8" : "h-7"
+      } ${
         active
           ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
           : "text-muted hover:text-secondary hover:bg-tint/[0.04]"
@@ -107,7 +116,17 @@ function TabOverlay({ item }: { item: TabStripItem }) {
   );
 }
 
-export default function TabStrip({ items, activeId, closeLabel, rightActions, onSelect, onClose, onReorder }: Props) {
+export default function TabStrip({
+  items,
+  activeId,
+  closeLabel,
+  rightActions,
+  variant = "default",
+  onSelect,
+  onClose,
+  onReorder,
+  onTabContextMenu,
+}: Props) {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Which edges are clipped, for the fade hints
@@ -179,7 +198,13 @@ export default function TabStrip({ items, activeId, closeLabel, rightActions, on
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveDragId(null)}
     >
-      <div className="h-9 flex-shrink-0 flex items-stretch border-b border-line/50 glass bg-tint/[0.04]">
+      <div
+        className={
+          variant === "chrome"
+            ? "h-full flex-1 min-w-0 flex items-stretch"
+            : "h-9 flex-shrink-0 flex items-stretch border-b border-line/50 glass bg-tint/[0.04]"
+        }
+      >
         <div className="relative flex-1 min-w-0 flex">
           <div
             ref={scrollRef}
@@ -192,9 +217,18 @@ export default function TabStrip({ items, activeId, closeLabel, rightActions, on
                   key={item.id}
                   item={item}
                   active={item.id === activeId}
+                  chrome={variant === "chrome"}
                   closeLabel={closeLabel}
                   onSelect={() => onSelect(item.id)}
                   onClose={() => onClose(item.id)}
+                  onContextMenu={
+                    onTabContextMenu
+                      ? (event) => {
+                          event.preventDefault();
+                          onTabContextMenu(item.id, event);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </SortableContext>
@@ -207,9 +241,14 @@ export default function TabStrip({ items, activeId, closeLabel, rightActions, on
           )}
         </div>
         {/* Right-side actions: always visible, even with no open tabs */}
-        <div className="flex items-center flex-shrink-0 border-l border-line/30">
-          {rightActions}
-        </div>
+        {rightActions && (
+          <div
+            className="flex items-center flex-shrink-0 border-l border-line/30 pl-1 pr-1.5"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            {rightActions}
+          </div>
+        )}
       </div>
 
       {createPortal(

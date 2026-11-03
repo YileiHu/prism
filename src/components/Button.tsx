@@ -14,8 +14,8 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   sm:          'px-4 py-2 text-body gap-1.5 rounded-control',
   md:          'px-5 py-2 text-body gap-1.5 rounded-control',
   'icon-xs':  'p-0.5 rounded-chip',
-  'icon-sm':  'p-1 rounded-control',
-  'icon-md':  'p-2 rounded-control',
+  'icon-sm':  'w-8 h-8 rounded-control',
+  'icon-md':  'w-9 h-9 rounded-control',
 };
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {

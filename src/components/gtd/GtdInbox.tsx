@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { ListChecks, Trash2, Inbox, Pencil } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
+import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import ItemRow from "../ItemRow";
 import SearchInput from "../SearchInput";
 import EmptyState from "../EmptyState";
@@ -56,21 +57,29 @@ export default function GtdInbox({ version, onProcess, onChanged }: Props) {
     onChanged();
   };
 
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <span className="min-w-0 text-body font-medium text-primary truncate">{t["gtd.inbox"]}</span>
+    ),
+    controls: (
+      <SearchInput
+        ref={inputRef}
+        value={draft}
+        onChange={setDraft}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        placeholder={t["gtd.quickAdd"]}
+        autoFocus
+        icon={Inbox}
+        wrapperClassName="w-96 max-w-[45vw]"
+      />
+    ),
+    // draft must stay in the deps so the registered input reflects typing
+  }), [draft, t]);
+
+  useToolbarContribution("module:gtd", toolbar);
+
   return (
     <>
-      <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-        <SearchInput
-          ref={inputRef}
-          value={draft}
-          onChange={setDraft}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder={t["gtd.quickAdd"]}
-          autoFocus
-          icon={Inbox}
-          wrapperClassName="flex-1"
-        />
-      </div>
-
       <div className="flex-1 overflow-y-auto">
         {!loaded && items.length === 0 && <SkeletonRows count={6} />}
         {loaded && items.length === 0 && <EmptyState size="module" text={t["gtd.emptyInbox"]} />}

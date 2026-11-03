@@ -393,29 +393,25 @@ export default function CollectionDetail({
         </SortableContext>
 
         {/* Ungrouped card */}
-        <div
-          className="mb-3 border border-strong/50 rounded-card bg-surface/20 overflow-hidden"
-        >
-          <div className="flex items-center gap-2 px-3 h-8 bg-elevated/30">
-            <Button variant="ghost" size="icon-xs" onClick={onToggleUngrouped}>
-              {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-            </Button>
-            <span className="text-caption font-medium text-muted uppercase tracking-wide">
-              {t["collections.ungrouped"]}
-            </span>
-            <span className="text-caption text-faint">{ungroupedNotes.length}</span>
-          </div>
+        {ungroupedNotes.length > 0 && (
           <div
-            className="grid transition-[grid-template-rows] duration-200 ease-out"
-            style={{ gridTemplateRows: ungroupedCollapsed ? "0fr" : "1fr" }}
+            className="mb-3 border border-strong/50 rounded-card bg-surface/20 overflow-hidden"
           >
-            <div className="overflow-hidden min-h-0">
-              <div className="p-2">
-                {ungroupedNotes.length === 0 ? (
-                  <p className="text-caption text-faint text-center py-3">
-                    {t["collections.dropNotesHere"]}
-                  </p>
-                ) : (
+            <div className="flex items-center gap-2 px-3 h-8 bg-elevated/30">
+              <Button variant="ghost" size="icon-xs" onClick={onToggleUngrouped}>
+                {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              </Button>
+              <span className="text-caption font-medium text-muted uppercase tracking-wide">
+                {t["collections.ungrouped"]}
+              </span>
+              <span className="text-caption text-faint">{ungroupedNotes.length}</span>
+            </div>
+            <div
+              className="grid transition-[grid-template-rows] duration-200 ease-out"
+              style={{ gridTemplateRows: ungroupedCollapsed ? "0fr" : "1fr" }}
+            >
+              <div className="overflow-hidden min-h-0">
+                <div className="p-2">
                   <SortableContext items={ungroupedIds} strategy={verticalListSortingStrategy}>
                     {ungroupedNotes.map((note) => (
                       <SortableNoteRow
@@ -429,11 +425,11 @@ export default function CollectionDetail({
                       />
                     ))}
                   </SortableContext>
-                )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
       </div>
 

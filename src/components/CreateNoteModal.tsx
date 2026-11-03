@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FilePlus } from "lucide-react";
 import { useT } from "../i18n";
-import type { CollectionData } from "./CollectionsSidebar";
+import type { CollectionData } from "./collectionTypes";
 import Button from "./Button";
 import Input from "./Input";
 import Modal from "./Modal";

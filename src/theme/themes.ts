@@ -33,24 +33,6 @@ export interface ThemeColors {
   light: ThemeVariant;
 }
 
-// Exact replica of the previous hardcoded Tailwind gray scale —
-// the 7 original themes render pixel-identical with these.
-export const darkSurfaces: SurfacePalette = {
-  base: "3 7 18", // gray-950
-  surface: "17 24 39", // gray-900
-  elevated: "31 41 55", // gray-800
-  hover: "55 65 81", // gray-700
-  tint: "255 255 255",
-  overlay: "0 0 0",
-  primary: "229 231 235", // gray-200
-  secondary: "209 213 219", // gray-300
-  tertiary: "156 163 175", // gray-400
-  muted: "107 114 128", // gray-500
-  faint: "75 85 99", // gray-600
-  line: "31 41 55", // gray-800 borders
-  strong: "55 65 81", // gray-700 borders
-};
-
 // Dark counterparts: same idea as light — the accent's temperature is carried
 // into the charcoal neutrals. Concrete surfaces (base/surface/…) vary per
 // theme; tint stays white and overlay black for the alpha-wash math.

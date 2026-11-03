@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Plus, Trash2, Edit3, ExternalLink, Link2, Pencil } from "lucide-react";
 import { useT } from "../i18n";
+import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useSettings } from "../lib/settings";
 import { useToast } from "../lib/toast";
@@ -10,7 +11,7 @@ import { useContextMenu } from "../lib/useContextMenu";
 import RenameModal from "./RenameModal";
 import Button from "./Button";
 import Modal from "./Modal";
-import Sidebar from "./Sidebar";
+import CollapsibleSidebar from "./CollapsibleSidebar";
 import { type MenuItem } from "./ContextMenu";
 import TagInput from "./TagInput";
 import ItemRow from "./ItemRow";
@@ -433,10 +434,42 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
     }
   };
 
+  const toolbar = useMemo<ToolbarContribution>(() => ({
+    title: (
+      <span className="min-w-0 text-body font-medium text-primary truncate">
+        {activeTag ?? t["nav.resources"]}
+        {activeTag && (
+          <button
+            type="button"
+            onClick={() => setActiveTag(null)}
+            className="ml-2 text-caption text-muted hover:text-secondary"
+          >
+            {t["resources.allTags"]}
+          </button>
+        )}
+      </span>
+    ),
+    controls: (
+      <SearchInput
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder={t["resources.search"]}
+        wrapperClassName="w-96 max-w-[45vw]"
+      />
+    ),
+    actions: (
+      <Button variant="ghost" size="icon-sm" onClick={() => setShowModal(true)} title={t["resources.add"]}>
+        <Plus size={16} />
+      </Button>
+    ),
+  }), [activeTag, searchQuery, t]);
+
+  useToolbarContribution("module:resources", toolbar);
+
   return (
     <div className="h-full flex">
       {/* Tag sidebar */}
-      <Sidebar>
+      <CollapsibleSidebar>
           <NavItem
             onClick={() => setActiveTag(null)}
             active={!activeTag}
@@ -479,23 +512,10 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             />
           )}
           {tagsLoaded && allTags.length === 0 && <EmptyState size="card" text={t["resources.noTags"]} />}
-      </Sidebar>
+      </CollapsibleSidebar>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Search bar */}
-        <div className="flex items-center gap-2 px-4 h-11 border-b border-line/50 flex-shrink-0 glass bg-tint/[0.04]">
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder={t["resources.search"]}
-            wrapperClassName="flex-1"
-          />
-          <Button variant="ghost" size="icon-md" onClick={() => setShowModal(true)} title={t["resources.add"]}>
-            <Plus size={16} />
-          </Button>
-        </div>
-
         {/* Content area */}
         <div className="flex-1 overflow-y-auto">
           {debouncedQuery.trim() && resources.length >= settings.search_result_limit && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Inbox, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
-import Sidebar from "../Sidebar";
+import CollapsibleSidebar from "../CollapsibleSidebar";
 import NavItem from "../NavItem";
 import { useT } from "../../i18n";
 import GtdInbox from "./GtdInbox";
@@ -60,7 +60,7 @@ export default function GtdView({ focus }: Props) {
 
   return (
     <div className="h-full flex">
-      <Sidebar>
+      <CollapsibleSidebar>
         {nav.map(({ key, icon: Icon, label, count }) => (
           <NavItem
             key={key}
@@ -71,7 +71,7 @@ export default function GtdView({ focus }: Props) {
             trailing={count !== undefined && count > 0 ? count : undefined}
           />
         ))}
-      </Sidebar>
+      </CollapsibleSidebar>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {list === "inbox" && (

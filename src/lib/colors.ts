@@ -48,10 +48,6 @@ export function hashColor(s: string): PaletteColor {
   return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
-export function positionalColor(i: number): PaletteColor {
-  return PALETTE[i % PALETTE.length];
-}
-
 export type TagColorKey = "brick" | "gold" | "blue" | "green" | "violet" | "teal" | "pink" | "slate";
 
 export interface TagColorOption extends PaletteColor {
