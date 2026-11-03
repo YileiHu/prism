@@ -6,6 +6,8 @@ import Badge from "../Badge";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
+import { resolveTagColor } from "../../lib/colors";
+import { buildColorMenuItem } from "../ColorPicker";
 import GtdProjectDetail from "./GtdProjectDetail";
 import RenameModal from "../RenameModal";
 import ConfirmDialog from "../ConfirmDialog";
@@ -52,6 +54,16 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
     onChanged();
   };
 
+  const setProjectColor = async (project: GtdItem, color: string) => {
+    try {
+      await window.prism.setGtdItemColor(project.id, color);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
+    onChanged();
+  };
+
   const deleteProject = async () => {
     if (!confirmDelete) return;
     try {
@@ -72,7 +84,7 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
         <EmptyState size="module" text={t["gtd.emptyList"]} />
       ) : (
         <div className="flex-1 flex min-w-0 min-h-0">
-          <Sidebar storageKey="gtd-projects">
+          <Sidebar>
             {projects.map((p) => {
               const progress = t["gtd.projectProgress"]
                 .replace("{done}", String(p.done_action_count))
@@ -86,11 +98,24 @@ export default function GtdProjects({ version, onChanged, focusAction }: Props) 
                     onContextMenu(e, [
                       { label: t["gtd.completeProject"], icon: <Check size={14} />, onClick: () => completeProject(p) },
                       { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
+                      buildColorMenuItem(t, {
+                        label: t["gtd.projectColor"],
+                        autoLabel: t["collections.colorAuto"],
+                        autoSource: p.title,
+                        current: p.color,
+                        onSelect: (color) => setProjectColor(p, color),
+                      }),
                       { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
                     ])
                   }
                   active={selected?.id === p.id}
                   className="mb-0.5"
+                  leading={
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: resolveTagColor(p.title, p.color).bar }}
+                    />
+                  }
                   label={p.title}
                   trailing={
                     p.action_count === 0 ? (

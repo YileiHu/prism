@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { BookOpen, Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { useSettings } from "../lib/settings";
@@ -14,8 +14,9 @@ import AppearanceSection from "./settings/AppearanceSection";
 import SearchSection from "./settings/SearchSection";
 import ExternalSection from "./settings/ExternalSection";
 import ShortcutsSection from "./settings/ShortcutsSection";
+import PdfSection from "./settings/PdfSection";
 
-type SettingsCategory = "general" | "vaults" | "editor" | "appearance" | "search" | "external" | "shortcuts";
+type SettingsCategory = "general" | "vaults" | "pdf" | "editor" | "appearance" | "search" | "external" | "shortcuts";
 
 const CATEGORY_KEY = "prism_settings_category";
 
@@ -26,7 +27,7 @@ export default function Settings() {
   const [category, setCategory] = useState<SettingsCategory>(() => {
     try {
       const saved = localStorage.getItem(CATEGORY_KEY);
-      const valid: SettingsCategory[] = ["general", "vaults", "editor", "appearance", "search", "external", "shortcuts"];
+      const valid: SettingsCategory[] = ["general", "vaults", "pdf", "editor", "appearance", "search", "external", "shortcuts"];
       return valid.includes(saved as SettingsCategory) ? (saved as SettingsCategory) : "general";
     } catch {
       return "general";
@@ -64,6 +65,7 @@ export default function Settings() {
   const categories: { key: SettingsCategory; label: string; icon: typeof Database }[] = [
     { key: "general", label: t["settings.catGeneral"], icon: SlidersHorizontal },
     { key: "vaults", label: t["settings.catVaults"], icon: Database },
+    { key: "pdf", label: t["settings.catPdf"], icon: BookOpen },
     { key: "editor", label: t["settings.catEditor"], icon: SquarePen },
     { key: "appearance", label: t["settings.catAppearance"], icon: Palette },
     { key: "search", label: t["settings.catSearch"], icon: Search },
@@ -73,7 +75,7 @@ export default function Settings() {
 
   return (
     <div className="h-full flex">
-      <Sidebar storageKey="settings">
+      <Sidebar>
         <nav className="space-y-0.5">
           {categories.map(({ key, label, icon: Icon }) => (
             <NavItem
@@ -96,6 +98,7 @@ export default function Settings() {
         <div className="max-w-3xl">
           {category === "general" && <GeneralSection />}
           {category === "vaults" && <VaultsSection onSaved={flashSaved} />}
+          {category === "pdf" && <PdfSection />}
           {category === "editor" && <EditorSection />}
           {category === "appearance" && <AppearanceSection />}
           {category === "search" && <SearchSection />}

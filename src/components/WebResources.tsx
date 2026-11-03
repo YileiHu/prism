@@ -436,7 +436,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   return (
     <div className="h-full flex">
       {/* Tag sidebar */}
-      <Sidebar storageKey="resources">
+      <Sidebar>
           <NavItem
             onClick={() => setActiveTag(null)}
             active={!activeTag}
@@ -598,6 +598,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
         <div className="space-y-4">
           <div>
+            <label className="block text-caption text-muted mb-1">{t["resources.urlLabel"]}</label>
             <Input
               type="text"
               value={modalUrl}
@@ -611,6 +612,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             />
           </div>
           <div>
+            <label className="block text-caption text-muted mb-1">{t["resources.titleLabel"]}</label>
             <Input
               type="text"
               value={modalTitle}
@@ -620,23 +622,27 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             />
           </div>
           <div>
+            <label className="block text-caption text-muted mb-1">{t["resources.notes"]}</label>
             <Textarea
               value={modalNotes}
               onChange={(e) => setModalNotes(e.target.value)}
               placeholder={t["resources.notesPlaceholder"]}
-              rows={3}
+              rows={4}
               className="w-full resize-none"
             />
           </div>
 
           {/* Tags */}
-          <TagInput
-            tags={modalTags}
-            onChange={setModalTags}
-            suggestions={allTags}
-            placeholder={t["resources.tags"]}
-            colorForTag={colorForTag}
-          />
+          <div>
+            <label className="block text-caption text-muted mb-1">{t["resources.tagsLabel"]}</label>
+            <TagInput
+              tags={modalTags}
+              onChange={setModalTags}
+              suggestions={allTags}
+              placeholder={t["resources.tags"]}
+              colorForTag={colorForTag}
+            />
+          </div>
           {modalError && <p className="text-caption text-danger">{modalError}</p>}
         </div>
       </Modal>
@@ -656,7 +662,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.addUrl"]}</label>
+            <label className="block text-caption text-muted mb-1">{t["resources.urlLabel"]}</label>
             <Input
               type="text"
               value={editUrl}
@@ -666,7 +672,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.title"]}</label>
+            <label className="block text-caption text-muted mb-1">{t["resources.titleLabel"]}</label>
             <Input
               type="text"
               value={editTitle}
@@ -691,13 +697,16 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
           </div>
 
           {/* Tags */}
-          <TagInput
-            tags={editTags}
-            onChange={setEditTags}
-            suggestions={allTags}
-            placeholder={t["resources.tags"]}
-            colorForTag={colorForTag}
-          />
+          <div>
+            <label className="block text-caption text-muted mb-1">{t["resources.tagsLabel"]}</label>
+            <TagInput
+              tags={editTags}
+              onChange={setEditTags}
+              suggestions={allTags}
+              placeholder={t["resources.tags"]}
+              colorForTag={colorForTag}
+            />
+          </div>
           {editError && <p className="text-caption text-danger">{editError}</p>}
         </div>
       </Modal>

@@ -3,6 +3,8 @@ import { ListChecks } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import ItemRow from "../ItemRow";
+import Badge from "../Badge";
+import { resolveTagColor } from "../../lib/colors";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
@@ -80,7 +82,11 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
           leading={checkbox(() => completeAction(action.id))}
           onPrimaryClick={() => onNavigateToGtd({ list: "project", projectId: project.id, actionId: action.id })}
           title={action.title}
-          meta={<span className="text-caption text-faint truncate max-w-[40%] flex-shrink-0">{project.title}</span>}
+          meta={
+            <Badge palette={resolveTagColor(project.title, project.color)} className="max-w-[40%] flex-shrink-0">
+              <span className="min-w-0 truncate">{project.title}</span>
+            </Badge>
+          }
         />
       ))}
     </SectionCard>

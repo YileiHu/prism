@@ -4,7 +4,8 @@ import VaultView, { type NoteOpenRequest } from "./components/VaultView";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
 import HomeView from "./components/home/HomeView";
-import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks, House } from "lucide-react";
+import PdfLibrary from "./components/pdf/PdfLibrary";
+import { Globe, FolderSearch, Settings2, Minus, Square, X, Copy, Megaphone, ListChecks, House, BookOpen } from "lucide-react";
 
 import { useT } from "./i18n";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -18,9 +19,9 @@ import { type VaultEntry } from "./types";
 import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
 import "./lib/api";
 
-type SpecialTab = "home" | "resources" | "gtd" | "settings";
+type SpecialTab = "home" | "pdf" | "resources" | "gtd" | "settings";
 
-const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["home", "resources", "gtd", "settings"]);
+const SPECIAL_TAB_KEYS: ReadonlySet<string> = new Set(["home", "pdf", "resources", "gtd", "settings"]);
 
 export default function App() {
   const { t } = useT();
@@ -188,6 +189,7 @@ export default function App() {
   const homeTab = { key: "home", label: t["nav.home"], icon: House };
   const gtdTab = { key: "gtd", label: t["nav.gtd"], icon: ListChecks };
   const specialTabs: { key: SpecialTab; label: string; icon: typeof Globe }[] = [
+    { key: "pdf", label: t["nav.pdf"], icon: BookOpen },
     { key: "resources", label: t["nav.resources"], icon: Globe },
     { key: "settings", label: t["nav.settings"], icon: Settings2 },
   ];
@@ -277,6 +279,9 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         <div style={paneStyle(activeTab === "home")} className={activeTab === "home" ? "pane-enter" : ""}>
           <HomeView active={activeTab === "home"} onNavigateToGtd={handleNavigateToGtd} />
+        </div>
+        <div style={paneStyle(activeTab === "pdf")} className={activeTab === "pdf" ? "pane-enter" : ""}>
+          <PdfLibrary active={activeTab === "pdf"} onOpenSettings={() => handleTabClick("settings")} />
         </div>
         <div style={paneStyle(activeTab === "resources")} className={activeTab === "resources" ? "pane-enter" : ""}>
           <WebResources onReady={handleContentReady} />

@@ -36,11 +36,14 @@ export function DropdownMenu({
     if (!open) return;
     setReady(false);
     const anchor = anchorRef.current;
-    if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
     const menu = menuRef.current;
-    const mw = menu?.offsetWidth ?? 180;
-    const mh = menu?.offsetHeight ?? 200;
+    // The portal mounts one tick after `open` flips (useAnimatedMount), so on
+    // the first pass there is nothing to measure. Wait for `mounted` rather
+    // than positioning with the fallback size, which shifts narrow menus.
+    if (!anchor || !menu) return;
+    const rect = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
 
     let left = align === "right" ? rect.right - mw : rect.left;
     left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
@@ -52,7 +55,7 @@ export function DropdownMenu({
 
     setStyle({ left, top, width: matchWidth ? rect.width : undefined });
     setReady(true);
-  }, [open, anchorRef, align, side, matchWidth]);
+  }, [open, mounted, anchorRef, align, side, matchWidth]);
 
   useEffect(() => {
     if (!open) return;

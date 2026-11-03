@@ -153,7 +153,7 @@ export default function CollectionsSidebar({
   const collIds = useMemo(() => collections.map((c) => makeCollId(c.id)), [collections]);
 
   return (
-    <Sidebar storageKey="vault">
+    <Sidebar>
       <div
         onClick={() => onSelect(null)}
         className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer mb-1 section-wash ${

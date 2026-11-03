@@ -60,7 +60,7 @@ export default function GtdView({ focus }: Props) {
 
   return (
     <div className="h-full flex">
-      <Sidebar storageKey="gtd">
+      <Sidebar>
         {nav.map(({ key, icon: Icon, label, count }) => (
           <NavItem
             key={key}

@@ -6,6 +6,7 @@ export interface GtdItem {
   status: GtdStatus;
   is_next: number;
   description: string;
+  color: string;
   created_at: string;
   done_at: string | null;
   action_count: number;

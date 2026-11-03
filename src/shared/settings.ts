@@ -21,6 +21,9 @@ export interface AppSettings {
   content_width: number;
   show_frontmatter: boolean;
   search_result_limit: number;
+  pdf_repo_path: string;
+  pdf_default_sort: "title" | "added" | "modified" | "pages";
+  pdf_default_zoom: number;
   shortcuts: ShortcutMap;
   // Note heading / bold colors, configured independently per color mode
   md_h1_dark: string;
@@ -54,6 +57,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   content_width: 750,
   show_frontmatter: true,
   search_result_limit: 200,
+  pdf_repo_path: "",
+  pdf_default_sort: "title",
+  pdf_default_zoom: 50,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   md_h1_dark: "#e58080",
   md_h2_dark: "#7fc87f",
@@ -105,6 +111,9 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   content_width: { kind: "number", range: { min: 560, max: 1000, step: 20 } },
   show_frontmatter: { kind: "boolean" },
   search_result_limit: { kind: "number", range: { min: 50, max: 1000, step: 50 } },
+  pdf_repo_path: { kind: "string" },
+  pdf_default_sort: { kind: "enum", options: ["title", "added", "modified", "pages"] },
+  pdf_default_zoom: { kind: "number", range: { min: 10, max: 200, step: 10 } },
   shortcuts: { kind: "json" },
   md_h1_dark: { kind: "color" },
   md_h2_dark: { kind: "color" },

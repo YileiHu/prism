@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { NoteContentHit } from "./database";
+import type { NoteContentHit, PdfDocumentRow } from "./database";
 
 const api = {
   // Resources
@@ -54,6 +54,7 @@ const api = {
   setGtdItemStatus: (id: number, status: string) => ipcRenderer.invoke("gtd:set-status", id, status),
   renameGtdItem: (id: number, title: string) => ipcRenderer.invoke("gtd:rename", id, title),
   setGtdItemDescription: (id: number, description: string) => ipcRenderer.invoke("gtd:set-description", id, description),
+  setGtdItemColor: (id: number, color: string) => ipcRenderer.invoke("gtd:set-color", id, color),
   deleteGtdItem: (id: number) => ipcRenderer.invoke("gtd:delete", id),
   setGtdItemNext: (id: number, isNext: boolean) => ipcRenderer.invoke("gtd:set-next", id, isNext),
   getGtdActions: (projectId: number) => ipcRenderer.invoke("gtd:list-actions", projectId),
@@ -78,6 +79,30 @@ const api = {
   // Collections
   loadCollections: (vaultPath: string) => ipcRenderer.invoke("collections:load", vaultPath),
   saveCollections: (vaultPath: string, data: any) => ipcRenderer.invoke("collections:save", vaultPath, data),
+
+  // PDF library
+  pdfGetState: () => ipcRenderer.invoke("pdf:get-state") as Promise<{ repoPath: string; exists: boolean; count: number }>,
+  pdfChooseRepo: () => ipcRenderer.invoke("pdf:choose-repo") as Promise<string | null>,
+  pdfOpenRepo: (repoPath: string) => ipcRenderer.invoke("pdf:open-repo", repoPath),
+  pdfRescan: () => ipcRenderer.invoke("pdf:rescan") as Promise<{ total: number; changed: number }>,
+  pdfList: () => ipcRenderer.invoke("pdf:list") as Promise<PdfDocumentRow[]>,
+  pdfSaveCover: (id: number, jpeg: Uint8Array, pageCount: number | null) =>
+    ipcRenderer.invoke("pdf:save-cover", id, jpeg, pageCount) as Promise<{ coverVersion: number }>,
+  pdfChooseCover: (id: number) => ipcRenderer.invoke("pdf:choose-cover", id) as Promise<{ coverVersion: number } | null>,
+  pdfResetCover: (id: number) => ipcRenderer.invoke("pdf:reset-cover", id) as Promise<{ coverVersion: number }>,
+  pdfSetPageCount: (id: number, pageCount: number) => ipcRenderer.invoke("pdf:set-page-count", id, pageCount),
+  pdfDeleteDocuments: (ids: number[]) => ipcRenderer.invoke("pdf:delete-documents", ids) as Promise<{
+    results: { id: number; success: boolean; error?: string }[];
+    allSuccess: boolean;
+  }>,
+  pdfShowInFolder: (id: number) => ipcRenderer.invoke("pdf:show-in-folder", id),
+  pdfLoadCollections: () => ipcRenderer.invoke("pdf-collections:load"),
+  pdfSaveCollections: (repoPath: string, data: any) => ipcRenderer.invoke("pdf-collections:save", repoPath, data),
+  onPdfUpdated: (callback: (repoPath: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, repoPath: string) => callback(repoPath);
+    ipcRenderer.on("pdf:updated", handler);
+    return () => { ipcRenderer.removeListener("pdf:updated", handler); };
+  },
 
   // Shell
   showItemInFolder: (filePath: string) => ipcRenderer.invoke("shell:show-item-in-folder", filePath),

@@ -71,6 +71,7 @@ export function initDatabase(): void {
       status TEXT NOT NULL DEFAULT 'inbox',
       is_next INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       done_at TEXT
     );
@@ -100,6 +101,24 @@ export function initDatabase(): void {
       title TEXT NOT NULL DEFAULT '',
       opened_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     );
+
+    CREATE TABLE IF NOT EXISTS pdf_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_path TEXT NOT NULL,
+      path TEXT NOT NULL UNIQUE,
+      rel_path TEXT NOT NULL,
+      title TEXT NOT NULL,
+      page_count INTEGER,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      modified_at TEXT NOT NULL,
+      cover_path TEXT NOT NULL DEFAULT '',
+      cover_version INTEGER NOT NULL DEFAULT 0,
+      cover_custom INTEGER NOT NULL DEFAULT 0,
+      cover_dirty INTEGER NOT NULL DEFAULT 0,
+      added_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_pdf_documents_repo ON pdf_documents(repo_path);
+    CREATE INDEX IF NOT EXISTS idx_pdf_documents_modified ON pdf_documents(modified_at DESC);
   `);
 
   // Migration: the notes table was previously named obsidian_notes — rename
@@ -129,6 +148,9 @@ export function initDatabase(): void {
   const gtdItemCols = db.prepare("PRAGMA table_info(gtd_items)").all() as { name: string }[];
   if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "description")) {
     db.exec("ALTER TABLE gtd_items ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "color")) {
+    db.exec("ALTER TABLE gtd_items ADD COLUMN color TEXT NOT NULL DEFAULT ''");
   }
 
   // Migration: resource ordering was added after resources shipped — seed it
@@ -466,6 +488,135 @@ export function deleteNotesByPaths(paths: string[]): void {
   })();
 }
 
+// ---- PDF operations ----
+
+export interface PdfDocumentRow {
+  id: number;
+  repo_path: string;
+  path: string;
+  rel_path: string;
+  title: string;
+  page_count: number | null;
+  file_size: number;
+  modified_at: string;
+  cover_path: string;
+  cover_version: number;
+  cover_custom: number;
+  cover_dirty: number;
+  added_at: string;
+}
+
+export interface PdfUpsertRow {
+  path: string;
+  rel_path: string;
+  title: string;
+  file_size: number;
+  modified_at: string;
+}
+
+export function getPdfMtimes(repoPath: string): { path: string; modified_at: string }[] {
+  return db.prepare("SELECT path, modified_at FROM pdf_documents WHERE repo_path = ?").all(repoPath) as { path: string; modified_at: string }[];
+}
+
+export function syncPdfDocuments(repoPath: string, upsert: PdfUpsertRow[], deletePaths: string[]): void {
+  // ON CONFLICT keeps id/cover metadata stable. Only files whose mtime changed
+  // reach this list, so invalidating the auto cover here is safe.
+  const upsertStmt = db.prepare(`
+    INSERT INTO pdf_documents (repo_path, path, rel_path, title, file_size, modified_at)
+    VALUES (@repoPath, @path, @relPath, @title, @fileSize, @modifiedAt)
+    ON CONFLICT(path) DO UPDATE SET
+      repo_path = excluded.repo_path,
+      rel_path = excluded.rel_path,
+      title = excluded.title,
+      file_size = excluded.file_size,
+      modified_at = excluded.modified_at,
+      cover_dirty = CASE WHEN pdf_documents.cover_custom = 1 THEN 0 ELSE 1 END,
+      cover_version = CASE WHEN pdf_documents.cover_custom = 1
+        THEN pdf_documents.cover_version ELSE pdf_documents.cover_version + 1 END
+  `);
+  const deleteStmt = db.prepare("DELETE FROM pdf_documents WHERE repo_path = ? AND path = ?");
+
+  for (let i = 0; i < upsert.length; i += SYNC_CHUNK) {
+    const chunk = upsert.slice(i, i + SYNC_CHUNK);
+    db.transaction(() => {
+      for (const d of chunk) {
+        upsertStmt.run({
+          repoPath,
+          path: d.path,
+          relPath: d.rel_path,
+          title: d.title,
+          fileSize: d.file_size,
+          modifiedAt: d.modified_at,
+        });
+      }
+    })();
+  }
+  if (deletePaths.length > 0) {
+    db.transaction(() => {
+      for (const p of deletePaths) deleteStmt.run(repoPath, p);
+    })();
+  }
+}
+
+export function listPdfDocuments(repoPath: string): PdfDocumentRow[] {
+  return db.prepare("SELECT * FROM pdf_documents WHERE repo_path = ? ORDER BY title COLLATE NOCASE ASC").all(repoPath) as PdfDocumentRow[];
+}
+
+export function getPdfDocument(id: number): PdfDocumentRow | null {
+  return (db.prepare("SELECT * FROM pdf_documents WHERE id = ?").get(id) as PdfDocumentRow | undefined) ?? null;
+}
+
+export function getPdfDocumentsByIds(ids: number[]): PdfDocumentRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  return db.prepare(`SELECT * FROM pdf_documents WHERE id IN (${placeholders})`).all(...ids) as PdfDocumentRow[];
+}
+
+export function updatePdfCover(id: number, coverPath: string, pageCount: number | null): number {
+  db.prepare(`
+    UPDATE pdf_documents
+    SET cover_path = ?, cover_version = cover_version + 1, cover_dirty = 0,
+        page_count = COALESCE(?, page_count)
+    WHERE id = ?
+  `).run(coverPath, pageCount, id);
+  const row = db.prepare("SELECT cover_version FROM pdf_documents WHERE id = ?").get(id) as { cover_version: number } | undefined;
+  return row?.cover_version ?? 0;
+}
+
+export function setPdfCustomCover(id: number, coverPath: string): number {
+  db.prepare(`
+    UPDATE pdf_documents
+    SET cover_path = ?, cover_version = cover_version + 1,
+        cover_custom = 1, cover_dirty = 0
+    WHERE id = ?
+  `).run(coverPath, id);
+  const row = db.prepare("SELECT cover_version FROM pdf_documents WHERE id = ?").get(id) as { cover_version: number } | undefined;
+  return row?.cover_version ?? 0;
+}
+
+export function resetPdfCover(id: number): number {
+  db.prepare(`
+    UPDATE pdf_documents
+    SET cover_custom = 0, cover_dirty = 1, cover_version = cover_version + 1
+    WHERE id = ?
+  `).run(id);
+  const row = db.prepare("SELECT cover_version FROM pdf_documents WHERE id = ?").get(id) as { cover_version: number } | undefined;
+  return row?.cover_version ?? 0;
+}
+
+export function setPdfPageCount(id: number, pageCount: number): void {
+  db.prepare("UPDATE pdf_documents SET page_count = ? WHERE id = ?").run(pageCount, id);
+}
+
+export function deletePdfDocuments(ids: number[]): void {
+  if (ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += SYNC_CHUNK) {
+    const chunk = ids.slice(i, i + SYNC_CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    db.prepare(`DELETE FROM pdf_documents WHERE id IN (${placeholders})`).run(...chunk);
+  }
+}
+
 // ---- Settings ----
 
 export function getSetting(key: string): string | null {
@@ -545,6 +696,7 @@ export interface GtdItem {
   status: GtdStatus;
   is_next: number;
   description: string;
+  color: string;
   created_at: string;
   done_at: string | null;
   action_count: number;
@@ -617,6 +769,10 @@ export function renameGtdItem(id: number, title: string): void {
 
 export function setGtdItemDescription(id: number, description: string): void {
   db.prepare("UPDATE gtd_items SET description = ? WHERE id = ?").run(description, id);
+}
+
+export function setGtdItemColor(id: number, color: string): void {
+  db.prepare("UPDATE gtd_items SET color = ? WHERE id = ?").run(color, id);
 }
 
 export function deleteGtdItem(id: number): boolean {
@@ -700,6 +856,7 @@ interface GtdNextProjectRow {
   status: GtdStatus;
   is_next: number;
   description: string;
+  color: string;
   created_at: string;
   done_at: string | null;
   action_count: number;
@@ -741,6 +898,7 @@ export function getGtdNextList(): GtdNextList {
         status: row.status,
         is_next: row.is_next,
         description: row.description,
+        color: row.color,
         created_at: row.created_at,
         done_at: row.done_at,
         action_count: row.action_count,

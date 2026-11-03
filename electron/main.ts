@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme, nativeImage } from "electron";
 import path from "path";
 import fs from "fs";
+import { Readable } from "stream";
 import { spawn } from "child_process";
 import {
   initDatabase,
@@ -32,6 +33,7 @@ import {
   setGtdItemStatus,
   renameGtdItem,
   setGtdItemDescription,
+  setGtdItemColor,
   deleteGtdItem,
   setGtdItemNext,
   getGtdActions,
@@ -48,7 +50,16 @@ import {
   getRecentNotes,
   recordRecentOpen,
   renameNoteEntry,
+  listPdfDocuments,
+  syncPdfDocuments,
+  getPdfDocument,
+  updatePdfCover,
+  setPdfCustomCover,
+  resetPdfCover,
+  setPdfPageCount,
+  deletePdfDocuments,
   type GtdStatus,
+  type PdfUpsertRow,
 } from "./database";
 
 let mainWindow: BrowserWindow | null = null;
@@ -57,6 +68,8 @@ let mainWindow: BrowserWindow | null = null;
 // renderer for markdown note images (the renderer can't fetch file:// directly)
 protocol.registerSchemesAsPrivileged([
   { scheme: "prism-file", privileges: { supportFetchAPI: true, stream: true } },
+  { scheme: "prism-cover", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "prism-pdf", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 // ---- Window state persistence ----
@@ -175,6 +188,10 @@ function createWindow(): void {
       if (now - (focusScanAt.get(vp) ?? 0) < FOCUS_SCAN_INTERVAL) continue;
       focusScanAt.set(vp, now);
       rescanAndNotify(vp);
+    }
+    if (pdfRepoPath && now - pdfFocusScanAt >= FOCUS_SCAN_INTERVAL) {
+      pdfFocusScanAt = now;
+      rescanPdfRepoAndNotify();
     }
   });
 
@@ -503,6 +520,238 @@ function findOwningVault(filePath: string): string | null {
   return owned.sort((a, b) => b.length - a.length)[0];
 }
 
+// ---- PDF library scanning ----
+
+let pdfRepoPath: string | null = null;
+let pdfWatchers: fs.FSWatcher[] = [];
+let pdfWatcherRebuildTimer: ReturnType<typeof setTimeout> | null = null;
+let pdfScanTimer: ReturnType<typeof setTimeout> | null = null;
+let pdfScanPending = false;
+let pdfFocusScanAt = 0;
+
+function normalizePathKey(p: string): string {
+  return path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function isPathInside(root: string, target: string): boolean {
+  const r = normalizePathKey(root);
+  const t = normalizePathKey(target);
+  return t === r || t.startsWith(r + "/");
+}
+
+function currentPdfRepo(): string | null {
+  const raw = (getSetting("pdf_repo_path") ?? "").trim();
+  return raw || null;
+}
+
+function pdfCoverDir(): string {
+  const dir = path.join(app.getPath("userData"), "pdf-covers");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function pdfCoverFile(id: number): string {
+  return path.join(pdfCoverDir(), `${id}.jpg`);
+}
+
+function removePdfCoverFile(id: number): void {
+  try { fs.unlinkSync(pdfCoverFile(id)); } catch { /* already gone */ }
+}
+
+function resolvePdfDocument(id: number): { path: string; title: string; pageCount: number | null } | null {
+  const row = getPdfDocument(id);
+  if (!row) return null;
+  const repo = pdfRepoPath ?? currentPdfRepo();
+  if (!repo || !isPathInside(repo, row.path)) return null;
+  return { path: row.path, title: row.title, pageCount: row.page_count };
+}
+
+// `complete` is false when any directory or file could not be read; callers
+// must not infer deletions from an incomplete walk.
+async function walkPdfFiles(repoPath: string): Promise<{
+  files: Map<string, { mtime: string; size: number }>;
+  complete: boolean;
+}> {
+  const files = new Map<string, { mtime: string; size: number }>();
+  let complete = true;
+
+  async function walk(dir: string): Promise<void> {
+    let entries: fs.Dirent[];
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch {
+      complete = false;
+      return;
+    }
+
+    const subdirs: string[] = [];
+    const stats: Promise<void>[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith(".")) subdirs.push(fullPath);
+      } else if (entry.name.toLowerCase().endsWith(".pdf")) {
+        stats.push(
+          fs.promises.stat(fullPath).then(
+            (stat) => { files.set(fullPath, { mtime: stat.mtime.toISOString(), size: stat.size }); },
+            () => { complete = false; },
+          ),
+        );
+      }
+    }
+    await Promise.all(stats);
+    await Promise.all(subdirs.map((sub) => walk(sub)));
+  }
+
+  await walk(repoPath);
+  return { files, complete };
+}
+
+async function scanPdfRepoIncremental(repoPath: string): Promise<{
+  upsert: PdfUpsertRow[];
+  deletePaths: string[];
+  totalCount: number;
+  deletedRows: { id: number; cover_path: string }[];
+}> {
+  const { files: diskFiles, complete } = await walkPdfFiles(repoPath);
+  const dbRows = listPdfDocuments(repoPath);
+  const dbMap = new Map(dbRows.map((row) => [row.path, row.modified_at]));
+
+  const upsert: PdfUpsertRow[] = [];
+  for (const [filePath, info] of diskFiles) {
+    if (dbMap.get(filePath) === info.mtime) continue;
+    upsert.push({
+      path: filePath,
+      rel_path: path.relative(repoPath, filePath).split(path.sep).join("/"),
+      title: path.basename(filePath).replace(/\.pdf$/i, ""),
+      file_size: info.size,
+      modified_at: info.mtime,
+    });
+  }
+
+  const deletedRows: { id: number; cover_path: string }[] = [];
+  const deletePaths: string[] = [];
+  if (complete) {
+    for (const row of dbRows) {
+      if (!diskFiles.has(row.path)) {
+        deletePaths.push(row.path);
+        deletedRows.push({ id: row.id, cover_path: row.cover_path });
+      }
+    }
+  }
+
+  return { upsert, deletePaths, totalCount: diskFiles.size, deletedRows };
+}
+
+function unwatchPdfRepo(): void {
+  for (const w of pdfWatchers) {
+    try { w.close(); } catch { /* ignore */ }
+  }
+  pdfWatchers = [];
+  if (pdfWatcherRebuildTimer) {
+    clearTimeout(pdfWatcherRebuildTimer);
+    pdfWatcherRebuildTimer = null;
+  }
+}
+
+function schedulePdfScan(): void {
+  pdfScanPending = true;
+  if (pdfScanTimer) clearTimeout(pdfScanTimer);
+  pdfScanTimer = setTimeout(() => {
+    pdfScanTimer = null;
+    if (!pdfScanPending) return;
+    pdfScanPending = false;
+    rescanPdfRepoAndNotify();
+  }, 800);
+}
+
+async function rescanPdfRepoAndNotify(): Promise<void> {
+  const repo = pdfRepoPath;
+  if (!repo) return;
+  try {
+    if (!isValidVaultDir(repo)) return;
+    if (pdfWatchers.length === 0) watchPdfRepo(repo);
+    const { upsert, deletePaths, deletedRows } = await scanPdfRepoIncremental(repo);
+    if (upsert.length === 0 && deletePaths.length === 0) return;
+    syncPdfDocuments(repo, upsert, deletePaths);
+    for (const row of deletedRows) removePdfCoverFile(row.id);
+    mainWindow?.webContents.send("pdf:updated", repo);
+  } catch { /* watcher-triggered scans are best-effort */ }
+}
+
+function handlePdfWatcherError(repoPath: string): void {
+  unwatchPdfRepo();
+  if (pdfWatcherRebuildTimer) return;
+  pdfWatcherRebuildTimer = setTimeout(() => {
+    pdfWatcherRebuildTimer = null;
+    if (!isValidVaultDir(repoPath)) return;
+    watchPdfRepo(repoPath);
+    rescanPdfRepoAndNotify();
+  }, 2000);
+}
+
+function watchPdfRepo(repoPath: string): void {
+  unwatchPdfRepo();
+  const onChange = (_event: string, filename: string | null) => {
+    if (filename) {
+      const segments = filename.split(/[\\/]/);
+      if (segments.some((s) => s.startsWith("."))) return;
+      if (!filename.toLowerCase().endsWith(".pdf")) return;
+    }
+    schedulePdfScan();
+  };
+  const onError = () => handlePdfWatcherError(repoPath);
+
+  const watchers: fs.FSWatcher[] = [];
+  const addWatcher = (dir: string, recursive: boolean) => {
+    try {
+      const w = recursive ? fs.watch(dir, { recursive: true }, onChange) : fs.watch(dir, onChange);
+      w.on("error", onError);
+      watchers.push(w);
+    } catch { /* ignore */ }
+  };
+
+  addWatcher(repoPath, true);
+  if (watchers.length === 0) {
+    const dirs: string[] = [repoPath];
+    const queue = [repoPath];
+    while (queue.length > 0) {
+      const dir = queue.shift()!;
+      let entries: fs.Dirent[];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (e.isDirectory() && !e.name.startsWith(".")) {
+          const sub = path.join(dir, e.name);
+          dirs.push(sub);
+          queue.push(sub);
+        }
+      }
+    }
+    for (const dir of dirs) addWatcher(dir, false);
+  }
+  pdfWatchers = watchers;
+}
+
+async function applyPdfRepo(repoPath: string): Promise<{ ok: boolean; exists: boolean; count: number; changed: number }> {
+  const repo = repoPath.trim();
+  if (!repo) {
+    pdfRepoPath = null;
+    unwatchPdfRepo();
+    return { ok: true, exists: false, count: 0, changed: 0 };
+  }
+  if (!isValidVaultDir(repo)) {
+    pdfRepoPath = null;
+    unwatchPdfRepo();
+    return { ok: false, exists: false, count: 0, changed: 0 };
+  }
+
+  pdfRepoPath = path.resolve(repo);
+  watchPdfRepo(pdfRepoPath);
+  const { upsert, deletePaths, totalCount, deletedRows } = await scanPdfRepoIncremental(pdfRepoPath);
+  syncPdfDocuments(pdfRepoPath, upsert, deletePaths);
+  for (const row of deletedRows) removePdfCoverFile(row.id);
+  mainWindow?.webContents.send("pdf:updated", pdfRepoPath);
+  return { ok: true, exists: true, count: totalCount, changed: upsert.length + deletePaths.length };
+}
+
 // ---- IPC Handlers ----
 
 function searchResultLimit(): number {
@@ -685,7 +934,14 @@ function registerIpcHandlers(): void {
 
   // Settings
   ipcMain.handle("settings:get", (_e, key: string) => getSetting(key));
-  ipcMain.handle("settings:set", (_e, key: string, value: string) => setSetting(key, value));
+  ipcMain.handle("settings:set", (_e, key: string, value: string) => {
+    setSetting(key, value);
+    // Repo changes must re-arm the watcher and rescan; do it after persisting
+    // so a crash mid-scan still leaves the user's choice saved.
+    if (key === "pdf_repo_path") {
+      void applyPdfRepo(value).catch(() => { /* surfaced via pdf:get-state */ });
+    }
+  });
   ipcMain.handle("settings:get-all", () => getAllSettings());
   ipcMain.handle("app:set-color-mode", (_e, mode: string) => applyNativeColorMode(mode));
   nativeTheme.on("updated", () => {
@@ -706,6 +962,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:set-status", (_e, id: number, status: GtdStatus) => setGtdItemStatus(id, status));
   ipcMain.handle("gtd:rename", (_e, id: number, title: string) => renameGtdItem(id, title));
   ipcMain.handle("gtd:set-description", (_e, id: number, description: string) => setGtdItemDescription(id, description));
+  ipcMain.handle("gtd:set-color", (_e, id: number, color: string) => setGtdItemColor(id, color));
   ipcMain.handle("gtd:delete", (_e, id: number) => deleteGtdItem(id));
   ipcMain.handle("gtd:set-next", (_e, id: number, isNext: boolean) => setGtdItemNext(id, isNext));
   ipcMain.handle("gtd:list-actions", (_e, projectId: number) => getGtdActions(projectId));
@@ -742,6 +999,121 @@ function registerIpcHandlers(): void {
     const dir = path.join(vaultPath, ".prism");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "collections.json"), JSON.stringify(data, null, 2), "utf-8");
+  });
+
+  // PDF library
+  ipcMain.handle("pdf:get-state", () => {
+    const repoPath = currentPdfRepo();
+    const exists = repoPath ? isValidVaultDir(repoPath) : false;
+    const count = repoPath && exists ? listPdfDocuments(path.resolve(repoPath)).length : 0;
+    return { repoPath: repoPath ?? "", exists, count };
+  });
+
+  ipcMain.handle("pdf:choose-repo", async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      title: "Select PDF Folder",
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle("pdf:open-repo", async (_e, repoPath: string) => {
+    const repo = (repoPath || currentPdfRepo() || "").trim();
+    if (!repo || !isValidVaultDir(repo)) return;
+    await shell.openPath(path.resolve(repo));
+  });
+
+  ipcMain.handle("pdf:rescan", async () => {
+    const repo = currentPdfRepo();
+    if (!repo) return { total: 0, changed: 0 };
+    const result = await applyPdfRepo(repo);
+    return { total: result.count, changed: result.changed };
+  });
+
+  ipcMain.handle("pdf:list", () => {
+    return pdfRepoPath ? listPdfDocuments(pdfRepoPath) : [];
+  });
+
+  ipcMain.handle("pdf:save-cover", (_e, id: number, jpeg: Uint8Array, pageCount: number | null) => {
+    const doc = resolvePdfDocument(id);
+    if (!doc) throw new Error("PDF_NOT_FOUND");
+    const file = pdfCoverFile(id);
+    fs.writeFileSync(file, Buffer.from(jpeg));
+    return { coverVersion: updatePdfCover(id, file, pageCount) };
+  });
+
+  ipcMain.handle("pdf:choose-cover", async (_e, id: number) => {
+    const doc = resolvePdfDocument(id);
+    if (!doc || !mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openFile"],
+      title: "Select Cover Image",
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "bmp"] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const image = nativeImage.createFromPath(result.filePaths[0]);
+    if (image.isEmpty()) return null;
+    const resized = image.resize({ width: 480 });
+    const file = pdfCoverFile(id);
+    fs.writeFileSync(file, resized.toJPEG(85));
+    return { coverVersion: setPdfCustomCover(id, file) };
+  });
+
+  ipcMain.handle("pdf:reset-cover", (_e, id: number) => {
+    if (!resolvePdfDocument(id)) throw new Error("PDF_NOT_FOUND");
+    return { coverVersion: resetPdfCover(id) };
+  });
+
+  ipcMain.handle("pdf:set-page-count", (_e, id: number, pageCount: number) => {
+    if (!resolvePdfDocument(id) || !Number.isFinite(pageCount) || pageCount < 0) return;
+    setPdfPageCount(id, Math.floor(pageCount));
+  });
+
+  ipcMain.handle("pdf:delete-documents", async (_e, ids: number[]) => {
+    const results: { id: number; success: boolean; error?: string }[] = [];
+    for (const id of ids) {
+      const doc = resolvePdfDocument(id);
+      if (!doc) {
+        results.push({ id, success: false, error: "PDF_NOT_FOUND" });
+        continue;
+      }
+      try {
+        await shell.trashItem(doc.path);
+        deletePdfDocuments([id]);
+        removePdfCoverFile(id);
+        results.push({ id, success: true });
+      } catch (e: any) {
+        results.push({ id, success: false, error: e?.message ?? String(e) });
+      }
+    }
+    return { results, allSuccess: results.every((r) => r.success) };
+  });
+
+  ipcMain.handle("pdf:show-in-folder", (_e, id: number) => {
+    const doc = resolvePdfDocument(id);
+    if (doc) shell.showItemInFolder(doc.path);
+  });
+
+  ipcMain.handle("pdf-collections:load", () => {
+    const repo = pdfRepoPath;
+    if (!repo) return null;
+    const file = path.join(repo, ".prism", "pdf-collections.json");
+    if (!fs.existsSync(file)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf-8"));
+    } catch {
+      try { fs.copyFileSync(file, file + ".bak"); } catch { /* ignore */ }
+      return null;
+    }
+  });
+
+  ipcMain.handle("pdf-collections:save", (_e, _repoPath: string, data: any) => {
+    const repo = pdfRepoPath;
+    if (!repo) throw new Error("PDF_REPO_NOT_SET");
+    const dir = path.join(repo, ".prism");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "pdf-collections.json"), JSON.stringify(data, null, 2), "utf-8");
   });
 
   // Shell
@@ -884,12 +1256,118 @@ function registerAssetProtocol(): void {
   });
 }
 
+function pdfCorsHeaders(): Record<string, string> {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-headers": "Range",
+    "access-control-expose-headers": "content-range, content-length, accept-ranges",
+  };
+}
+
+// prism-pdf://doc/<docId> — streams a PDF from disk with HTTP range support so
+// pdf.js can page through large files without loading them into memory.
+function registerPdfProtocol(): void {
+  protocol.handle("prism-pdf", async (request) => {
+    try {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: pdfCorsHeaders() });
+      }
+      const id = Number(new URL(request.url).pathname.replace(/^\/+/, ""));
+      if (!Number.isInteger(id) || id <= 0) {
+        return new Response("bad request", { status: 400, headers: pdfCorsHeaders() });
+      }
+      const doc = resolvePdfDocument(id);
+      if (!doc) return new Response("not found", { status: 404, headers: pdfCorsHeaders() });
+
+      const stat = await fs.promises.stat(doc.path);
+      if (!stat.isFile()) return new Response("not found", { status: 404, headers: pdfCorsHeaders() });
+      const size = stat.size;
+      if (size === 0) {
+        return new Response(new Uint8Array(0), {
+          status: 200,
+          headers: { ...pdfCorsHeaders(), "content-type": "application/pdf", "content-length": "0" },
+        });
+      }
+
+      let start = 0;
+      let end = size - 1;
+      let partial = false;
+      const range = request.headers.get("range");
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+        if (!match || (match[1] === "" && match[2] === "")) {
+          return new Response("range not satisfiable", {
+            status: 416,
+            headers: { ...pdfCorsHeaders(), "content-range": `bytes */${size}` },
+          });
+        }
+        if (match[1] === "") {
+          start = Math.max(0, size - Number(match[2]));
+        } else {
+          start = Number(match[1]);
+          if (match[2] !== "") end = Math.min(size - 1, Number(match[2]));
+        }
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) {
+          return new Response("range not satisfiable", {
+            status: 416,
+            headers: { ...pdfCorsHeaders(), "content-range": `bytes */${size}` },
+          });
+        }
+        partial = true;
+      }
+
+      const headers: Record<string, string> = {
+        ...pdfCorsHeaders(),
+        "content-type": "application/pdf",
+        "accept-ranges": "bytes",
+        "cache-control": "no-store",
+        "content-length": String(end - start + 1),
+      };
+      if (partial) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+
+      const stream = Readable.toWeb(fs.createReadStream(doc.path, { start, end })) as unknown as ReadableStream<Uint8Array>;
+      return new Response(stream, { status: partial ? 206 : 200, headers });
+    } catch {
+      return new Response("error", { status: 500, headers: pdfCorsHeaders() });
+    }
+  });
+}
+
+// prism-cover://cover?id=<docId>&v=<version> — serves cached PDF cover JPEGs.
+// Only rows in pdf_documents and files under userData/pdf-covers are reachable.
+function registerCoverProtocol(): void {
+  protocol.handle("prism-cover", async (request) => {
+    try {
+      const url = new URL(request.url);
+      const id = Number(url.searchParams.get("id"));
+      if (!Number.isInteger(id) || id <= 0) return new Response("bad request", { status: 400 });
+      const row = getPdfDocument(id);
+      if (!row || !row.cover_path) return new Response("not found", { status: 404 });
+      const file = pdfCoverFile(id);
+      if (!fs.existsSync(file)) return new Response("not found", { status: 404 });
+      const data = await fs.promises.readFile(file);
+      return new Response(new Uint8Array(data), {
+        headers: {
+          "content-type": "image/jpeg",
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+      });
+    } catch {
+      return new Response("error", { status: 500 });
+    }
+  });
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   initDatabase();
   registerAssetProtocol();
+  registerCoverProtocol();
+  registerPdfProtocol();
   registerIpcHandlers();
   createWindow();
+  void applyPdfRepo(getSetting("pdf_repo_path") ?? "").catch(() => { /* state surfaces in the UI */ });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -902,4 +1380,5 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   for (const vaultPath of Array.from(watchedVaults)) unwatchVault(vaultPath);
+  unwatchPdfRepo();
 });

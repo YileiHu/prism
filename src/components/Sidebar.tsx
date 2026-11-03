@@ -1,26 +1,64 @@
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 
 interface SidebarProps {
   children: ReactNode;
   footer?: ReactNode;
-  storageKey?: string;
 }
 
 const MIN_WIDTH = 160;
 const DEFAULT_WIDTH = 192;
 const MAX_WIDTH = 400;
+const STORAGE_KEY = "prism_sidebar_width";
+const LEGACY_KEYS = ["vault", "pdf", "resources", "gtd", "gtd-projects", "settings"].map(
+  (key) => `prism_sidebar_${key}`,
+);
 
-export default function Sidebar({ children, footer, storageKey }: SidebarProps) {
-  const [width, setWidth] = useState(() => {
-    if (storageKey) {
-      const saved = Number(localStorage.getItem(`prism_sidebar_${storageKey}`));
-      if (Number.isFinite(saved) && saved >= MIN_WIDTH && saved <= MAX_WIDTH) return saved;
+function clampWidth(value: number): number {
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, value));
+}
+
+// Every module shares one width. On first run after the switch, adopt an
+// existing per-module value instead of resetting the user's preference.
+function readStoredWidth(): number {
+  const read = (key: string) => {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) && value >= MIN_WIDTH && value <= MAX_WIDTH ? value : null;
+  };
+  const shared = read(STORAGE_KEY);
+  if (shared !== null) return shared;
+  for (const key of LEGACY_KEYS) {
+    const legacy = read(key);
+    if (legacy !== null) {
+      localStorage.setItem(STORAGE_KEY, String(legacy));
+      return legacy;
     }
-    return DEFAULT_WIDTH;
-  });
+  }
+  return DEFAULT_WIDTH;
+}
+
+let sharedWidth = readStoredWidth();
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function setSharedWidth(next: number, persist: boolean) {
+  const clamped = clampWidth(next);
+  if (clamped !== sharedWidth) {
+    sharedWidth = clamped;
+    listeners.forEach((listener) => listener());
+  }
+  if (persist) localStorage.setItem(STORAGE_KEY, String(sharedWidth));
+}
+
+export default function Sidebar({ children, footer }: SidebarProps) {
+  // All mounted sidebars (including hidden module tabs) share the same width.
+  const width = useSyncExternalStore(subscribe, () => sharedWidth);
   const dragging = useRef(false);
-  const widthRef = useRef(width);
-  widthRef.current = width;
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -30,12 +68,10 @@ export default function Sidebar({ children, footer, storageKey }: SidebarProps) 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current) return;
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX)));
+      setSharedWidth(e.clientX, false);
     };
     const onMouseUp = () => {
-      if (dragging.current && storageKey) {
-        localStorage.setItem(`prism_sidebar_${storageKey}`, String(widthRef.current));
-      }
+      if (dragging.current) setSharedWidth(sharedWidth, true);
       dragging.current = false;
     };
     window.addEventListener("mousemove", onMouseMove);
@@ -44,7 +80,7 @@ export default function Sidebar({ children, footer, storageKey }: SidebarProps) 
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [storageKey]);
+  }, []);
 
   return (
     <aside
