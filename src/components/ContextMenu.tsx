@@ -75,7 +75,7 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
     <div
       ref={menuRef}
       data-prism-menu=""
-      className={`fixed z-context glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 min-w-[180px] ${exiting ? "anim-exit" : "anim-menu"}`}
+      className={`fixed z-context bg-elevated border border-strong rounded-control shadow-popover p-1 min-w-[180px] ${exiting ? "anim-exit" : "anim-menu"}`}
       style={{ left: adjustedPos.x, top: adjustedPos.y, visibility: ready ? "visible" : "hidden" }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -104,7 +104,7 @@ export default function ContextMenu({ items, position, onClose, exiting = false 
             </DropdownMenuItem>
             {item.children && submenuOpen === i && (
               <div
-                className={`absolute top-0 glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 min-w-[160px] anim-fade-in ${flipSubmenu ? "right-full mr-1" : "left-full ml-1"}`}
+                className={`absolute top-0 bg-elevated border border-strong rounded-control shadow-popover p-1 min-w-[160px] anim-fade-in ${flipSubmenu ? "right-full mr-1" : "left-full ml-1"}`}
                 onMouseEnter={clearCloseTimer}
                 onMouseLeave={scheduleClose}
               >

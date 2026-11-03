@@ -33,8 +33,6 @@
   --c-line: 31 41 55;
   --c-strong: 55 65 81;
 
-  --glass-blur: 10px;
-  --glass-saturate: 130%;
   --glow: transparent;
   --aurora: rgb(var(--c-base));
   --window-ring: rgba(255, 255, 255, 0.08);
@@ -42,10 +40,38 @@
   /* Shared chrome tokens (overridden in light mode) */
   --scrollbar-thumb: rgba(255, 255, 255, 0.1);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
-  --btn-sheen: rgba(255, 255, 255, 0.22);
-  --btn-shadow: rgba(0, 0, 0, 0.35);
   --md-code-bg: rgba(30, 30, 30, 0.92);
   --md-code-fg: #d4d4d4;
+
+  /* Raised/inset pair: a recessed track holding a raised selected chip.
+     Light-mode values live in the [data-mode="light"] block below. */
+  --raised-bg: rgb(var(--c-elevated));
+  --raised-highlight: rgb(var(--c-tint) / 0.05);
+  --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.4);
+  --inset-bg: rgb(var(--c-overlay) / 0.28);
+  --inset-border: rgb(var(--c-strong) / 0.55);
+  --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.25);
+  /* Inputs cover far more area than a track, so their well is fainter on
+     light backgrounds and relies on a brighter edge in dark mode. */
+  --field-bg: rgb(var(--c-overlay) / 0.34);
+  --field-border: rgb(var(--c-strong) / 0.8);
+  --field-shadow: inset 0 1px 3px rgb(var(--c-overlay) / 0.4);
+  /* Flat chrome ladder (dark): header is the lifted step, toolbar sits one
+     step lower with a faint accent tint. */
+  --header-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-tint)));
+  --chrome-bg: color-mix(in srgb, rgb(var(--c-surface)) 46%, rgb(var(--c-base)));
+  --chrome-flat: color-mix(in srgb, var(--accent) 5%, var(--chrome-bg));
+  /* Sidebar dock: lifted toward the surface, with the accent wash starting
+     faint at the top and deepening toward the bottom. */
+  --sidebar-base: rgb(var(--c-surface));
+  --sidebar-bg-top: color-mix(in srgb, var(--accent) 2%, var(--sidebar-base));
+  --sidebar-bg: color-mix(in srgb, var(--accent) 9%, var(--sidebar-base));
+  /* Sidebar rows: the dock's accent wash reaches the elevated tone at its
+     foot, so rows need the stronger hover tone to separate themselves. */
+  --sidebar-item-hover: rgb(var(--c-hover) / 0.5);
+  --sidebar-item-active: rgb(var(--c-hover));
+  --chrome-sheen: rgb(var(--c-tint) / 0.05);
+  --header-fade: color-mix(in srgb, var(--header-bg) 85%, transparent);
 
   /* Content typography — kept in sync by SettingsProvider */
   --content-font-size: 14.5px;
@@ -77,12 +103,38 @@
   --info: 37 99 235;
 
   --window-ring: rgb(var(--c-overlay) / 0.1);
+  /* Light chrome ladder: header is paper-white; the toolbar stays a touch
+     brighter than the page but carries a stronger accent wash, so it reads as
+     its own band against the neutral main canvas. */
+  --header-bg: rgb(var(--c-surface));
+  --chrome-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-base)));
+  --chrome-flat: color-mix(in srgb, var(--accent) 12%, var(--chrome-bg));
+  /* In light mode the sidebar recesses below the page tone, then the accent
+     wash fades from the top down. */
+  --sidebar-base: color-mix(in srgb, rgb(var(--c-base)) 96%, rgb(var(--c-overlay)));
+  --sidebar-bg-top: color-mix(in srgb, var(--accent) 8%, var(--sidebar-base));
+  --sidebar-bg: color-mix(in srgb, var(--accent) 2%, var(--sidebar-base));
+  /* In light mode the dock is near-white, so rows lift with the elevated tone. */
+  --sidebar-item-hover: rgb(var(--c-elevated) / 0.5);
+  --sidebar-item-active: rgb(var(--c-elevated) / 0.7);
+  /* No top highlight in light mode: on a near-white chrome it reads as a
+     stray white hairline under the header border. */
+  --chrome-sheen: transparent;
+  --header-fade: color-mix(in srgb, var(--header-bg) 92%, transparent);
   --scrollbar-thumb: rgb(var(--c-overlay) / 0.18);
   --scrollbar-thumb-hover: rgb(var(--c-overlay) / 0.32);
-  --btn-sheen: rgba(255, 255, 255, 0.4);
-  --btn-shadow: rgb(var(--c-overlay) / 0.18);
   --md-code-bg: rgb(var(--c-overlay) / 0.05);
   --md-code-fg: rgb(var(--c-primary));
+
+  --raised-bg: rgb(var(--c-elevated));
+  --raised-highlight: transparent;
+  --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.14);
+  --inset-bg: rgb(var(--c-tint) / 0.08);
+  --inset-border: rgb(var(--c-strong) / 0.6);
+  --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.05);
+  --field-bg: rgb(var(--c-tint) / 0.045);
+  --field-border: rgb(var(--c-strong) / 0.55);
+  --field-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.04);
 }
 
 body {
@@ -123,8 +175,8 @@ body {
   display: none;
 }
 
-/* App shell is transparent so the body-level aurora shows through.
-   The aurora is set per theme via --aurora (radial gradients + base color). */
+/* App shell stays transparent; each chrome band and the main canvas paint
+   their own flat theme-tinted fills on top of the body aurora. */
 .app-shell {
   background: transparent;
 }
@@ -134,6 +186,52 @@ body {
 body {
   background: var(--aurora);
   background-attachment: fixed;
+}
+
+/* App header — the lifted chrome step. Flat fill, no gradient. */
+.app-header {
+  background-color: var(--header-bg);
+  box-shadow: inset 0 1px 0 var(--chrome-sheen);
+}
+
+/* Chrome toolbar band — flat mid tone, a touch of accent to tie it to the
+   theme without any gradient. */
+.toolbar-band {
+  background-color: var(--chrome-flat);
+  box-shadow: inset 0 1px 0 var(--chrome-sheen);
+}
+
+/* Main canvas — the deepest flat tone. */
+.app-main {
+  background-color: rgb(var(--c-base));
+}
+
+/* Selected pill for the active tab or module button in the header. */
+.chrome-pill-active {
+  color: var(--accent-text);
+  background-color: var(--accent-muted);
+  box-shadow:
+    var(--raised-shadow),
+    inset 0 0 0 1px var(--accent-border);
+}
+
+/* Edge fades for the horizontally scrolling tab rail. */
+.tab-fade-left,
+.tab-fade-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  z-index: 1;
+}
+.tab-fade-left {
+  left: 0;
+  background: linear-gradient(90deg, var(--header-fade), transparent);
+}
+.tab-fade-right {
+  right: 0;
+  background: linear-gradient(270deg, var(--header-fade), transparent);
 }
 
 /* Selected-item indicator: rounded tick flush with the item's left edge
@@ -164,46 +262,88 @@ body {
   background-color: rgb(var(--c-primary) / 0.65);
 }
 
-/* Thick accent frame: 2px theme border drawn inside the box, so adding or
-   removing it never shifts layout. Shares --accent-border with accented card
-   headers so the frame and the header read as the same color. */
-.accent-frame {
-  box-shadow: inset 0 0 0 2px var(--accent-border);
+/* Raised/inset surfaces. Inset hosts a control (input, switch track, segmented
+   track); raised marks the selected item inside it. */
+.surface-inset {
+  background-color: var(--inset-bg);
+  border-color: var(--inset-border);
+  box-shadow: var(--inset-shadow);
+}
+.surface-raised {
+  background-color: var(--raised-bg);
+  box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
+}
+/* Selected chips in the tinted sidebar: the accent wash carries the contrast,
+   since elevated and chrome sit at nearly the same tone in light mode. */
+.surface-raised-accent {
+  background-color: var(--accent-muted);
+  box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
+}
+/* Raised depth for colored fills (danger buttons, checked boxes) where the
+   background is owned by a utility and only the sheen/shadow is needed. */
+.surface-raised-fill {
+  box-shadow: var(--raised-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+[data-mode="light"] .surface-raised-fill {
+  box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.field-inset {
+  background-color: var(--field-bg);
+  border-color: var(--field-border);
+  box-shadow: var(--field-shadow);
+}
+/* Focused fields: keep the 1px border and add a 1px inner ring so the accent
+   highlight reads a little thicker without shifting the layout. */
+.field-inset:focus,
+.accent-focus:focus {
+  border-color: var(--accent);
+}
+.field-inset:focus {
+  box-shadow: var(--field-shadow), inset 0 0 0 1px var(--accent);
+}
+.accent-focus:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Same thickening for selected framed states (cards, swatches) that carry a
+   1px accent border. */
+.accent-ring {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Sidebar chrome — a distinct dock tone: brighter than the toolbar in dark
+   mode, deeper than the page in light mode. The accent wash runs top→bottom;
+   dark mode deepens toward the bottom, light mode fades from the top down. */
+.chrome-bg {
+  background: linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg) 100%);
+  box-shadow: inset 0 1px 0 var(--chrome-sheen);
+}
+/* Segmented control: recessed track, raised chip for the active segment.
+   Without its own fill the control disappears into the tinted toolbar in
+   light mode, where a 12% accent wash is nearly white. */
+.segmented-toggle {
+  background-color: var(--inset-bg);
+  border-color: var(--inset-border);
+  box-shadow: var(--inset-shadow);
+}
+.segmented-toggle .segmented-option[aria-pressed="true"] {
+  background-color: var(--raised-bg);
+  color: var(--accent-text);
+  box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
 }
 
-/* Faint section wash for "All …" sidebar entries. Painted as a background
-   layer (not background-color) so the accent selection tint still shows. */
-.section-wash {
-  background-image: linear-gradient(rgb(var(--c-tint) / 0.05), rgb(var(--c-tint) / 0.05));
+/* Setting switch: recessed pill track with a raised knob. The 1px edge is an
+   inset shadow rather than a border so it doesn't shift the knob's centering. */
+.switch-track {
+  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--inset-border);
 }
-
-/* Frosted glass — always active on every theme. Intensity controlled by
-   --glass-blur / --glass-saturate.
-   Translucency comes from Tailwind alpha modifiers (e.g. bg-surface/80). */
-.glass {
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+.switch-track[data-on="true"] {
+  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--accent-border);
 }
-
-.glass-overlay {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+.switch-thumb {
+  background-color: #fff;
+  box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
-
-/* Glossy primary button — gradient + inset sheen + soft glow */
-.btn-glossy {
-  background-image: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
-  box-shadow:
-    inset 0 1px 0 var(--btn-sheen),
-    0 1px 2px var(--btn-shadow),
-    0 0 14px -6px var(--glow);
-  transition: filter 150ms ease, background-color 150ms ease, color 150ms ease, transform 100ms ease;
-}
-.btn-glossy:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-.btn-glossy:active:not(:disabled) {
-  transform: scale(0.97);
+[data-mode="light"] .switch-thumb {
+  box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.18), inset 0 1px 0 #fff;
 }
 
 /* Keyboard focus ring */
@@ -609,13 +749,12 @@ body {
   padding: 4px 6px;
   border-radius: 7px;
   border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface) / 0.94);
+  background: rgb(var(--c-surface));
   box-shadow: 0 2px 12px rgb(var(--c-overlay) / 0.3);
   font-size: 11px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
-  backdrop-filter: blur(8px);
   z-index: 2;
 }
 .cm-md-image-item:hover .cm-md-image-toolbar,
@@ -663,6 +802,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     rgb(var(--c-strong) / 0.55) var(--slider-progress),
     rgb(var(--c-strong) / 0.55) 100%
   );
+  box-shadow: var(--inset-shadow);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -673,7 +813,7 @@ input[type="range"]::-webkit-slider-thumb {
   border: 2px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
+  box-shadow: var(--raised-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 input[type="range"]:hover::-webkit-slider-thumb,
@@ -690,6 +830,7 @@ input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: rgb(var(--c-strong) / 0.55);
+  box-shadow: var(--inset-shadow);
 }
 input[type="range"]::-moz-range-progress {
   height: 4px;
@@ -702,7 +843,7 @@ input[type="range"]::-moz-range-thumb {
   border: 2px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 1px 4px rgb(var(--c-overlay) / 0.45);
+  box-shadow: var(--raised-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 input[type="range"]:hover::-moz-range-thumb,

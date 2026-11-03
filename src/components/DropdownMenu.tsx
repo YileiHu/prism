@@ -87,7 +87,7 @@ export function DropdownMenu({
       <div
         ref={menuRef}
         data-prism-menu=""
-        className={`fixed z-menu glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 ${
+        className={`fixed z-menu bg-elevated border border-strong rounded-control shadow-popover p-1 ${
           exiting ? "anim-exit" : side === "top" ? "anim-menu-up" : "anim-menu"
         } ${className}`}
         style={{ ...style, visibility: ready ? "visible" : "hidden" }}

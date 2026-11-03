@@ -44,7 +44,7 @@ export default function NoteColors() {
   ];
 
   return (
-    <div className="px-4 py-3 bg-surface/50 rounded-control border border-line/50">
+    <div className="px-4 py-3 bg-surface rounded-control border border-line/50">
       <div className="text-body font-medium text-secondary">{t["settings.noteTextColors"]}</div>
       <p className="text-caption text-muted mt-0.5 mb-3">{t["settings.noteTextColorsDesc"]}</p>
 

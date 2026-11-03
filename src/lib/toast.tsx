@@ -77,7 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {mounted && (
         <div
           key={toastSeq}
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-toast flex items-center gap-2 px-4 py-2 glass bg-elevated/85 border ${tone.border} rounded-control shadow-toast text-body text-primary ${exiting ? "anim-exit" : "anim-toast"}`}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-toast flex items-center gap-2 px-4 py-2 bg-elevated border ${tone.border} rounded-control shadow-toast text-body text-primary ${exiting ? "anim-exit" : "anim-toast"}`}
         >
           {Icon && <Icon size={16} className={tone.iconClass} />}
           <span>{current.msg}</span>

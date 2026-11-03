@@ -53,8 +53,6 @@ function applyTheme(id: string, mode: ResolvedMode): void {
   for (const [key, value] of Object.entries(variant.surfaces)) {
     root.style.setProperty(`--c-${key}`, value);
   }
-  root.style.setProperty("--glass-blur", "10px");
-  root.style.setProperty("--glass-saturate", "130%");
   root.style.setProperty("--glow", hexToRgba(theme.primary, mode === "dark" ? 0.25 : 0.16));
   root.style.setProperty("--aurora", variant.aurora);
   root.dataset.theme = id;

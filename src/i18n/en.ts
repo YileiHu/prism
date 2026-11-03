@@ -6,6 +6,8 @@ const en: Translation = {
   "nav.gtd": "Tasks",
   "nav.library": "Library",
   "nav.settings": "Settings",
+  "nav.toggleDark": "Switch to dark mode",
+  "nav.toggleLight": "Switch to light mode",
   "workspace.closeTab": "Close",
   "workspace.closeOthers": "Close others",
   "workspace.closeAll": "Close all",
@@ -331,6 +333,8 @@ const en: Translation = {
 
   // Changelog
   "changelog.title": "Changelog",
+  "changelog.showDetails": "Show {count} changes",
+  "changelog.hideDetails": "Hide changes",
 
   // Common
   "common.deleted": "Deleted",

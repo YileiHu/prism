@@ -87,7 +87,7 @@ export default function PdfPage({ pdf, pageNumber, width, active, registerRef }:
         registerRef(pageNumber, el);
       }}
       data-pdf-page={pageNumber}
-      className="relative scroll-mt-4 bg-elevated/40 border border-line/50 shadow-sm"
+      className="relative scroll-mt-4 bg-elevated border border-line/50 shadow-sm"
       style={{ width, minHeight: width * ratio }}
     >
       {!rendered && (

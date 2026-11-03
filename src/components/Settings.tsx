@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, Database, History, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { BookOpen, Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { useSettings } from "../lib/settings";
 import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
 import Button from "./Button";
 import CollapsibleSidebar from "./CollapsibleSidebar";
+import { ModuleSidebar } from "./AppSidebarSlot";
 import NavItem from "./NavItem";
-import ChangelogModal from "./ChangelogModal";
 import ConfirmDialog from "./ConfirmDialog";
 import GeneralSection from "./settings/GeneralSection";
 import VaultsSection from "./settings/VaultsSection";
@@ -22,7 +22,7 @@ type SettingsCategory = "general" | "vaults" | "pdf" | "editor" | "appearance" |
 
 const CATEGORY_KEY = "prism_settings_category";
 
-export default function Settings() {
+export default function Settings({ active }: { active: boolean }) {
   const { t, setLang } = useT();
   const { setTheme, setMode } = useTheme();
   const { reset } = useSettings();
@@ -37,7 +37,6 @@ export default function Settings() {
   });
   const [saved, setSaved] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [showChangelog, setShowChangelog] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(CATEGORY_KEY, category); } catch { /* ignore */ }
@@ -85,11 +84,6 @@ export default function Settings() {
       subtitle: saved
         ? <span className="text-caption text-success whitespace-nowrap">{t["settings.saved"]}</span>
         : undefined,
-      actions: (
-        <Button variant="ghost" size="icon-sm" onClick={() => setShowChangelog(true)} title={t["changelog.title"]}>
-          <History size={15} />
-        </Button>
-      ),
     };
     // categories is rebuilt each render; category/saved/t drive the visible model
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,24 +93,26 @@ export default function Settings() {
 
   return (
     <div className="h-full flex">
-      <CollapsibleSidebar>
-        <nav className="space-y-0.5">
-          {categories.map(({ key, label, icon: Icon }) => (
-            <NavItem
-              key={key}
-              onClick={() => setCategory(key)}
-              active={category === key}
-              leading={<Icon size={16} />}
-              label={label}
-            />
-          ))}
-        </nav>
-        {saved && (
-          <div className="px-4 pt-2 mt-2 border-t border-line/50">
-            <span className="text-caption text-success">{t["settings.saved"]}</span>
-          </div>
-        )}
-      </CollapsibleSidebar>
+      <ModuleSidebar active={active}>
+        <CollapsibleSidebar>
+          <nav className="space-y-0.5">
+            {categories.map(({ key, label, icon: Icon }) => (
+              <NavItem
+                key={key}
+                onClick={() => setCategory(key)}
+                active={category === key}
+                leading={<Icon size={16} />}
+                label={label}
+              />
+            ))}
+          </nav>
+          {saved && (
+            <div className="px-4 pt-2 mt-2 border-t border-line/50">
+              <span className="text-caption text-success">{t["settings.saved"]}</span>
+            </div>
+          )}
+        </CollapsibleSidebar>
+      </ModuleSidebar>
 
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl">
@@ -135,10 +131,6 @@ export default function Settings() {
               <p className="text-caption text-muted mt-0.5">{t["settings.resetDesc"]}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowChangelog(true)}>
-                <History size={14} />
-                {t["changelog.title"]}
-              </Button>
               <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)}>
                 <RotateCcw size={14} />
                 {t["settings.reset"]}
@@ -157,8 +149,6 @@ export default function Settings() {
         onConfirm={handleReset}
         onClose={() => setConfirmReset(false)}
       />
-
-      <ChangelogModal open={showChangelog} onClose={() => setShowChangelog(false)} />
     </div>
   );
 }

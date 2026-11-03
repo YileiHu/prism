@@ -57,7 +57,7 @@ export default function AppToolbar({ scopeKey, fallback, sidebar }: Props) {
   return (
     <div
       ref={barRef}
-      className="h-11 flex-shrink-0 flex items-center gap-2 px-3 border-b border-line/50 glass bg-tint/[0.04]"
+      className="relative z-10 h-11 flex-shrink-0 flex items-center gap-2 px-3 border-b border-strong/60 toolbar-band"
     >
       {sidebar && (
         <Button

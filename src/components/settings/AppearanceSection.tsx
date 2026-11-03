@@ -39,8 +39,8 @@ export default function AppearanceSection() {
               onClick={() => setTheme(th.id)}
               className={`p-4 rounded-card border transition-all text-left ${
                 themeId === th.id
-                  ? "border-[var(--accent)] bg-[var(--accent-muted)]"
-                  : "border-line bg-surface/50 hover:border-strong"
+                  ? "accent-ring border-[var(--accent)] bg-[var(--accent-muted)]"
+                  : "border-line bg-surface hover:border-strong"
               }`}
             >
               <div className="flex items-center gap-3 mb-3">

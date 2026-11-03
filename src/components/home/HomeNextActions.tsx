@@ -51,7 +51,7 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
   const checkbox = (onToggle: () => void) => (
     <button
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
-      className="w-[18px] h-[18px] rounded-full border border-strong hover:border-[var(--accent)] flex-shrink-0 transition-colors"
+      className="surface-inset w-[18px] h-[18px] rounded-full border hover:border-[var(--accent)] flex-shrink-0 transition-colors"
     />
   );
 

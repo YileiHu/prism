@@ -80,7 +80,7 @@ function ShortcutRecorder({
         }}
         title={t["settings.shortcutRecording"]}
         className={`${CONTROL_CLASSES} min-w-[150px] flex items-center justify-center gap-1 ${
-          recording ? "border-[var(--accent)]" : ""
+          recording ? "accent-ring border-[var(--accent)]" : ""
         }`}
       >
         {recording ? (
@@ -89,7 +89,7 @@ function ShortcutRecorder({
           formatShortcut(value).map((part, index) => (
             <span key={`${part}-${index}`} className="flex items-center gap-1">
               {index > 0 && <span className="text-caption text-muted">+</span>}
-              <kbd className="px-1.5 py-0.5 rounded-chip border border-strong bg-elevated text-caption text-secondary font-medium">
+              <kbd className="px-1.5 py-0.5 rounded-chip border border-[var(--inset-border)] surface-raised text-caption text-secondary font-medium">
                 {part}
               </kbd>
             </span>

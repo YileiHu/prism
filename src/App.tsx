@@ -9,8 +9,11 @@ import {
   Library,
   ListChecks,
   Minus,
+  Moon,
+  PartyPopper,
   Settings2,
   Square,
+  Sun,
   X,
 } from "lucide-react";
 import WebResources from "./components/WebResources";
@@ -21,15 +24,18 @@ import LibraryView from "./components/library/LibraryView";
 import DocumentWorkspace from "./components/workspace/DocumentWorkspace";
 import { LibraryDataProvider } from "./components/library/LibraryDataProvider";
 import AppToolbar from "./components/toolbar/AppToolbar";
+import { AppSidebarSlotProvider } from "./components/AppSidebarSlot";
 import type { ToolbarContribution } from "./components/toolbar/ToolbarProvider";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Button from "./components/Button";
+import ChangelogModal from "./components/ChangelogModal";
 import SplashScreen from "./components/SplashScreen";
 import TabStrip from "./components/TabStrip";
 import { useContextMenu } from "./lib/useContextMenu";
 import { useGlobalShortcuts } from "./lib/useShortcuts";
 import { ToastProvider } from "./lib/toast";
 import { useT } from "./i18n";
+import { useTheme } from "./theme/ThemeProvider";
 import type { Translation } from "./i18n/zh";
 import { useWorkspace } from "./lib/workspace/WorkspaceProvider";
 import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState";
@@ -54,9 +60,11 @@ export default function App() {
   const pdf = usePdfDocuments();
   const { onContextMenu } = useContextMenu();
   const sidebarCollapsed = useSidebarCollapsed();
+  const { resolvedMode, setMode } = useTheme();
 
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [maximized, setMaximized] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
   const [gtdFocus, setGtdFocus] = useState<GtdFocus | null>(null);
@@ -236,7 +244,7 @@ export default function App() {
             style={{ borderRadius: "8px", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
           >
             <header
-              className="flex items-center h-12 glass bg-surface/70 border-b border-line flex-shrink-0"
+              className="relative z-20 flex items-center h-12 app-header border-b border-strong/60 flex-shrink-0"
               style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
               <nav
@@ -249,6 +257,7 @@ export default function App() {
                     variant="ghost"
                     size="icon-sm"
                     active={!workspaceActive && state.module === id}
+                    className={!workspaceActive && state.module === id ? "chrome-pill-active" : ""}
                     onClick={() => showModule(id)}
                     title={t[labelKey]}
                   >
@@ -271,10 +280,30 @@ export default function App() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      onClick={() => setMode(resolvedMode === "dark" ? "light" : "dark")}
+                      title={t[resolvedMode === "dark" ? "nav.toggleLight" : "nav.toggleDark"]}
+                    >
+                      {resolvedMode === "dark"
+                        ? <Moon size={16} strokeWidth={1.5} />
+                        : <Sun size={16} strokeWidth={1.5} />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setShowChangelog(true)}
+                      title={t["changelog.title"]}
+                    >
+                      <PartyPopper size={16} strokeWidth={1.5} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       active={!workspaceActive && state.module === "settings"}
                       onClick={() => showModule("settings")}
                       title={t["nav.settings"]}
-                      className="mx-1"
+                      className={`mx-1 ${
+                        !workspaceActive && state.module === "settings" ? "chrome-pill-active" : ""
+                      }`}
                     >
                       <Settings2 size={16} strokeWidth={1.5} />
                     </Button>
@@ -304,40 +333,43 @@ export default function App() {
               />
             </header>
 
-            <AppToolbar
-              scopeKey={toolbarScope}
-              fallback={fallbackToolbar}
-              sidebar={workspaceActive
-                || state.module === "library"
-                || state.module === "resources"
-                || state.module === "gtd"
-                || state.module === "settings"
-                ? { collapsed: sidebarCollapsed, onToggle: toggleSidebarCollapsed }
-                : undefined}
-            />
+            <AppSidebarSlotProvider>
+              <AppToolbar
+                scopeKey={toolbarScope}
+                fallback={fallbackToolbar}
+                sidebar={workspaceActive
+                  || state.module === "library"
+                  || state.module === "resources"
+                  || state.module === "gtd"
+                  || state.module === "settings"
+                  ? { collapsed: sidebarCollapsed, onToggle: toggleSidebarCollapsed }
+                  : undefined}
+              />
 
-            <main className="flex-1 overflow-hidden relative">
-              <div style={paneStyle(moduleActive === "home")} className={moduleActive === "home" ? "pane-enter" : ""}>
-                <HomeView active={moduleActive === "home"} onNavigateToGtd={handleNavigateToGtd} />
-              </div>
-              <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
-                <WebResources />
-              </div>
-              <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
-                <GtdView focus={gtdFocus} />
-              </div>
-              <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
-                <LibraryView onOpenSettings={() => showModule("settings")} />
-              </div>
-              <div style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
-                <Settings />
-              </div>
+              <main className="flex-1 overflow-hidden relative app-main">
+                <div style={paneStyle(moduleActive === "home")} className={moduleActive === "home" ? "pane-enter" : ""}>
+                  <HomeView active={moduleActive === "home"} onNavigateToGtd={handleNavigateToGtd} />
+                </div>
+                <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
+                  <WebResources active={moduleActive === "resources"} />
+                </div>
+                <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
+                  <GtdView active={moduleActive === "gtd"} focus={gtdFocus} />
+                </div>
+                <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
+                  <LibraryView active={moduleActive === "library"} onOpenSettings={() => showModule("settings")} />
+                </div>
+                <div style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
+                  <Settings active={moduleActive === "settings"} />
+                </div>
 
-              <div style={paneStyle(workspaceActive)}>
-                <DocumentWorkspace active={workspaceActive} />
-              </div>
-            </main>
+                <div style={paneStyle(workspaceActive)}>
+                  <DocumentWorkspace active={workspaceActive} />
+                </div>
+              </main>
+            </AppSidebarSlotProvider>
 
+            <ChangelogModal open={showChangelog} onClose={() => setShowChangelog(false)} />
             {splashVisible && <SplashScreen fadeOut={splashFadeOut} />}
           </div>
         </ToastProvider>

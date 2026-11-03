@@ -110,7 +110,7 @@ export default function PdfCover({ doc, onGenerated }: Props) {
   }, [status, doc, onGenerated]);
 
   return (
-    <div ref={hostRef} className="absolute inset-0 bg-elevated/50">
+    <div ref={hostRef} className="absolute inset-0 bg-elevated">
       {status === "ready" && version > 0 ? (
         <img
           src={pdfCoverUrl(doc.id, version)}

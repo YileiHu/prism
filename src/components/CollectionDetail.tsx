@@ -115,7 +115,7 @@ function SortableGroupCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`mb-3 border rounded-card bg-surface/20 overflow-hidden transition-colors ${
+      className={`mb-3 border rounded-card bg-surface overflow-hidden transition-colors ${
         isOverlay ? "shadow-drag border-[var(--accent)]" : "border-strong/50"
       }`}
     >
@@ -395,13 +395,13 @@ export default function CollectionDetail({
         {/* Ungrouped card */}
         {ungroupedNotes.length > 0 && (
           <div
-            className="mb-3 border border-strong/50 rounded-card bg-surface/20 overflow-hidden"
+            className="mb-3 border border-strong/50 rounded-card bg-surface overflow-hidden"
           >
-            <div className="flex items-center gap-2 px-3 h-8 bg-elevated/30">
+            <div className="flex items-center gap-2 px-3 h-8 bg-tint/[0.06] border-b border-line/60">
               <Button variant="ghost" size="icon-xs" onClick={onToggleUngrouped}>
                 {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               </Button>
-              <span className="text-caption font-medium text-muted uppercase tracking-wide">
+              <span className="text-caption font-medium text-secondary uppercase tracking-wide">
                 {t["collections.ungrouped"]}
               </span>
               <span className="text-caption text-faint">{ungroupedNotes.length}</span>

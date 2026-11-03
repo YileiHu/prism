@@ -80,12 +80,12 @@ function SortableTab({
         if (e.button === 1) onClose();
       }}
       title={item.id}
-      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full transition-colors ${
+      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full border transition-colors ${
         chrome ? "h-8" : "h-7"
       } ${
         active
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
-          : "text-muted hover:text-secondary hover:bg-tint/[0.04]"
+          ? "chrome-pill-active border-transparent font-medium"
+          : "border-transparent text-muted hover:text-secondary hover:bg-tint/[0.05]"
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {item.icon}
@@ -202,7 +202,7 @@ export default function TabStrip({
         className={
           variant === "chrome"
             ? "h-full flex-1 min-w-0 flex items-stretch"
-            : "h-9 flex-shrink-0 flex items-stretch border-b border-line/50 glass bg-tint/[0.04]"
+            : "h-9 flex-shrink-0 flex items-stretch border-b border-line/50 bg-surface"
         }
       >
         <div className="relative flex-1 min-w-0 flex">
@@ -233,12 +233,8 @@ export default function TabStrip({
               ))}
             </SortableContext>
           </div>
-          {overflow.left && (
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-base/75 to-transparent" />
-          )}
-          {overflow.right && (
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-base/75 to-transparent" />
-          )}
+          {overflow.left && <div className="tab-fade-left" />}
+          {overflow.right && <div className="tab-fade-right" />}
         </div>
         {/* Right-side actions: always visible, even with no open tabs */}
         {rightActions && (

@@ -265,7 +265,7 @@ export default function PdfReader({
             inputMode="numeric"
             aria-label={t["pdf.reader.pageInput"]}
             title={t["pdf.reader.pageInput"]}
-            className="w-10 bg-elevated/50 hover:bg-elevated/70 text-center text-caption text-secondary tabular-nums rounded-chip border border-transparent hover:border-line focus:border-[var(--accent)] focus:outline-none px-1 py-0.5"
+            className="accent-focus w-10 bg-elevated hover:bg-hover text-center text-caption text-secondary tabular-nums rounded-chip border border-transparent hover:border-line focus:outline-none px-1 py-0.5"
           />
           <span className="text-caption text-muted tabular-nums whitespace-nowrap">
             / {numPages || "—"}
@@ -353,7 +353,7 @@ export default function PdfReader({
           </div>
         </div>
       ) : (
-        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto bg-base/60">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-4 py-6">
             {pdf && pageWidth > 0 && Array.from({ length: rowCount }, (_, row) => {
               const start = spread ? row * 2 + 1 : row + 1;

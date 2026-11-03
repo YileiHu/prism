@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Palette, Pencil, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Layers, Palette, Pencil, Trash2 } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -89,11 +89,11 @@ function LibraryRow({
       onContextMenu={onContextMenu}
       className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer ${
         active
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
-          : "text-secondary hover:text-primary hover:bg-elevated/50"
+          ? "bg-[var(--sidebar-item-active)] text-primary font-medium active-bar"
+          : "text-secondary hover:text-primary hover:bg-[var(--sidebar-item-hover)]"
       }`}
     >
-      <span className="flex-shrink-0 text-muted">{icon}</span>
+      <span className={`flex-shrink-0 ${active ? "text-[var(--accent-text)]" : "text-muted"}`}>{icon}</span>
       <span className="flex-1 min-w-0 text-body truncate text-left">{label}</span>
       {trailing !== undefined && <span className="text-caption text-faint flex-shrink-0">{trailing}</span>}
     </div>
@@ -155,7 +155,7 @@ function NoteCollectionRow({
       {...clickGuard}
       active={selected}
       className={`group cursor-pointer stagger-fade ${
-        isDropTarget ? "ring-1 ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
+        isDropTarget ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
       }`}
       onClick={onSelect}
       onContextMenu={(event) => onContextMenu(event, menuItems)}
@@ -224,7 +224,7 @@ function PdfCollectionRow({
       {...clickGuard}
       active={selected}
       className={`group cursor-pointer stagger-fade ${
-        isDropTarget ? "ring-1 ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
+        isDropTarget ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
       }`}
       onClick={onSelect}
       onContextMenu={(event) => onContextMenu(event, menuItems)}
@@ -361,7 +361,8 @@ export default function LibrarySidebar({
               <NavItem
                 onClick={() => { note.selectCollection(null); onOpenCollections?.(); }}
                 active={note.selectedCollectionId === null}
-                className="mb-1 font-medium section-wash"
+                className="mb-1 font-medium"
+                leading={<Layers size={14} />}
                 label={t["collections.allNotes"]}
                 trailing={note.sortedNotes.length}
               />
@@ -392,7 +393,8 @@ export default function LibrarySidebar({
               <NavItem
                 onClick={() => { pdfCols.selectCollection(null); onOpenCollections?.(); }}
                 active={pdfCols.selectedId === null}
-                className="mb-1 font-medium section-wash"
+                className="mb-1 font-medium"
+                leading={<Layers size={14} />}
                 label={t["pdf.all"]}
                 trailing={pdfAllCount}
               />
@@ -433,7 +435,7 @@ export default function LibrarySidebar({
                 onClick={() => { if (iconTarget) void applyVaultIcon(iconTarget.path, id); }}
                 className={`w-10 h-10 flex items-center justify-center rounded-control border transition-colors cursor-pointer ${
                   current
-                    ? "border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent-text)]"
+                    ? "accent-ring border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent-text)]"
                     : "border-line text-secondary hover:bg-elevated/60 hover:text-primary"
                 }`}
               >

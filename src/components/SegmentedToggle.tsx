@@ -20,7 +20,7 @@ export default function SegmentedToggle<T extends string>({
   className = "",
 }: Props<T>) {
   return (
-    <div className={`flex rounded-control border border-line/50 p-0.5 flex-shrink-0 ${className}`}>
+    <div className={`segmented-toggle flex rounded-control border p-0.5 flex-shrink-0 ${className}`}>
       {options.map(({ value: optionValue, label, icon: Icon }) => {
         const active = optionValue === value;
         return (
@@ -29,10 +29,8 @@ export default function SegmentedToggle<T extends string>({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(optionValue)}
-            className={`flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors cursor-pointer ${
-              active
-                ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
-                : "text-muted hover:text-secondary"
+            className={`segmented-option flex items-center gap-1 px-2 py-0.5 text-caption rounded-chip transition-colors cursor-pointer ${
+              active ? "" : "text-muted hover:text-secondary"
             }`}
           >
             {Icon && <Icon size={12} />}

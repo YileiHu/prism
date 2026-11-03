@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus, Trash2, Edit3, ExternalLink, Link2, Pencil } from "lucide-react";
+import { Plus, Trash2, Edit3, ExternalLink, Layers, Link2, Pencil } from "lucide-react";
 import { useT } from "../i18n";
 import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
@@ -12,6 +12,7 @@ import RenameModal from "./RenameModal";
 import Button from "./Button";
 import Modal from "./Modal";
 import CollapsibleSidebar from "./CollapsibleSidebar";
+import { ModuleSidebar } from "./AppSidebarSlot";
 import { type MenuItem } from "./ContextMenu";
 import TagInput from "./TagInput";
 import ItemRow from "./ItemRow";
@@ -167,7 +168,7 @@ function ResourceList({
   );
 }
 
-export default function WebResources({ onReady }: { onReady?: () => void }) {
+export default function WebResources({ active, onReady }: { active: boolean; onReady?: () => void }) {
   const { t } = useT();
   const { values: settings } = useSettings();
   const showToast = useToast();
@@ -469,11 +470,13 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
   return (
     <div className="h-full flex">
       {/* Tag sidebar */}
-      <CollapsibleSidebar>
+      <ModuleSidebar active={active}>
+        <CollapsibleSidebar>
           <NavItem
             onClick={() => setActiveTag(null)}
             active={!activeTag}
-            className="mb-1 font-medium section-wash"
+            className="mb-1 font-medium"
+            leading={<Layers size={14} />}
             label={t["resources.allTags"]}
             trailing={totalCount}
           />
@@ -512,7 +515,8 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
             />
           )}
           {tagsLoaded && allTags.length === 0 && <EmptyState size="card" text={t["resources.noTags"]} />}
-      </CollapsibleSidebar>
+        </CollapsibleSidebar>
+      </ModuleSidebar>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -570,7 +574,7 @@ export default function WebResources({ onReady }: { onReady?: () => void }) {
               {tagGroups.untagged.length > 0 && (
                 <SectionCard
                   className="mb-3"
-                  title={<span className="uppercase tracking-wide text-muted">{t["collections.ungrouped"]}</span>}
+                  title={<span className="uppercase tracking-wide text-secondary">{t["collections.ungrouped"]}</span>}
                   count={tagGroups.untagged.length}
                   collapsed={collapsedTags.has("__untagged__")}
                   onToggle={() => toggleCollapse("__untagged__")}

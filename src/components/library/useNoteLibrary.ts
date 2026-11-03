@@ -185,7 +185,7 @@ export function useNoteLibrary(vaultPath: string) {
   // notes/collections are still the previous vault's — mixing them would mark
   // every collection note as missing.
   const viewVaultPath = shownVaultPath || vaultPath;
-  const collectionsApi = useCollections({ vaultPath: viewVaultPath, dataVaultPath, notes, loadNotes });
+  const collectionsApi = useCollections({ vaultPath: viewVaultPath, dataVaultPath, notes, loadNotes, searching: debouncedQuery.trim() !== "" });
   const { setCollections, setSelectedCollectionId } = collectionsApi;
 
   const refreshFavorites = useCallback(async () => {
@@ -232,6 +232,9 @@ export function useNoteLibrary(vaultPath: string) {
 
   const selectCollection = useCallback((id: string | null) => {
     setSelectedCollectionId(id);
+    // Collection view doesn't support searching; drop any active query so the
+    // missing-marker resolution always runs against the full note list.
+    if (id) setSearchQuery("");
     if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
   }, [setSelectedCollectionId, vaultPath]);
 

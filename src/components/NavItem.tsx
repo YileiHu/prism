@@ -2,6 +2,9 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 interface NavItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean;
+  // Parent of the active item: accent text without its own chip, so the
+  // container and the selected child don't read as two stacked buttons.
+  sectionActive?: boolean;
   leading?: ReactNode;
   label: ReactNode;
   trailing?: ReactNode;
@@ -9,7 +12,7 @@ interface NavItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const NavItem = forwardRef<HTMLButtonElement, NavItemProps>(function NavItem(
-  { active = false, leading, label, trailing, footer, className = "", ...props },
+  { active = false, sectionActive = false, leading, label, trailing, footer, className = "", ...props },
   ref,
 ) {
   return (
@@ -18,8 +21,10 @@ const NavItem = forwardRef<HTMLButtonElement, NavItemProps>(function NavItem(
       type="button"
       className={`w-full px-3 py-2 rounded-control text-body text-left transition-colors ${
         active
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)] font-medium accent-frame"
-          : "text-tertiary hover:text-primary hover:bg-elevated/50"
+          ? "bg-[var(--sidebar-item-active)] text-primary font-medium"
+          : sectionActive
+            ? "text-[var(--accent-text)] font-medium hover:bg-[var(--sidebar-item-hover)]"
+            : "text-secondary hover:text-primary hover:bg-[var(--sidebar-item-hover)]"
       } ${className}`}
       {...props}
     >

@@ -1,19 +1,33 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Inbox, Clock, FolderKanban, Lightbulb, CheckCircle2, type LucideIcon } from "lucide-react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Inbox,
+  Clock,
+  FolderKanban,
+  Lightbulb,
+  CheckCircle2,
+  type LucideIcon,
+} from "lucide-react";
 import CollapsibleSidebar from "../CollapsibleSidebar";
+import { ModuleSidebar } from "../AppSidebarSlot";
 import NavItem from "../NavItem";
+import EmptyState from "../EmptyState";
+import { SkeletonRows } from "../Skeleton";
 import { useT } from "../../i18n";
 import GtdInbox from "./GtdInbox";
 import GtdItemList from "./GtdItemList";
-import GtdProjects from "./GtdProjects";
+import GtdProjectDetail from "./GtdProjectDetail";
+import GtdProjectList from "./GtdProjectList";
 import GtdProcessDialog from "./GtdProcessDialog";
 import type { GtdFocus, GtdItem, GtdListKey, GtdStatus } from "./types";
 
 interface Props {
+  active: boolean;
   focus: GtdFocus | null;
 }
 
-export default function GtdView({ focus }: Props) {
+export default function GtdView({ active, focus }: Props) {
   const { t } = useT();
   const [list, setList] = useState<GtdListKey>("inbox");
   const [counts, setCounts] = useState<Record<GtdStatus, number>>({
@@ -23,6 +37,10 @@ export default function GtdView({ focus }: Props) {
     project: 0,
     done: 0,
   });
+  const [projects, setProjects] = useState<GtdItem[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [projectsOpen, setProjectsOpen] = useState(true);
   const [processing, setProcessing] = useState<GtdItem | null>(null);
   const [version, setVersion] = useState(0);
   const [activeFocus, setActiveFocus] = useState<GtdFocus | null>(null);
@@ -35,6 +53,10 @@ export default function GtdView({ focus }: Props) {
     focusSeqRef.current = focus.seq;
     setActiveFocus(focus);
     setList(focus.list);
+    if (focus.list === "project") {
+      setProjectsOpen(true);
+      if (focus.projectId) setSelectedProjectId(focus.projectId);
+    }
   }, [focus]);
 
   const reloadCounts = useCallback(async () => {
@@ -45,10 +67,18 @@ export default function GtdView({ focus }: Props) {
     reloadCounts();
   }, [reloadCounts]);
 
+  useEffect(() => {
+    window.prism.getGtdItems("project").then(setProjects).finally(() => setProjectsLoaded(true));
+  }, [version]);
+
   const handleChanged = useCallback(() => {
     setVersion((v) => v + 1);
     reloadCounts();
   }, [reloadCounts]);
+
+  // Fall back to the first project when nothing (valid) is selected — e.g. the
+  // current one was completed or deleted
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? projects[0] ?? null;
 
   const nav: { key: GtdListKey; icon: LucideIcon; label: string; count?: number }[] = [
     { key: "inbox", icon: Inbox, label: t["gtd.inbox"], count: counts.inbox },
@@ -60,18 +90,57 @@ export default function GtdView({ focus }: Props) {
 
   return (
     <div className="h-full flex">
-      <CollapsibleSidebar>
-        {nav.map(({ key, icon: Icon, label, count }) => (
-          <NavItem
-            key={key}
-            onClick={() => setList(key)}
-            active={list === key}
-            leading={<Icon size={15} />}
-            label={label}
-            trailing={count !== undefined && count > 0 ? count : undefined}
-          />
-        ))}
-      </CollapsibleSidebar>
+      <ModuleSidebar active={active}>
+        <CollapsibleSidebar>
+          {nav.map(({ key, icon: Icon, label, count }) =>
+            key === "project" ? (
+              <Fragment key={key}>
+                <NavItem
+                  onClick={() => {
+                    if (list === "project") setProjectsOpen((open) => !open);
+                    else {
+                      setList("project");
+                      setProjectsOpen(true);
+                    }
+                  }}
+                  active={list === "project" && !selectedProject}
+                  sectionActive={list === "project" && !!selectedProject}
+                  leading={<Icon size={15} />}
+                  label={label}
+                  trailing={
+                    <span className="flex items-center gap-1">
+                      {count !== undefined && count > 0 ? count : null}
+                      {projectsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </span>
+                  }
+                />
+                {projectsOpen && projects.length > 0 && (
+                  <div className="pl-2 pt-0.5">
+                    <GtdProjectList
+                      projects={projects}
+                      selectedId={list === "project" ? selectedProject?.id ?? null : null}
+                      onSelect={(id) => {
+                        setList("project");
+                        setSelectedProjectId(id);
+                      }}
+                      onChanged={handleChanged}
+                    />
+                  </div>
+                )}
+              </Fragment>
+            ) : (
+              <NavItem
+                key={key}
+                onClick={() => setList(key)}
+                active={list === key}
+                leading={<Icon size={15} />}
+                label={label}
+                trailing={count !== undefined && count > 0 ? count : undefined}
+              />
+            ),
+          )}
+        </CollapsibleSidebar>
+      </ModuleSidebar>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {list === "inbox" && (
@@ -91,17 +160,26 @@ export default function GtdView({ focus }: Props) {
             }
           />
         )}
-        {list === "project" && (
-          <GtdProjects
-            version={version}
-            onChanged={handleChanged}
-            focusAction={
-              activeFocus?.list === "project" && activeFocus.projectId
-                ? { projectId: activeFocus.projectId, actionId: activeFocus.actionId ?? 0, seq: activeFocus.seq }
-                : null
-            }
-          />
-        )}
+        {list === "project" &&
+          (!projectsLoaded ? (
+            <SkeletonRows count={7} className="p-2" />
+          ) : projects.length === 0 ? (
+            <EmptyState size="module" text={t["gtd.emptyList"]} />
+          ) : (
+            selectedProject && (
+              <GtdProjectDetail
+                key={selectedProject.id}
+                project={selectedProject}
+                version={version}
+                onChanged={handleChanged}
+                focusAction={
+                  activeFocus?.list === "project" && activeFocus.projectId
+                    ? { projectId: activeFocus.projectId, actionId: activeFocus.actionId ?? 0, seq: activeFocus.seq }
+                    : null
+                }
+              />
+            )
+          ))}
       </div>
 
       <GtdProcessDialog

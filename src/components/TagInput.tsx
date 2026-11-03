@@ -73,7 +73,7 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           className="w-full"
         />
         {open && filtered.length > 0 && (
-          <div className="absolute top-full mt-1 left-0 z-30 glass bg-elevated/85 border border-strong rounded-control shadow-popover p-1 w-full">
+          <div className="absolute top-full mt-1 left-0 z-30 bg-elevated border border-strong rounded-control shadow-popover p-1 w-full">
             {filtered.map((s) => (
               <button
                 key={s.name}

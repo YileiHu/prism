@@ -19,7 +19,7 @@ export default function BatchActionBar({ selectedCount, collections, onAddToColl
   if (selectedCount === 0) return null;
 
   return (
-    <div className="sticky bottom-0 left-0 right-0 flex items-center gap-3 px-4 py-2.5 glass bg-elevated/85 border-t border-strong shadow-popover z-20 anim-bar">
+    <div className="sticky bottom-0 left-0 right-0 flex items-center gap-3 px-4 py-2.5 bg-elevated border-t border-strong shadow-popover z-20 anim-bar">
       <span className="text-body text-secondary font-medium">
         {t["batch.selected"].replace("{count}", String(selectedCount))}
       </span>

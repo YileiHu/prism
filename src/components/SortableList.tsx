@@ -79,8 +79,8 @@ export default function SortableList<T>({ items, itemId, onReorder, renderItem, 
           ))}
         </div>
       </SortableContext>
-      {/* Portal to body: a glass/backdrop-filter ancestor becomes the containing
-          block for position:fixed and would offset the overlay */}
+      {/* Portal to body: a transformed ancestor becomes the containing block
+          for position:fixed and would offset the overlay */}
       {createPortal(
         <DragOverlay>
           {activeItem !== undefined && (

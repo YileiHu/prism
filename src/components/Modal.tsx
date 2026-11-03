@@ -123,7 +123,7 @@ export default function Modal({
       } justify-center ${position === "top" ? "pt-[20vh]" : ""}`}
     >
       <div
-        className={`fixed inset-0 bg-overlay/60 glass-overlay ${exiting ? "anim-exit" : "anim-overlay"}`}
+        className={`fixed inset-0 bg-overlay/60 ${exiting ? "anim-exit" : "anim-overlay"}`}
         onClick={closeOnBackdrop ? onClose : undefined}
       />
       <div
@@ -133,7 +133,7 @@ export default function Modal({
         aria-labelledby={title !== undefined ? titleId : undefined}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        className={`relative glass bg-surface/85 border border-strong rounded-card shadow-modal p-6 focus:outline-none ${exiting ? "anim-exit-pop" : "anim-pop"}`}
+        className={`relative bg-surface border border-strong rounded-card shadow-modal p-6 focus:outline-none ${exiting ? "anim-exit-pop" : "anim-pop"}`}
         style={{ width: panelWidth }}
       >
         {title !== undefined && (

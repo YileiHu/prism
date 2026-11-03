@@ -62,6 +62,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const progress = t["gtd.projectProgress"]
     .replace("{done}", String(project.done_action_count))
     .replace("{total}", String(project.action_count));
+  const percent = project.action_count > 0 ? (project.done_action_count / project.action_count) * 100 : 0;
 
   // Grow with the content up to ~4 lines, then scroll internally
   const autoGrow = (el: HTMLTextAreaElement) => {
@@ -157,42 +158,31 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
-      <>
-        <span className="min-w-0 text-body font-medium text-primary truncate">{project.title}</span>
-        {project.action_count > 0 && (
-          <span className="text-caption text-muted flex-shrink-0 whitespace-nowrap">{progress}</span>
-        )}
-      </>
+      <span className="min-w-0 text-body font-medium text-primary truncate">{t["gtd.projects"]}</span>
     ),
-  }), [project.action_count, project.title, progress]);
+  }), [t]);
 
   useToolbarContribution("module:gtd", toolbar);
 
   return (
     <>
-      <div className="px-4 py-2 border-b border-line/30 flex-shrink-0">
-        <Textarea
-          ref={inputRef}
-          rows={1}
-          value={draft}
-          onChange={(e) => { setDraft(e.target.value); autoGrow(e.currentTarget); }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={t["gtd.addAction"]}
-          autoFocus
-          className="w-full max-h-24 resize-none overflow-y-auto"
-        />
-      </div>
-
-      <div className="px-4 py-2 border-b border-line/30 flex-shrink-0">
+      <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-line/30">
+        <h2 className="text-section font-semibold text-primary truncate">{project.title}</h2>
+        {project.action_count > 0 && (
+          <div className="mt-2 flex items-center gap-3">
+            <span className="surface-inset block flex-1 h-1.5 rounded-chip overflow-hidden">
+              <span
+                className="block h-1.5 rounded-chip bg-[var(--accent)] transition-all"
+                style={{ width: `${percent}%` }}
+              />
+            </span>
+            <span className="text-caption text-muted tabular-nums whitespace-nowrap">{progress}</span>
+          </div>
+        )}
         <button
           type="button"
           onClick={openDescription}
-          className="group/desc w-full text-left rounded-control border border-line/50 bg-elevated/50 px-3 py-2 hover:border-strong transition-colors"
+          className="group/desc field-inset w-full text-left rounded-control border px-3 py-2 hover:border-strong transition-colors mt-3"
         >
           <span className="flex items-center gap-1.5 text-meta text-muted mb-1">
             {t["gtd.projectDescription"]}
@@ -206,6 +196,21 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
             <span className="block text-body text-muted truncate">{t["gtd.projectDescriptionPlaceholder"]}</span>
           )}
         </button>
+        <Textarea
+          ref={inputRef}
+          rows={1}
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); autoGrow(e.currentTarget); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={t["gtd.addAction"]}
+          autoFocus
+          className="w-full max-h-24 resize-none overflow-y-auto mt-2"
+        />
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -241,8 +246,8 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
                   onClick={() => toggleActionDone(action)}
                   className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
                     action.is_done
-                      ? "bg-[var(--accent)] border-[var(--accent)] text-on-accent"
-                      : "border-strong hover:border-[var(--accent)]"
+                      ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)] text-on-accent"
+                      : "surface-inset hover:border-[var(--accent)]"
                   }`}
                 >
                   {action.is_done === 1 && <Check size={11} strokeWidth={3} />}
@@ -268,7 +273,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
           )}
           renderOverlay={(action) => (
             <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
-              <span className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 ${action.is_done ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"}`} />
+              <span className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 ${action.is_done ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]" : "surface-inset"}`} />
               <span className={`truncate ${action.is_done ? "text-muted line-through" : ""}`}>{action.title}</span>
             </div>
           )}

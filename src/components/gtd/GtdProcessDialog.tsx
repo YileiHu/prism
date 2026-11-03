@@ -43,7 +43,7 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
       icon={<ListChecks size={16} className="text-[var(--accent-text)]" />}
       size="md"
     >
-      <p className="text-body text-primary font-medium bg-elevated/50 border border-line/50 rounded-control px-3 py-2 mb-5 break-words">
+      <p className="text-body text-primary font-medium bg-elevated border border-line/50 rounded-control px-3 py-2 mb-5 break-words">
         {item?.title}
       </p>
 
@@ -100,7 +100,7 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => decide("waiting")}
-              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated/50 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
+              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
             >
               <Clock size={16} className="text-[var(--accent-text)]" />
               <span className="text-body font-medium text-primary">{t["gtd.waiting"]}</span>
@@ -108,7 +108,7 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
             </button>
             <button
               onClick={() => decide("project")}
-              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated/50 hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
+              className="flex flex-col items-start gap-1.5 p-4 rounded-card border border-strong/50 bg-elevated hover:border-[var(--accent)] hover:bg-[var(--accent-muted)] transition-colors text-left"
             >
               <FolderKanban size={16} className="text-[var(--accent-text)]" />
               <span className="text-body font-medium text-primary">{t["gtd.projects"]}</span>

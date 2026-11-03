@@ -19,9 +19,9 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 };
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:        'btn-glossy text-on-accent font-medium',
+  primary:        'surface-raised text-[var(--accent-text)] font-medium enabled:hover:bg-[var(--accent-muted)]',
   secondary:      'text-tertiary hover:text-primary hover:bg-elevated',
-  danger:         'bg-danger hover:bg-danger/90 text-on-danger font-medium',
+  danger:         'surface-raised-fill bg-danger hover:bg-danger/90 text-on-danger font-medium',
   'danger-subtle': 'bg-danger/10 hover:bg-danger/20 text-danger',
   ghost:          'text-muted hover:text-secondary hover:bg-hover',
   'ghost-danger': 'text-danger hover:bg-danger/10',

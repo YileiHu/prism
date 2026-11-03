@@ -82,7 +82,7 @@ export default function OutlineCard({
       <button
         onClick={() => setCollapsedPersisted(false)}
         title={t["editor.outline"]}
-        className="absolute left-3 top-3 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-control border border-line/50 bg-surface/85 glass text-muted hover:text-primary shadow-popover"
+        className="absolute left-3 top-3 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-control border border-line/50 bg-surface text-muted hover:text-primary shadow-popover"
       >
         <ListTree size={13} />
       </button>
@@ -90,7 +90,7 @@ export default function OutlineCard({
   }
 
   return (
-    <div className="absolute left-3 top-3 bottom-6 z-20 w-52 flex flex-col rounded-control border border-line/50 bg-surface/85 glass shadow-popover overflow-hidden">
+    <div className="absolute left-3 top-3 bottom-6 z-20 w-52 flex flex-col rounded-control border border-line/50 bg-surface shadow-popover overflow-hidden">
       <div className="flex items-center gap-1.5 px-2.5 h-8 border-b border-line/50 flex-shrink-0">
         <ListTree size={13} className="text-muted flex-shrink-0" />
         <span className="text-caption font-medium text-secondary flex-1 truncate">{t["editor.outline"]}</span>

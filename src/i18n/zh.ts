@@ -5,6 +5,8 @@ const zh = {
   "nav.gtd": "事务",
   "nav.library": "资料",
   "nav.settings": "设置",
+  "nav.toggleDark": "切换到深色模式",
+  "nav.toggleLight": "切换到浅色模式",
   "workspace.closeTab": "关闭",
   "workspace.closeOthers": "关闭其他",
   "workspace.closeAll": "关闭全部",
@@ -333,6 +335,8 @@ const zh = {
 
   // Changelog
   "changelog.title": "更新公告",
+  "changelog.showDetails": "查看 {count} 项更新",
+  "changelog.hideDetails": "收起更新",
 
   // Common
   "common.deleted": "已删除",

@@ -87,7 +87,7 @@ export default function Sidebar({ children, footer, fill = false }: SidebarProps
 
   return (
     <aside
-      className="flex-shrink-0 border-r border-line glass bg-base/50 flex flex-col select-none relative group"
+      className="flex-shrink-0 border-r border-strong/60 chrome-bg flex flex-col select-none relative group"
       style={{ width }}
     >
       <div

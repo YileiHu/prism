@@ -54,9 +54,12 @@ interface UseCollectionsOptions {
   dataVaultPath: string;
   notes: VaultNote[];
   loadNotes: () => Promise<void>;
+  // While a search is active, `notes` is only the matching subset — healing
+  // against it would mark (or even relink) everything else as missing.
+  searching?: boolean;
 }
 
-export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes }: UseCollectionsOptions) {
+export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, searching = false }: UseCollectionsOptions) {
   const { t } = useT();
   const showToast = useToast();
   const [collections, setCollections] = useState<CollectionData[]>([]);
@@ -401,6 +404,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes }: U
   // same file name — ambiguous or absent matches keep the "missing" marker.
   useEffect(() => {
     if (dataVaultPath !== vaultPath) return;
+    if (searching) return;
     if (notes.length === 0 || collections.length === 0) return;
 
     const missing = new Set<string>();
@@ -445,7 +449,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes }: U
       saveCollections(updated);
       return updated;
     });
-  }, [notes, collections, notesByRelPath, vaultPath, dataVaultPath, saveCollections]);
+  }, [notes, collections, notesByRelPath, vaultPath, dataVaultPath, saveCollections, searching]);
 
   const mapNotes = useCallback((notePaths: string[]) => {
     return notePaths.map((relPath) => {

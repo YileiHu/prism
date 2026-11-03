@@ -14,7 +14,7 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 px-4 py-3 bg-surface/50 rounded-control border border-line/50">
+    <div className="flex items-center justify-between gap-6 px-4 py-3 bg-surface rounded-control border border-line/50">
       <div className="min-w-0">
         <div className="text-body font-medium text-secondary">{label}</div>
         {description && <p className="text-caption text-muted mt-0.5">{description}</p>}
@@ -34,7 +34,7 @@ export function SettingBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="px-4 py-3 bg-surface/50 rounded-control border border-line/50">
+    <div className="px-4 py-3 bg-surface rounded-control border border-line/50">
       <div className="text-body font-medium text-secondary">{label}</div>
       {description && <p className="text-caption text-muted mt-0.5 mb-2.5">{description}</p>}
       {children}
@@ -48,13 +48,14 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (nex
       type="button"
       role="switch"
       aria-checked={checked}
+      data-on={checked}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors ${
-        checked ? "bg-[var(--accent)]" : "bg-strong/50"
+      className={`switch-track relative w-9 h-5 rounded-full transition-colors ${
+        checked ? "bg-[var(--accent)]" : "bg-[var(--inset-bg)]"
       }`}
     >
       <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+        className={`switch-thumb absolute top-0.5 w-4 h-4 rounded-full transition-transform ${
           checked ? "translate-x-[18px]" : "translate-x-0.5"
         }`}
         style={{ left: 0 }}

@@ -26,10 +26,12 @@ import { relKey, type PdfCollectionData } from "../pdf/types";
 import type { CollectionData } from "../collectionTypes";
 import { useLibraryData } from "./LibraryDataProvider";
 import LibrarySidebar from "./LibrarySidebar";
+import { ModuleSidebar } from "../AppSidebarSlot";
 import NoteLibraryContent from "./NoteLibraryContent";
 import PdfLibraryContent from "./PdfLibraryContent";
 
 interface Props {
+  active: boolean;
   onOpenSettings: () => void;
 }
 
@@ -40,7 +42,7 @@ type DragState =
   | { kind: "pdf-collection"; collection: PdfCollectionData }
   | null;
 
-export default function LibraryView({ onOpenSettings }: Props) {
+export default function LibraryView({ active, onOpenSettings }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const { state: workspace, setLibrary } = useWorkspace();
@@ -183,26 +185,28 @@ export default function LibraryView({ onOpenSettings }: Props) {
       onDragCancel={() => setDrag(null)}
     >
       <div className="h-full flex">
-        <div
-          className={`h-full flex-shrink-0 grid transition-[grid-template-columns] duration-200 ease-out ${
-            sidebarCollapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
-          }`}
-        >
-          <div className="overflow-hidden min-w-0 h-full flex">
-            <LibrarySidebar
-              vaults={vaults}
-              library={workspace.library}
-              note={note}
-              pdfCols={pdfCols}
-              pdfAllCount={pdf.documents.length}
-              onSelectLibrary={selectLibrary}
-              onRenameNoteCollection={setNoteRenameTarget}
-              onDeleteNoteCollection={setNoteDeleteTarget}
-              onRenamePdfCollection={setPdfRenameTarget}
-              onDeletePdfCollection={setPdfDeleteTarget}
-            />
+        <ModuleSidebar active={active}>
+          <div
+            className={`h-full flex-shrink-0 grid transition-[grid-template-columns] duration-200 ease-out ${
+              sidebarCollapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
+            }`}
+          >
+            <div className="overflow-hidden min-w-0 h-full flex">
+              <LibrarySidebar
+                vaults={vaults}
+                library={workspace.library}
+                note={note}
+                pdfCols={pdfCols}
+                pdfAllCount={pdf.documents.length}
+                onSelectLibrary={selectLibrary}
+                onRenameNoteCollection={setNoteRenameTarget}
+                onDeleteNoteCollection={setNoteDeleteTarget}
+                onRenamePdfCollection={setPdfRenameTarget}
+                onDeletePdfCollection={setPdfDeleteTarget}
+              />
+            </div>
           </div>
-        </div>
+        </ModuleSidebar>
         <div
           key={pdfMode
             ? `pdf:${workspace.library.kind === "pdf" ? workspace.library.repoPath : ""}`
@@ -235,7 +239,7 @@ export default function LibraryView({ onOpenSettings }: Props) {
         )}
         {drag?.kind === "pdf-doc" && (
           <div className="w-36 rounded-card bg-elevated border border-[var(--accent)] shadow-drag overflow-hidden opacity-95">
-            <div className="aspect-[3/4] flex items-center justify-center bg-surface/80 text-faint">
+            <div className="aspect-[3/4] flex items-center justify-center bg-surface text-faint">
               <BookOpen size={26} strokeWidth={1.3} />
             </div>
             <div className="px-2 py-1.5 text-caption text-primary truncate">{drag.title}</div>

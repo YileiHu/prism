@@ -33,7 +33,7 @@ export default function HomeClock() {
   const year = now.toLocaleDateString(locale, { year: "numeric" });
 
   return (
-    <div className="rounded-card bg-surface/20 bg-gradient-to-br from-[rgb(var(--accent-rgb)/0.18)] to-[rgb(var(--accent-rgb)/0.07)] px-5 py-4 flex-shrink-0 select-none">
+    <div className="rounded-card bg-surface bg-gradient-to-br from-[rgb(var(--accent-rgb)/0.22)] to-[rgb(var(--accent-rgb)/0.12)] px-5 py-4 flex-shrink-0 select-none">
       <div className="text-[40px] leading-none font-semibold tabular-nums tracking-tight text-primary">
         {time}
       </div>

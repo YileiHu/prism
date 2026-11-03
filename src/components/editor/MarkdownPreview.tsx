@@ -54,7 +54,7 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
   if (entries.length === 0) return null;
   return (
     <div className="mx-auto mb-4 px-1 pt-4" style={{ maxWidth: "var(--content-width)" }}>
-      <div className="rounded-control border border-line/50 bg-surface/50 px-4 py-2.5 text-caption overflow-hidden">
+      <div className="rounded-control border border-line/50 bg-surface px-4 py-2.5 text-caption overflow-hidden">
         {entries.map(([key, value]) => (
           <div key={key} className="flex gap-3 py-0.5 min-w-0">
             <span className="text-muted flex-shrink-0">{key}</span>

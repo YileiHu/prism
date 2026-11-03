@@ -113,7 +113,7 @@ export default function VaultsSection({ onSaved }: Props) {
         {!loaded && <SkeletonRows count={2} />}
         {loaded && vaults.length === 0 && <EmptyState size="card" text={t["settings.noVaults"]} />}
         {vaults.map((v, i) => (
-          <div key={v.path} className="flex items-center gap-3 p-3 bg-surface/50 rounded-control border border-line/50">
+          <div key={v.path} className="flex items-center gap-3 p-3 bg-surface rounded-control border border-line/50">
             <VaultIcon name={v.icon} size={16} className="text-warning flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-body text-primary font-medium truncate">{v.name}</div>
@@ -126,7 +126,7 @@ export default function VaultsSection({ onSaved }: Props) {
         ))}
       </div>
 
-      <div className="p-4 bg-surface/20 rounded-control border border-line/50 mb-4 space-y-3">
+      <div className="p-4 bg-surface rounded-control border border-line/50 mb-4 space-y-3">
         <p className="text-caption text-tertiary font-medium">{t["settings.addVault"]}</p>
         <div className="flex gap-2">
           <Input

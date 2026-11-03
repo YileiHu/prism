@@ -415,7 +415,9 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         <span className="text-caption text-faint tabular-nums">{count}</span>
       </>
     ),
-    controls: (
+    // Searching inside a collection has no defined semantics (search replaces
+    // the note list the collection resolves against), so hide the controls.
+    controls: selectedCollection ? undefined : (
       <>
         <SearchInput
           ref={searchInputRef}
@@ -524,10 +526,10 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
   }
 
   return (
-    <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden relative bg-base" aria-busy={switching}>
+    <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden relative" aria-busy={switching}>
       {switching && (
         <div className="absolute inset-0 z-20 flex items-start justify-center pt-10 bg-base/30">
-          <div className="flex items-center gap-2 rounded-full glass bg-surface/80 border border-line px-3 py-1.5 text-caption text-secondary">
+          <div className="flex items-center gap-2 rounded-full bg-surface border border-line px-3 py-1.5 text-caption text-secondary">
             <Spinner size={12} />
             {t["vault.switching"]}
           </div>
@@ -626,8 +628,10 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                       selected={isSelected}
                       tooltip={note.path}
                       leading={selectMode ? (
-                        <div className={`w-4 h-4 rounded-chip border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                          isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-strong"
+                        <div className={`w-4 h-4 rounded-chip border flex-shrink-0 flex items-center justify-center transition-colors ${
+                          isSelected
+                            ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]"
+                            : "surface-inset border-[var(--inset-border)]"
                         }`}>
                           {isSelected && <CheckSquare size={12} className="text-on-accent" />}
                         </div>
