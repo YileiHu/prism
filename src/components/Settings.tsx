@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { Database, Keyboard, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { useSettings } from "../lib/settings";
@@ -18,9 +18,10 @@ import ExternalSection from "./settings/ExternalSection";
 import ShortcutsSection from "./settings/ShortcutsSection";
 import PdfSection from "./settings/PdfSection";
 
-type SettingsCategory = "general" | "vaults" | "pdf" | "editor" | "appearance" | "search" | "external" | "shortcuts";
+type SettingsCategory = "general" | "vaults" | "editor" | "appearance" | "search" | "external" | "shortcuts";
 
 const CATEGORY_KEY = "prism_settings_category";
+const CATEGORIES: SettingsCategory[] = ["general", "vaults", "editor", "appearance", "search", "external", "shortcuts"];
 
 export default function Settings({ active }: { active: boolean }) {
   const { t, setLang } = useT();
@@ -29,8 +30,8 @@ export default function Settings({ active }: { active: boolean }) {
   const [category, setCategory] = useState<SettingsCategory>(() => {
     try {
       const saved = localStorage.getItem(CATEGORY_KEY);
-      const valid: SettingsCategory[] = ["general", "vaults", "pdf", "editor", "appearance", "search", "external", "shortcuts"];
-      return valid.includes(saved as SettingsCategory) ? (saved as SettingsCategory) : "general";
+      const migrated = saved === "pdf" ? "vaults" : saved;
+      return CATEGORIES.includes(migrated as SettingsCategory) ? (migrated as SettingsCategory) : "general";
     } catch {
       return "general";
     }
@@ -66,8 +67,7 @@ export default function Settings({ active }: { active: boolean }) {
 
   const categories: { key: SettingsCategory; label: string; icon: typeof Database }[] = [
     { key: "general", label: t["settings.catGeneral"], icon: SlidersHorizontal },
-    { key: "vaults", label: t["settings.catVaults"], icon: Database },
-    { key: "pdf", label: t["settings.catPdf"], icon: BookOpen },
+    { key: "vaults", label: t["settings.catLibrary"], icon: Database },
     { key: "editor", label: t["settings.catEditor"], icon: SquarePen },
     { key: "appearance", label: t["settings.catAppearance"], icon: Palette },
     { key: "search", label: t["settings.catSearch"], icon: Search },
@@ -117,8 +117,20 @@ export default function Settings({ active }: { active: boolean }) {
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl">
           {category === "general" && <GeneralSection />}
-          {category === "vaults" && <VaultsSection onSaved={flashSaved} />}
-          {category === "pdf" && <PdfSection />}
+          {category === "vaults" && (
+            <div>
+              <div className="mb-6">
+                <h4 className="text-body font-semibold text-primary mb-1">{t["settings.catVaults"]}</h4>
+                <p className="text-caption text-muted mb-4">{t["settings.vaultsDesc"]}</p>
+                <VaultsSection onSaved={flashSaved} />
+              </div>
+              <div className="pt-6 border-t border-line/50">
+                <h4 className="text-body font-semibold text-primary mb-1">{t["settings.catPdf"]}</h4>
+                <p className="text-caption text-muted mb-4">{t["settings.pdfDesc"]}</p>
+                <PdfSection />
+              </div>
+            </div>
+          )}
           {category === "editor" && <EditorSection />}
           {category === "appearance" && <AppearanceSection />}
           {category === "search" && <SearchSection />}
@@ -145,7 +157,7 @@ export default function Settings({ active }: { active: boolean }) {
         title={t["settings.reset"]}
         message={t["settings.resetConfirm"]}
         confirmLabel={t["settings.reset"]}
-        tone="default"
+        variant="default"
         onConfirm={handleReset}
         onClose={() => setConfirmReset(false)}
       />

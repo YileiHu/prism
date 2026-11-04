@@ -27,21 +27,7 @@ import SortableList from "./SortableList";
 import NavItem from "./NavItem";
 import Badge from "./Badge";
 import Input, { Textarea } from "./Input";
-
-interface Resource {
-  id: number;
-  url: string;
-  title: string;
-  notes: string;
-  created_at: string;
-  tags: string[];
-}
-
-interface TagInfo {
-  name: string;
-  count: number;
-  color: string;
-}
+import type { Resource, TagInfo } from "../shared/models";
 
 function extractDomain(url: string) {
   try {
@@ -481,40 +467,42 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
             trailing={totalCount}
           />
           {!tagsLoaded && <SkeletonRows count={6} />}
-          {tagsLoaded && (
-          <SortableList
-            items={allTags}
-            itemId={(tag) => tag.name}
-            onReorder={reorderTagList}
-            renderItem={(tag, i) => {
-              const c = colorForTag(tag.name);
-              const isActive = activeTag === tag.name;
-              return (
-                <NavItem
-                  onClick={() => setActiveTag(isActive ? null : tag.name)}
-                  onContextMenu={(e) => openTagMenu(e, tag)}
-                  style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
-                  active={isActive}
-                  className="stagger-in"
-                  leading={<span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.bar }} />}
-                  label={tag.name}
-                  trailing={tag.count}
-                />
-              );
-            }}
-            renderOverlay={(tag) => (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-control text-body text-primary">
-                <div
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: colorForTag(tag.name).bar }}
-                />
-                <span className="flex-1 truncate">{tag.name}</span>
-                <span className="text-caption text-muted">{tag.count}</span>
-              </div>
-            )}
-            />
-          )}
           {tagsLoaded && allTags.length === 0 && <EmptyState size="card" text={t["resources.noTags"]} />}
+          {tagsLoaded && allTags.length > 0 && (
+            <div className="sidebar-group">
+              <SortableList
+                items={allTags}
+                itemId={(tag) => tag.name}
+                onReorder={reorderTagList}
+                renderItem={(tag, i) => {
+                  const c = colorForTag(tag.name);
+                  const isActive = activeTag === tag.name;
+                  return (
+                    <NavItem
+                      onClick={() => setActiveTag(isActive ? null : tag.name)}
+                      onContextMenu={(e) => openTagMenu(e, tag)}
+                      style={{ "--i": Math.min(i, 10) } as React.CSSProperties}
+                      active={isActive}
+                      className="stagger-in"
+                      leading={<span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.bar }} />}
+                      label={tag.name}
+                      trailing={tag.count}
+                    />
+                  );
+                }}
+                renderOverlay={(tag) => (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-control text-body text-primary">
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: colorForTag(tag.name).bar }}
+                    />
+                    <span className="flex-1 truncate">{tag.name}</span>
+                    <span className="text-caption text-muted">{tag.count}</span>
+                  </div>
+                )}
+              />
+            </div>
+          )}
         </CollapsibleSidebar>
       </ModuleSidebar>
 

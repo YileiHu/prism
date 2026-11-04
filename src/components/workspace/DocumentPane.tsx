@@ -1,7 +1,8 @@
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
-import { makeNoteDoc, type DocTab } from "../../lib/workspace/types";
+import { makeNoteDoc, normalizePath, type DocTab } from "../../lib/workspace/types";
+import { useLibraryData } from "../library/LibraryDataProvider";
 import { usePdfDocuments } from "../pdf/PdfDocumentsProvider";
 import { relKey } from "../pdf/types";
 import PdfReader from "../pdf/PdfReader";
@@ -30,7 +31,29 @@ export default function DocumentPane({
   const { t } = useT();
   const showToast = useToast();
   const pdf = usePdfDocuments();
-  const { openDoc, closeDoc, openInSplit, closeSplit } = useWorkspace();
+  const { note, pdfCols } = useLibraryData();
+  const { openDoc, closeDoc, openInSplit, closeSplit, setLibrary, showModule } = useWorkspace();
+
+  // Jump to the collection that owns this document (or "all" when it belongs
+  // to none) and drop the tab. The library is normally already synced to the
+  // document's vault/repo; the guards keep a cold or mid-switch library from
+  // writing a selection into the wrong one.
+  const backToLibrary = () => {
+    if (tab.kind === "note") {
+      setLibrary({ kind: "note", vaultPath: tab.vaultPath });
+      if (normalizePath(note.vaultPath) === normalizePath(tab.vaultPath) && note.initialLoadDone) {
+        note.setSearchQuery("");
+        note.selectCollection(note.findCollectionForNote(tab.path));
+      }
+    } else {
+      setLibrary({ kind: "pdf", repoPath: tab.repoPath });
+      if (normalizePath(pdf.repoPath) === normalizePath(tab.repoPath) && pdfCols.loaded) {
+        pdfCols.selectCollection(pdfCols.findCollectionForPath(tab.relPath));
+      }
+    }
+    closeDoc(tab.id);
+    showModule("library");
+  };
 
   const toggleSplit = () => {
     if (splitOpen) closeSplit();
@@ -70,6 +93,7 @@ export default function DocumentPane({
           toolbarScope={toolbarScope}
           splitOpen={splitOpen}
           onToggleSplit={toggleSplit}
+          onBackToLibrary={backToLibrary}
           onClose={close}
           onNoteGone={close}
           onOpenWikilink={(target) => { void openWikilink(tab.vaultPath, target); }}
@@ -78,7 +102,7 @@ export default function DocumentPane({
     );
   }
 
-  const doc = pdf.documents.find((entry) => relKey(entry.rel_path) === relKey(tab.relPath)) ?? null;
+  const doc = pdf.documents.find((entry) => relKey(entry.relPath) === relKey(tab.relPath)) ?? null;
 
   if (!doc) {
     return (
@@ -107,8 +131,9 @@ export default function DocumentPane({
         toolbarScope={toolbarScope}
         splitOpen={splitOpen}
         onToggleSplit={toggleSplit}
+        onBackToLibrary={backToLibrary}
         onClose={close}
-        onShowInFolder={() => { void window.prism.pdfShowInFolder(doc.id); }}
+        onShowInFolder={() => { void window.prism.showPdfInFolder(doc.id); }}
       />
     </div>
   );

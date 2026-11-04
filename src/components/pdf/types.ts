@@ -1,18 +1,4 @@
-export interface PdfDocument {
-  id: number;
-  repo_path: string;
-  path: string;
-  rel_path: string;
-  title: string;
-  page_count: number | null;
-  file_size: number;
-  modified_at: string;
-  cover_path: string;
-  cover_version: number;
-  cover_custom: number;
-  cover_dirty: number;
-  added_at: string;
-}
+export type { PdfDocument } from "../../shared/models";
 
 export interface PdfCollectionData {
   id: string;

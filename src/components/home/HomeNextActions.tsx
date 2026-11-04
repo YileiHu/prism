@@ -8,6 +8,7 @@ import { resolveTagColor } from "../../lib/colors";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
+import DueDateChip from "../gtd/DueDateChip";
 import type { GtdFocusRequest, GtdNextList as GtdNextListData } from "../gtd/types";
 
 interface Props {
@@ -28,9 +29,9 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
 
   const completeWaiting = async (id: number) => {
     try {
-      await window.prism.setGtdItemStatus(id, "done");
+      await window.prism.deleteGtdItem(id);
     } catch {
-      showToast(t["common.saveFailed"], "error");
+      showToast(t["common.deleteFailed"], "error");
       return;
     }
     onChanged();
@@ -60,7 +61,7 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
       icon={ListChecks}
       title={t["home.nextActions"]}
       count={total}
-      className="h-full min-h-0 flex flex-col"
+      className="flex h-full min-h-0 flex-col"
       bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >
       {!loaded && total === 0 && <SkeletonRows count={3} />}
@@ -72,7 +73,12 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
           leading={checkbox(() => completeWaiting(item.id))}
           onPrimaryClick={() => onNavigateToGtd({ list: "waiting", itemId: item.id })}
           title={item.title}
-          meta={<span className="text-caption text-faint flex-shrink-0">{t["gtd.waiting"]}</span>}
+          meta={
+            <>
+              <DueDateChip dueDate={item.dueDate} />
+              <span className="text-caption text-faint flex-shrink-0">{t["gtd.waiting"]}</span>
+            </>
+          }
         />
       ))}
       {data.projects.map(({ project, action }) => (
@@ -83,9 +89,12 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
           onPrimaryClick={() => onNavigateToGtd({ list: "project", projectId: project.id, actionId: action.id })}
           title={action.title}
           meta={
-            <Badge palette={resolveTagColor(project.title, project.color)} className="max-w-[40%] flex-shrink-0">
-              <span className="min-w-0 truncate">{project.title}</span>
-            </Badge>
+            <>
+              <DueDateChip dueDate={action.dueDate} />
+              <Badge palette={resolveTagColor(project.title, project.color)} className="max-w-[40%] flex-shrink-0">
+                <span className="min-w-0 truncate">{project.title}</span>
+              </Badge>
+            </>
           }
         />
       ))}

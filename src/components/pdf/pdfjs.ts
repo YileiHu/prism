@@ -17,10 +17,19 @@ function ensureWorker() {
 }
 
 // Streamed over prism-pdf:// with range requests; auto-fetch stays off so only
-// the chunks needed for visible pages are downloaded.
+// the chunks needed for visible pages are downloaded. CMaps are mandatory for
+// non-embedded CJK fonts and the WASM decoders for scanned JBIG2/JPX pages —
+// without either those PDFs render as blank pages.
 export async function loadPdf(url: string): Promise<PDFDocumentProxy> {
   ensureWorker();
-  const task = getDocument({ url, disableAutoFetch: true });
+  const task = getDocument({
+    url,
+    disableAutoFetch: true,
+    cMapUrl: "prism-asset://pdfjs/cmaps/",
+    cMapPacked: true,
+    standardFontDataUrl: "prism-asset://pdfjs/standard_fonts/",
+    wasmUrl: "prism-asset://pdfjs/wasm/",
+  });
   return task.promise;
 }
 

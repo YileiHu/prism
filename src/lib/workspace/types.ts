@@ -43,16 +43,16 @@ export function normalizePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
-export function noteDocId(path: string): string {
-  return `note::${normalizePath(path)}`;
+export function noteDocId(notePath: string): string {
+  return `note::${normalizePath(notePath)}`;
 }
 
 export function pdfDocId(repoPath: string, relPath: string): string {
   return `pdf::${normalizePath(repoPath)}::${normalizePath(relPath)}`;
 }
 
-export function makeNoteDoc(vaultPath: string, path: string, title: string): NoteDocTab {
-  return { id: noteDocId(path), kind: "note", vaultPath, path, title };
+export function makeNoteDoc(vaultPath: string, notePath: string, title: string): NoteDocTab {
+  return { id: noteDocId(notePath), kind: "note", vaultPath, path: notePath, title };
 }
 
 export function makePdfDoc(repoPath: string, relPath: string, title: string): PdfDocTab {

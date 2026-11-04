@@ -9,7 +9,7 @@ interface Props {
   message: string;
   title?: string;
   confirmLabel?: string;
-  tone?: "danger" | "default";
+  variant?: "danger" | "default";
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }
@@ -19,7 +19,7 @@ export default function ConfirmDialog({
   message,
   title,
   confirmLabel,
-  tone = "danger",
+  variant = "danger",
   onConfirm,
   onClose,
 }: Props) {
@@ -56,7 +56,7 @@ export default function ConfirmDialog({
           </Button>
           <Button
             ref={confirmRef}
-            variant={tone === "default" ? "primary" : "danger"}
+            variant={variant === "default" ? "primary" : "danger"}
             size="sm"
             aria-busy={busy}
             onClick={() => void confirm()}

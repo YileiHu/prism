@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { type CollectionData } from "./collectionTypes";
+import type { NoteBrief } from "../shared/models";
 import { useT } from "../i18n";
 import { useToast } from "../lib/toast";
 
@@ -29,15 +30,6 @@ export function relativePathInsideVault(absPath: string, vaultPath: string): str
   return absPath.slice(vp.length).replace(/^[/\\]+/, "").replace(/\\/g, "/");
 }
 
-interface VaultNote {
-  id: number;
-  path: string;
-  title: string;
-  content?: string;
-  tags: string;
-  modified_at: string;
-}
-
 interface CollectionsFile {
   version: number;
   collections: CollectionData[];
@@ -52,7 +44,7 @@ function collectionHasNote(c: CollectionData, relPath: string): boolean {
 interface UseCollectionsOptions {
   vaultPath: string;
   dataVaultPath: string;
-  notes: VaultNote[];
+  notes: NoteBrief[];
   loadNotes: () => Promise<void>;
   // While a search is active, `notes` is only the matching subset — healing
   // against it would mark (or even relink) everything else as missing.
@@ -75,7 +67,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
       console.warn("Skipped collections save: state/vault mismatch", { dataVaultPath, vaultPath });
       return Promise.resolve();
     }
-    return window.prism.saveCollections(vaultPath, { version: 1, collections: colls })
+    return window.prism.saveNoteCollections(vaultPath, { version: 1, collections: colls })
       .then(() => { saveFailedRef.current = false; })
       .catch(() => {
         if (saveFailedRef.current) return;
@@ -112,7 +104,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   }, [persistCollections]);
 
   const loadCollections = useCallback(async (vp: string) => {
-    const data = await window.prism.loadCollections(vp) as CollectionsFile | null;
+    const data = await window.prism.loadNoteCollections(vp) as CollectionsFile | null;
     setCollections(data?.collections ?? []);
   }, []);
 
@@ -369,14 +361,14 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   }, [saveCollections]);
 
   // Remove deleted note paths from collections
-  const removeNotePaths = useCallback((relativePaths: string[]) => {
+  const removeNotePaths = useCallback((relPaths: string[]) => {
     setCollections((prev) => {
       const updated = prev.map((c) => ({
         ...c,
-        notePaths: c.notePaths.filter((np) => !relativePaths.includes(np)),
+        notePaths: c.notePaths.filter((np) => !relPaths.includes(np)),
         groups: (c.groups ?? []).map((g) => ({
           ...g,
-          notePaths: g.notePaths.filter((np) => !relativePaths.includes(np)),
+          notePaths: g.notePaths.filter((np) => !relPaths.includes(np)),
         })),
       }));
       saveCollections(updated);
@@ -392,7 +384,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   }, [collections, selectedCollectionId]);
 
   const notesByRelPath = useMemo(() => {
-    const map = new Map<string, VaultNote>();
+    const map = new Map<string, NoteBrief>();
     for (const n of notes) {
       map.set(toRelativePath(n.path, vaultPath).replace(/\//g, "\\").toLowerCase(), n);
     }
@@ -408,8 +400,8 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     if (notes.length === 0 || collections.length === 0) return;
 
     const missing = new Set<string>();
-    const collectMissing = (paths: string[]) => {
-      for (const np of paths) {
+    const collectMissing = (notePaths: string[]) => {
+      for (const np of notePaths) {
         if (!notesByRelPath.has(np.replace(/\//g, "\\").toLowerCase())) missing.add(np);
       }
     };
@@ -419,7 +411,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     }
     if (missing.size === 0) return;
 
-    const notesByTitle = new Map<string, VaultNote[]>();
+    const notesByTitle = new Map<string, NoteBrief[]>();
     for (const n of notes) {
       const arr = notesByTitle.get(n.title);
       if (arr) arr.push(n);
@@ -440,7 +432,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     if (renames.size === 0) return;
 
     setCollections((prev) => {
-      const remap = (paths: string[]) => paths.map((p) => renames.get(p) ?? p);
+      const remap = (notePaths: string[]) => notePaths.map((p) => renames.get(p) ?? p);
       const updated = prev.map((c) => ({
         ...c,
         notePaths: remap(c.notePaths),
@@ -455,7 +447,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     return notePaths.map((relPath) => {
       const found = notesByRelPath.get(relPath.replace(/\//g, "\\").toLowerCase());
       const absPath = found?.path ?? `${vaultPath}/${relPath}`.replace(/\\/g, "/");
-      return { path: absPath, relativePath: relPath, title: found?.title ?? relPath, missing: !found };
+      return { path: absPath, relPath, title: found?.title ?? relPath, missing: !found };
     });
   }, [vaultPath, notesByRelPath]);
 
@@ -515,14 +507,14 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   // ---- Batch operations ----
 
-  const handleBatchAddToCollection = useCallback((collectionId: string, paths: string[]) => {
-    handleDropNote(collectionId, paths);
+  const handleBatchAddToCollection = useCallback((collectionId: string, notePaths: string[]) => {
+    handleDropNote(collectionId, notePaths);
   }, [handleDropNote]);
 
-  const handleBatchDelete = useCallback((paths: string[]) => {
+  const handleBatchDelete = useCallback((notePaths: string[]) => {
     return {
       onConfirm: async () => {
-        const result = await window.prism.trashFiles(paths);
+        const result = await window.prism.trashFiles(notePaths);
         const succeeded = (result.results as { path: string; success: boolean }[])
           .filter((r) => r.success)
           .map((r) => r.path);

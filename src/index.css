@@ -287,6 +287,15 @@ body {
 [data-mode="light"] .surface-raised-fill {
   box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
+/* Recessed panel that groups a list of sidebar rows (project lists, note/PDF
+   collections, resource tags) so it reads apart from plain nav items. */
+.sidebar-group {
+  padding: 4px;
+  border: 1px solid var(--inset-border);
+  border-radius: 12px;
+  background-color: var(--inset-bg);
+  box-shadow: var(--inset-shadow);
+}
 .field-inset {
   background-color: var(--field-bg);
   border-color: var(--field-border);

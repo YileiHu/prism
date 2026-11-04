@@ -1,14 +1,14 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 
-type BadgeTone = "neutral" | "accent" | "warning" | "danger";
+type BadgeVariant = "neutral" | "accent" | "warning" | "danger";
 
 interface BadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, "color"> {
-  tone?: BadgeTone;
+  variant?: BadgeVariant;
   palette?: { name: string; bg: string };
   children: ReactNode;
 }
 
-const TONE_CLASSES: Record<BadgeTone, string> = {
+const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   neutral: "bg-hover/50 text-tertiary",
   accent: "bg-[var(--accent-muted)] text-[var(--accent-text)]",
   warning: "border border-warning/40 bg-warning/10 text-warning",
@@ -16,7 +16,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
 };
 
 export default function Badge({
-  tone = "neutral",
+  variant = "neutral",
   palette,
   className = "",
   style,
@@ -31,7 +31,7 @@ export default function Badge({
     <span
       {...rest}
       className={`inline-flex items-center px-1.5 py-0.5 rounded-chip text-meta whitespace-nowrap ${
-        palette ? "" : TONE_CLASSES[tone]
+        palette ? "" : VARIANT_CLASSES[variant]
       } ${className}`}
       style={colorStyle}
     >

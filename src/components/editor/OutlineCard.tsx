@@ -44,18 +44,20 @@ export default function OutlineCard({
   items,
   onJump,
   activeId,
+  storageKey = COLLAPSED_KEY,
 }: {
   items: OutlineItem[];
   onJump: (id: string) => void;
   activeId?: string | null;
+  storageKey?: string;
 }) {
   const { t } = useT();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSED_KEY) === "1");
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(storageKey) === "1");
   const listRef = useRef<HTMLDivElement>(null);
 
   const setCollapsedPersisted = (value: boolean) => {
     setCollapsed(value);
-    localStorage.setItem(COLLAPSED_KEY, value ? "1" : "0");
+    localStorage.setItem(storageKey, value ? "1" : "0");
   };
 
   // Keep the active entry visible inside the outline's own scroll box. Only

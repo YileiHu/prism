@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { NoteContentHit, PdfDocumentRow } from "./database";
+import type { NoteBrief, NoteContentHit, PdfDocument } from "../src/shared/models";
 
 const api = {
   // Resources
@@ -17,13 +17,13 @@ const api = {
   // Vault notes
   setVaultPath: (vaultPath: string) => ipcRenderer.invoke("vault:set-path", vaultPath),
   unwatchVault: (vaultPath: string) => ipcRenderer.invoke("vault:unwatch-path", vaultPath),
-  getNoteList: (vaultPath: string) => ipcRenderer.invoke("vault:list-brief", vaultPath),
-  searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("vault:search", vaultPath, query),
+  getNoteList: (vaultPath: string) => ipcRenderer.invoke("vault:list-brief", vaultPath) as Promise<NoteBrief[]>,
+  searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("vault:search", vaultPath, query) as Promise<NoteBrief[]>,
   searchNoteContents: (vaultPath: string, query: string) =>
     ipcRenderer.invoke("vault:search-content", vaultPath, query) as Promise<NoteContentHit[]>,
-  deleteNotes: (paths: string[]) => ipcRenderer.invoke("vault:delete-notes", paths),
-  readNote: (filePath: string) => ipcRenderer.invoke("vault:read-note", filePath),
-  saveNote: (filePath: string, content: string) => ipcRenderer.invoke("vault:save-note", filePath, content),
+  deleteNotes: (notePaths: string[]) => ipcRenderer.invoke("vault:delete-notes", notePaths),
+  readNote: (notePath: string) => ipcRenderer.invoke("vault:read-note", notePath),
+  saveNote: (notePath: string, content: string) => ipcRenderer.invoke("vault:save-note", notePath, content),
   saveAttachment: (vaultPath: string, ext: string, data: ArrayBuffer) =>
     ipcRenderer.invoke("vault:save-attachment", vaultPath, ext, new Uint8Array(data)) as Promise<string>,
   createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("vault:create-note", vaultPath, title),
@@ -52,9 +52,11 @@ const api = {
   getGtdItems: (status: string) => ipcRenderer.invoke("gtd:list", status),
   getGtdCounts: () => ipcRenderer.invoke("gtd:counts"),
   setGtdItemStatus: (id: number, status: string) => ipcRenderer.invoke("gtd:set-status", id, status),
+  setGtdItemArchived: (id: number, archived: boolean) => ipcRenderer.invoke("gtd:set-archived", id, archived),
   renameGtdItem: (id: number, title: string) => ipcRenderer.invoke("gtd:rename", id, title),
   setGtdItemDescription: (id: number, description: string) => ipcRenderer.invoke("gtd:set-description", id, description),
   setGtdItemColor: (id: number, color: string) => ipcRenderer.invoke("gtd:set-color", id, color),
+  setGtdItemDueDate: (id: number, dueDate: string | null) => ipcRenderer.invoke("gtd:set-due-date", id, dueDate),
   deleteGtdItem: (id: number) => ipcRenderer.invoke("gtd:delete", id),
   setGtdItemNext: (id: number, isNext: boolean) => ipcRenderer.invoke("gtd:set-next", id, isNext),
   getGtdActions: (projectId: number) => ipcRenderer.invoke("gtd:list-actions", projectId),
@@ -64,40 +66,41 @@ const api = {
   reorderGtdActions: (projectId: number, orderedIds: number[]) => ipcRenderer.invoke("gtd:reorder-actions", projectId, orderedIds),
   deleteGtdAction: (id: number) => ipcRenderer.invoke("gtd:delete-action", id),
   setGtdActionNext: (projectId: number, actionId: number | null) => ipcRenderer.invoke("gtd:set-action-next", projectId, actionId),
+  setGtdActionDueDate: (id: number, dueDate: string | null) => ipcRenderer.invoke("gtd:set-action-due-date", id, dueDate),
   getGtdNextList: () => ipcRenderer.invoke("gtd:next-list"),
 
   // Favorite / recent notes
   toggleFavoriteNote: (notePath: string, title: string) => ipcRenderer.invoke("notes:toggle-favorite", notePath, title),
   getFavoriteNotes: () => ipcRenderer.invoke("notes:favorites"),
-  getFavoriteStatus: (paths: string[]) => ipcRenderer.invoke("notes:favorite-status", paths),
+  getFavoriteStatus: (notePaths: string[]) => ipcRenderer.invoke("notes:favorite-status", notePaths),
   getRecentNotes: (limit?: number) => ipcRenderer.invoke("notes:recents", limit),
 
   // Dialog
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
   selectFile: () => ipcRenderer.invoke("dialog:select-file"),
 
-  // Collections
-  loadCollections: (vaultPath: string) => ipcRenderer.invoke("collections:load", vaultPath),
-  saveCollections: (vaultPath: string, data: any) => ipcRenderer.invoke("collections:save", vaultPath, data),
+  // Note collections
+  loadNoteCollections: (vaultPath: string) => ipcRenderer.invoke("note-collections:load", vaultPath),
+  saveNoteCollections: (vaultPath: string, data: any) => ipcRenderer.invoke("note-collections:save", vaultPath, data),
 
   // PDF library
-  pdfGetState: () => ipcRenderer.invoke("pdf:get-state") as Promise<{ repoPath: string; exists: boolean; count: number }>,
-  pdfChooseRepo: () => ipcRenderer.invoke("pdf:choose-repo") as Promise<string | null>,
-  pdfOpenRepo: (repoPath: string) => ipcRenderer.invoke("pdf:open-repo", repoPath),
-  pdfRescan: () => ipcRenderer.invoke("pdf:rescan") as Promise<{ total: number; changed: number }>,
-  pdfList: () => ipcRenderer.invoke("pdf:list") as Promise<PdfDocumentRow[]>,
-  pdfSaveCover: (id: number, jpeg: Uint8Array, pageCount: number | null) =>
+  getPdfState: () => ipcRenderer.invoke("pdf:get-state") as Promise<{ repoPath: string; exists: boolean; count: number }>,
+  choosePdfRepo: () => ipcRenderer.invoke("pdf:choose-repo") as Promise<string | null>,
+  openPdfRepo: (repoPath: string) => ipcRenderer.invoke("pdf:open-repo", repoPath),
+  rescanPdfs: () => ipcRenderer.invoke("pdf:rescan") as Promise<{ total: number; changed: number }>,
+  listPdfs: () => ipcRenderer.invoke("pdf:list") as Promise<PdfDocument[]>,
+  savePdfCover: (id: number, jpeg: Uint8Array, pageCount: number | null) =>
     ipcRenderer.invoke("pdf:save-cover", id, jpeg, pageCount) as Promise<{ coverVersion: number }>,
-  pdfChooseCover: (id: number) => ipcRenderer.invoke("pdf:choose-cover", id) as Promise<{ coverVersion: number } | null>,
-  pdfResetCover: (id: number) => ipcRenderer.invoke("pdf:reset-cover", id) as Promise<{ coverVersion: number }>,
-  pdfSetPageCount: (id: number, pageCount: number) => ipcRenderer.invoke("pdf:set-page-count", id, pageCount),
-  pdfDeleteDocuments: (ids: number[]) => ipcRenderer.invoke("pdf:delete-documents", ids) as Promise<{
+  choosePdfCover: (id: number) => ipcRenderer.invoke("pdf:choose-cover", id) as Promise<{ coverVersion: number } | null>,
+  resetPdfCover: (id: number) => ipcRenderer.invoke("pdf:reset-cover", id) as Promise<{ coverVersion: number }>,
+  setPdfPageCount: (id: number, pageCount: number) => ipcRenderer.invoke("pdf:set-page-count", id, pageCount),
+  deletePdfDocuments: (ids: number[]) => ipcRenderer.invoke("pdf:delete-documents", ids) as Promise<{
     results: { id: number; success: boolean; error?: string }[];
     allSuccess: boolean;
   }>,
-  pdfShowInFolder: (id: number) => ipcRenderer.invoke("pdf:show-in-folder", id),
-  pdfLoadCollections: () => ipcRenderer.invoke("pdf-collections:load"),
-  pdfSaveCollections: (repoPath: string, data: any) => ipcRenderer.invoke("pdf-collections:save", repoPath, data),
+  showPdfInFolder: (id: number) => ipcRenderer.invoke("pdf:show-in-folder", id),
+  loadPdfCollections: () => ipcRenderer.invoke("pdf-collections:load"),
+  savePdfCollections: (repoPath: string, data: any) => ipcRenderer.invoke("pdf-collections:save", repoPath, data),
   onPdfUpdated: (callback: (repoPath: string) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, repoPath: string) => callback(repoPath);
     ipcRenderer.on("pdf:updated", handler);

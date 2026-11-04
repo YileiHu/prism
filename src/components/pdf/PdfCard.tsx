@@ -1,11 +1,10 @@
-import { FolderOpen, ImageIcon, MoreHorizontal, RotateCcw, Trash2, FolderMinus, BookOpen, PlusCircle } from "lucide-react";
+import { FolderOpen, ImageIcon, RotateCcw, Trash2, FolderMinus, BookOpen, PlusCircle } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
 import { resolveTagColor } from "../../lib/colors";
-import Button from "../Button";
 import type { MenuItem } from "../ContextMenu";
 import PdfCover from "./PdfCover";
 import { formatFileSize, relKey, type PdfCollectionData, type PdfDocument } from "./types";
@@ -39,23 +38,23 @@ export default function PdfCard({
 
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({
     id: `pdfdoc-${doc.id}`,
-    data: { kind: "pdf-doc", id: doc.id, relPath: doc.rel_path },
+    data: { kind: "pdf-doc", id: doc.id, relPath: doc.relPath },
   });
   const clickGuard = useDragClickGuard(isDragging);
 
   const memberCollections = collections.filter((c) =>
-    c.pdfPaths.some((p) => relKey(p) === relKey(doc.rel_path)),
+    c.pdfPaths.some((p) => relKey(p) === relKey(doc.relPath)),
   );
 
   const handleChooseCover = async () => {
     try {
-      const result = await window.prism.pdfChooseCover(doc.id);
+      const result = await window.prism.choosePdfCover(doc.id);
       if (!result) return;
       onDocUpdated({
-        cover_version: result.coverVersion,
-        cover_custom: 1,
-        cover_dirty: 0,
-        cover_path: doc.cover_path || "custom",
+        coverVersion: result.coverVersion,
+        coverCustom: true,
+        coverDirty: false,
+        coverPath: doc.coverPath || "custom",
       });
       showToast(t["pdf.coverUpdated"]);
     } catch {
@@ -65,11 +64,11 @@ export default function PdfCard({
 
   const handleResetCover = async () => {
     try {
-      const result = await window.prism.pdfResetCover(doc.id);
+      const result = await window.prism.resetPdfCover(doc.id);
       onDocUpdated({
-        cover_version: result.coverVersion,
-        cover_custom: 0,
-        cover_dirty: 1,
+        coverVersion: result.coverVersion,
+        coverCustom: false,
+        coverDirty: true,
       });
       showToast(t["pdf.coverReset"]);
     } catch {
@@ -87,14 +86,14 @@ export default function PdfCard({
         children: collections.length > 0
           ? collections.map((c) => ({
               label: c.name,
-              checked: c.pdfPaths.some((p) => relKey(p) === relKey(doc.rel_path)),
+              checked: c.pdfPaths.some((p) => relKey(p) === relKey(doc.relPath)),
               onClick: () => onAddToCollection(c.id),
             }))
           : [{ label: t["collections.none"] }],
       },
       { label: t["pdf.changeCover"], icon: <ImageIcon size={14} />, onClick: () => { void handleChooseCover(); } },
     ];
-    if (doc.cover_custom === 1 || doc.cover_dirty === 1) {
+    if (doc.coverCustom || doc.coverDirty) {
       items.push({ label: t["pdf.resetCover"], icon: <RotateCcw size={14} />, onClick: () => { void handleResetCover(); } });
     }
     if (activeCollection) {
@@ -108,8 +107,8 @@ export default function PdfCard({
     return items;
   };
 
-  const pageLabel = doc.page_count && doc.page_count > 0
-    ? t["pdf.pageCount"].replace("{count}", String(doc.page_count))
+  const pageLabel = doc.pageCount && doc.pageCount > 0
+    ? t["pdf.pageCount"].replace("{count}", String(doc.pageCount))
     : "";
 
   return (
@@ -127,10 +126,10 @@ export default function PdfCard({
           doc={doc}
           onGenerated={(_id, version, pageCount) => {
             onDocUpdated({
-              cover_version: version,
-              cover_dirty: 0,
-              cover_path: doc.cover_path || "auto",
-              page_count: pageCount,
+              coverVersion: version,
+              coverDirty: false,
+              coverPath: doc.coverPath || "auto",
+              pageCount: pageCount,
             });
           }}
         />
@@ -146,42 +145,12 @@ export default function PdfCard({
             ))}
           </div>
         )}
-
-        <div className="absolute inset-x-0 bottom-0 flex justify-end gap-0.5 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/55 via-black/20 to-transparent">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-white/85 hover:text-white hover:bg-white/15"
-            title={t["pdf.open"]}
-            onClick={(e) => { e.stopPropagation(); onOpen(); }}
-          >
-            <BookOpen size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-white/85 hover:text-white hover:bg-white/15"
-            title={t["pdf.showInFolder"]}
-            onClick={(e) => { e.stopPropagation(); onShowInFolder(); }}
-          >
-            <FolderOpen size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-white/85 hover:text-white hover:bg-white/15"
-            title={t["pdf.more"]}
-            onClick={(e) => { e.stopPropagation(); onContextMenu(e, menuItems()); }}
-          >
-            <MoreHorizontal size={14} />
-          </Button>
-        </div>
       </div>
 
       <div className="mt-1.5 px-0.5">
         <div className="text-body text-primary font-medium leading-snug line-clamp-2">{doc.title}</div>
         <div className="text-caption text-muted mt-0.5 truncate">
-          {[pageLabel, formatFileSize(doc.file_size)].filter(Boolean).join(" · ")}
+          {[pageLabel, formatFileSize(doc.fileSize)].filter(Boolean).join(" · ")}
         </div>
         <div className="flex flex-wrap gap-1 mt-1">
           {memberCollections.slice(0, 2).map((c) => (

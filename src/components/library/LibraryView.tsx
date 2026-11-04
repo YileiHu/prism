@@ -109,7 +109,7 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
       const doc = pdf.documents.find((entry) => entry.id === data.id);
       const collection = pdfCols.collections.find((entry) => entry.id === overId.slice(8));
       if (doc && collection) {
-        const added = pdfCols.addPaths(collection.id, [doc.rel_path]);
+        const added = pdfCols.addPaths(collection.id, [doc.relPath]);
         showToast(added > 0
           ? t["pdf.addToCollectionDone"].replace("{name}", collection.name)
           : t["collections.alreadyExists"]);

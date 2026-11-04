@@ -35,15 +35,27 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
     onClose();
   };
 
+  const completeNow = async () => {
+    if (!item) return;
+    try {
+      await window.prism.deleteGtdItem(item.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
+    onDecided();
+    onClose();
+  };
+
   return (
     <Modal
       open={item !== null}
       onClose={onClose}
       title={t["gtd.process"]}
-      icon={<ListChecks size={16} className="text-[var(--accent-text)]" />}
+      icon={ListChecks}
       size="md"
     >
-      <p className="text-body text-primary font-medium bg-elevated border border-line/50 rounded-control px-3 py-2 mb-5 break-words">
+      <p className="text-body text-primary font-medium bg-elevated border border-line/50 rounded-control px-3 py-2 mb-5 whitespace-pre-wrap break-words">
         {item?.title}
       </p>
 
@@ -87,7 +99,7 @@ export default function GtdProcessDialog({ item, onClose, onDecided }: Props) {
           </div>
           <p className="text-body font-medium text-primary">{t["gtd.doNow"]}</p>
           <p className="text-caption text-muted leading-relaxed mt-1.5 mb-5">{t["gtd.doNowHint"]}</p>
-          <Button variant="primary" size="md" className="w-full" onClick={() => decide("done")}>
+          <Button variant="primary" size="md" className="w-full" onClick={completeNow}>
             <CheckCircle2 size={15} />
             {t["gtd.doNowConfirm"]}
           </Button>

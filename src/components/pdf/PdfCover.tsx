@@ -24,7 +24,7 @@ const MAX_CONCURRENT = 2;
 async function generateCover(doc: PdfDocument): Promise<CoverResult | null> {
   try {
     const cover = await renderFirstPageJpeg(pdfDocumentUrl(doc.id), 360);
-    const result = await window.prism.pdfSaveCover(doc.id, cover.jpeg, cover.pageCount);
+    const result = await window.prism.savePdfCover(doc.id, cover.jpeg, cover.pageCount);
     return { version: result.coverVersion, pageCount: cover.pageCount };
   } catch {
     return null;
@@ -59,29 +59,29 @@ interface Props {
 type Status = "idle" | "loading" | "ready" | "error";
 
 function initialStatus(doc: PdfDocument): Status {
-  if (!doc.cover_path || doc.cover_dirty === 1) {
-    return failed.get(doc.id) === doc.modified_at ? "error" : "idle";
+  if (!doc.coverPath || doc.coverDirty) {
+    return failed.get(doc.id) === doc.modifiedAt ? "error" : "idle";
   }
   return "ready";
 }
 
 export default function PdfCover({ doc, onGenerated }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [version, setVersion] = useState(doc.cover_version);
+  const [version, setVersion] = useState(doc.coverVersion);
   const [status, setStatus] = useState<Status>(() => initialStatus(doc));
   const retriedRef = useRef(false);
 
   useEffect(() => {
-    setVersion(doc.cover_version);
+    setVersion(doc.coverVersion);
     retriedRef.current = false;
     setStatus(initialStatus(doc));
-  }, [doc.id, doc.cover_version, doc.cover_dirty, doc.cover_path, doc.modified_at]);
+  }, [doc.id, doc.coverVersion, doc.coverDirty, doc.coverPath, doc.modifiedAt]);
 
   useEffect(() => {
     if (status !== "idle") return;
     const host = hostRef.current;
     if (!host) return;
-    if (failed.get(doc.id) === doc.modified_at) {
+    if (failed.get(doc.id) === doc.modifiedAt) {
       setStatus("error");
       return;
     }
@@ -93,7 +93,7 @@ export default function PdfCover({ doc, onGenerated }: Props) {
       void requestCover(doc).then((result) => {
         if (cancelled) return;
         if (result === null) {
-          failed.set(doc.id, doc.modified_at);
+          failed.set(doc.id, doc.modifiedAt);
           setStatus("error");
           return;
         }

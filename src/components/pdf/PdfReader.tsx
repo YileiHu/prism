@@ -7,14 +7,17 @@ import {
   FolderOpen,
   Maximize2,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import Button from "../Button";
 import Spinner from "../Spinner";
+import OutlineCard from "../editor/OutlineCard";
 import { loadPdf } from "./pdfjs";
 import PdfPage from "./PdfPage";
+import { loadPdfOutline, type PdfOutlineEntry } from "./pdfOutline";
 import { pdfDocumentUrl, type PdfDocument } from "./types";
 
 interface Props {
@@ -24,6 +27,7 @@ interface Props {
   toolbarScope: string;
   splitOpen: boolean;
   onToggleSplit: () => void;
+  onBackToLibrary: () => void;
   onClose: () => void;
   onShowInFolder: () => void;
 }
@@ -53,6 +57,7 @@ export default function PdfReader({
   toolbarScope,
   splitOpen,
   onToggleSplit,
+  onBackToLibrary,
   onClose,
   onShowInFolder,
 }: Props) {
@@ -65,6 +70,7 @@ export default function PdfReader({
   const restoredRef = useRef(false);
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [outline, setOutline] = useState<PdfOutlineEntry[]>([]);
   const [numPages, setNumPages] = useState(0);
   const [baseWidth, setBaseWidth] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -83,6 +89,7 @@ export default function PdfReader({
     const saved = readerStates.get(doc.id);
     const startPage = saved?.page ?? 1;
     setPdf(null);
+    setOutline([]);
     setNumPages(0);
     setBaseWidth(0);
     currentPageRef.current = startPage;
@@ -105,7 +112,12 @@ export default function PdfReader({
         setBaseWidth(viewport.width);
         setNumPages(proxy.numPages);
         setPdf(proxy);
-        void window.prism.pdfSetPageCount(doc.id, proxy.numPages);
+        void window.prism.setPdfPageCount(doc.id, proxy.numPages);
+        // Bookmarks resolve lazily in the background — a missing outline must
+        // never delay the first page
+        void loadPdfOutline(proxy)
+          .then((items) => { if (!cancelled) setOutline(items); })
+          .catch(() => { /* ignore broken bookmarks */ });
       } catch {
         if (!cancelled) setError(t["pdf.reader.errorDesc"]);
       } finally {
@@ -142,6 +154,28 @@ export default function PdfReader({
     currentPageRef.current = target;
     setPageDraft(String(target));
   }, [numPages]);
+
+  const outlinePageById = useMemo(() => {
+    const pages = new Map<string, number>();
+    for (const item of outline) if (item.page != null) pages.set(item.id, item.page);
+    return pages;
+  }, [outline]);
+
+  // The outline has no scroll spy of its own: the section in effect is the last
+  // bookmark that starts at or before the page dominating the viewport
+  const activeOutlineId = useMemo(() => {
+    const current = Number(pageDraft) || 1;
+    let active: string | null = null;
+    for (const item of outline) {
+      if (item.page != null && item.page <= current) active = item.id;
+    }
+    return active;
+  }, [outline, pageDraft]);
+
+  const jumpToOutline = useCallback((id: string) => {
+    const page = outlinePageById.get(id);
+    if (page != null) jumpToPage(page);
+  }, [jumpToPage, outlinePageById]);
 
   const handleScroll = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -240,7 +274,12 @@ export default function PdfReader({
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} title={t["pdf.reader.back"]}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onBackToLibrary}
+          title={t["workspace.backToLibrary"]}
+        >
           <ArrowLeft size={15} />
         </Button>
         <span className="min-w-0 text-body font-medium text-primary truncate" title={doc.title}>
@@ -322,17 +361,28 @@ export default function PdfReader({
         <Button variant="ghost" size="icon-sm" onClick={onShowInFolder} title={t["pdf.showInFolder"]}>
           <FolderOpen size={15} />
         </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} title={t["editor.closeTab"]}>
+          <X size={15} />
+        </Button>
       </>
     ),
   }), [
-    commitPageDraft, doc.title, numPages, onClose, onShowInFolder, onToggleSplit, pageDraft,
-    splitOpen, spread, t, zoom,
+    commitPageDraft, doc.title, numPages, onBackToLibrary, onClose, onShowInFolder,
+    onToggleSplit, pageDraft, splitOpen, spread, t, zoom,
   ]);
 
   useToolbarContribution(toolbarScope, toolbar);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="relative h-full flex flex-col">
+      {!loading && !error && (
+        <OutlineCard
+          items={outline}
+          onJump={jumpToOutline}
+          activeId={activeOutlineId}
+          storageKey="prism_pdf_outline_collapsed"
+        />
+      )}
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted">
           <Spinner size={22} />
@@ -347,8 +397,8 @@ export default function PdfReader({
               <FolderOpen size={14} />
               {t["pdf.showInFolder"]}
             </Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              {t["pdf.reader.back"]}
+            <Button variant="ghost" size="sm" onClick={onBackToLibrary}>
+              {t["workspace.backToLibrary"]}
             </Button>
           </div>
         </div>

@@ -168,11 +168,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       let pdfRepoPath = "";
       let pdfTitles = new Map<string, string>();
       try {
-        const pdfState = await window.prism.pdfGetState();
+        const pdfState = await window.prism.getPdfState();
         if (pdfState.repoPath && pdfState.exists) {
           pdfRepoPath = pdfState.repoPath;
-          const docs = await window.prism.pdfList();
-          pdfTitles = new Map(docs.map((doc) => [relKey(doc.rel_path), doc.title]));
+          const docs = await window.prism.listPdfs();
+          pdfTitles = new Map(docs.map((doc) => [relKey(doc.relPath), doc.title]));
         }
       } catch {
         // PDF repo is optional; note tabs still restore.

@@ -31,9 +31,11 @@ import {
   getGtdItems,
   getGtdCounts,
   setGtdItemStatus,
+  setGtdItemArchived,
   renameGtdItem,
   setGtdItemDescription,
   setGtdItemColor,
+  setGtdItemDueDate,
   deleteGtdItem,
   setGtdItemNext,
   getGtdActions,
@@ -43,6 +45,7 @@ import {
   reorderGtdActions,
   deleteGtdAction,
   setGtdActionNext,
+  setGtdActionDueDate,
   getGtdNextList,
   toggleFavoriteNote,
   getFavoriteNotes,
@@ -58,9 +61,9 @@ import {
   resetPdfCover,
   setPdfPageCount,
   deletePdfDocuments,
-  type GtdStatus,
   type PdfUpsertRow,
 } from "./database";
+import type { GtdStatus } from "../src/shared/models";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -70,6 +73,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "prism-file", privileges: { supportFetchAPI: true, stream: true } },
   { scheme: "prism-cover", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "prism-pdf", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  { scheme: "prism-asset", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 // ---- Window state persistence ----
@@ -563,7 +567,7 @@ function resolvePdfDocument(id: number): { path: string; title: string; pageCoun
   if (!row) return null;
   const repo = pdfRepoPath ?? currentPdfRepo();
   if (!repo || !isPathInside(repo, row.path)) return null;
-  return { path: row.path, title: row.title, pageCount: row.page_count };
+  return { path: row.path, title: row.title, pageCount: row.pageCount };
 }
 
 // `complete` is false when any directory or file could not be read; callers
@@ -609,11 +613,11 @@ async function scanPdfRepoIncremental(repoPath: string): Promise<{
   upsert: PdfUpsertRow[];
   deletePaths: string[];
   totalCount: number;
-  deletedRows: { id: number; cover_path: string }[];
+  deletedRows: { id: number }[];
 }> {
   const { files: diskFiles, complete } = await walkPdfFiles(repoPath);
   const dbRows = listPdfDocuments(repoPath);
-  const dbMap = new Map(dbRows.map((row) => [row.path, row.modified_at]));
+  const dbMap = new Map(dbRows.map((row) => [row.path, row.modifiedAt]));
 
   const upsert: PdfUpsertRow[] = [];
   for (const [filePath, info] of diskFiles) {
@@ -627,13 +631,13 @@ async function scanPdfRepoIncremental(repoPath: string): Promise<{
     });
   }
 
-  const deletedRows: { id: number; cover_path: string }[] = [];
+  const deletedRows: { id: number }[] = [];
   const deletePaths: string[] = [];
   if (complete) {
     for (const row of dbRows) {
       if (!diskFiles.has(row.path)) {
         deletePaths.push(row.path);
-        deletedRows.push({ id: row.id, cover_path: row.cover_path });
+        deletedRows.push({ id: row.id });
       }
     }
   }
@@ -960,9 +964,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:list", (_e, status: GtdStatus) => getGtdItems(status));
   ipcMain.handle("gtd:counts", () => getGtdCounts());
   ipcMain.handle("gtd:set-status", (_e, id: number, status: GtdStatus) => setGtdItemStatus(id, status));
+  ipcMain.handle("gtd:set-archived", (_e, id: number, archived: boolean) => setGtdItemArchived(id, archived));
   ipcMain.handle("gtd:rename", (_e, id: number, title: string) => renameGtdItem(id, title));
   ipcMain.handle("gtd:set-description", (_e, id: number, description: string) => setGtdItemDescription(id, description));
   ipcMain.handle("gtd:set-color", (_e, id: number, color: string) => setGtdItemColor(id, color));
+  ipcMain.handle("gtd:set-due-date", (_e, id: number, dueDate: string | null) => setGtdItemDueDate(id, dueDate));
   ipcMain.handle("gtd:delete", (_e, id: number) => deleteGtdItem(id));
   ipcMain.handle("gtd:set-next", (_e, id: number, isNext: boolean) => setGtdItemNext(id, isNext));
   ipcMain.handle("gtd:list-actions", (_e, projectId: number) => getGtdActions(projectId));
@@ -972,6 +978,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:reorder-actions", (_e, projectId: number, orderedIds: number[]) => reorderGtdActions(projectId, orderedIds));
   ipcMain.handle("gtd:delete-action", (_e, id: number) => deleteGtdAction(id));
   ipcMain.handle("gtd:set-action-next", (_e, projectId: number, actionId: number | null) => setGtdActionNext(projectId, actionId));
+  ipcMain.handle("gtd:set-action-due-date", (_e, id: number, dueDate: string | null) => setGtdActionDueDate(id, dueDate));
   ipcMain.handle("gtd:next-list", () => getGtdNextList());
 
   // Favorite / recent notes
@@ -980,8 +987,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle("notes:favorite-status", (_e, paths: string[]) => getFavoriteStatus(paths));
   ipcMain.handle("notes:recents", (_e, limit?: number) => getRecentNotes(limit).map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
 
-  // Collections
-  ipcMain.handle("collections:load", (_e, vaultPath: string) => {
+  // Note collections
+  ipcMain.handle("note-collections:load", (_e, vaultPath: string) => {
     const dir = path.join(vaultPath, ".prism");
     const file = path.join(dir, "collections.json");
     if (!fs.existsSync(file)) return null;
@@ -995,7 +1002,7 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle("collections:save", (_e, vaultPath: string, data: any) => {
+  ipcMain.handle("note-collections:save", (_e, vaultPath: string, data: any) => {
     const dir = path.join(vaultPath, ".prism");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "collections.json"), JSON.stringify(data, null, 2), "utf-8");
@@ -1343,7 +1350,7 @@ function registerCoverProtocol(): void {
       const id = Number(url.searchParams.get("id"));
       if (!Number.isInteger(id) || id <= 0) return new Response("bad request", { status: 400 });
       const row = getPdfDocument(id);
-      if (!row || !row.cover_path) return new Response("not found", { status: 404 });
+      if (!row || !row.coverPath) return new Response("not found", { status: 404 });
       const file = pdfCoverFile(id);
       if (!fs.existsSync(file)) return new Response("not found", { status: 404 });
       const data = await fs.promises.readFile(file);
@@ -1359,12 +1366,47 @@ function registerCoverProtocol(): void {
   });
 }
 
+// prism-asset://pdfjs/<cmaps|standard_fonts|wasm>/<file> — pdf.js needs
+// predefined CMaps for non-embedded CJK fonts (otherwise glyphs silently render
+// blank), standard font data for base-14 fonts, and its WASM decoders for
+// scanned-image codecs (JBIG2/JPX) plus the JS fallbacks beside them. Served
+// from the bundled dependency.
+const PDFJS_ASSET_TYPES: Record<string, string> = {
+  ".wasm": "application/wasm",
+  ".js": "text/javascript",
+  ".mjs": "text/javascript",
+};
+
+function registerPdfjsAssetProtocol(): void {
+  const root = path.join(app.getAppPath(), "node_modules", "pdfjs-dist");
+  protocol.handle("prism-asset", async (request) => {
+    try {
+      const [kind, file] = new URL(request.url).pathname.split("/").filter(Boolean);
+      if (
+        (kind !== "cmaps" && kind !== "standard_fonts" && kind !== "wasm") ||
+        !file ||
+        file !== path.basename(file)
+      ) {
+        return new Response("not found", { status: 404 });
+      }
+      const data = await fs.promises.readFile(path.join(root, kind, file));
+      const contentType = PDFJS_ASSET_TYPES[path.extname(file)] ?? "application/octet-stream";
+      return new Response(new Uint8Array(data), {
+        headers: { "content-type": contentType, "access-control-allow-origin": "*" },
+      });
+    } catch {
+      return new Response("not found", { status: 404 });
+    }
+  });
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   initDatabase();
   registerAssetProtocol();
   registerCoverProtocol();
   registerPdfProtocol();
+  registerPdfjsAssetProtocol();
   registerIpcHandlers();
   createWindow();
   void applyPdfRepo(getSetting("pdf_repo_path") ?? "").catch(() => { /* state surfaces in the UI */ });

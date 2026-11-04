@@ -19,11 +19,11 @@ function compareTitle(a: PdfDocument, b: PdfDocument): number {
 function compareField(sort: PdfSort, a: PdfDocument, b: PdfDocument): number {
   switch (sort) {
     case "added":
-      return a.added_at.localeCompare(b.added_at);
+      return a.addedAt.localeCompare(b.addedAt);
     case "modified":
-      return a.modified_at.localeCompare(b.modified_at);
+      return a.modifiedAt.localeCompare(b.modifiedAt);
     case "pages":
-      return (a.page_count ?? -1) - (b.page_count ?? -1);
+      return (a.pageCount ?? -1) - (b.pageCount ?? -1);
     default:
       return compareTitle(a, b);
   }
@@ -59,7 +59,7 @@ export function usePdfLibrary(active: boolean) {
 
   const load = useCallback(async () => {
     try {
-      const state = await window.prism.pdfGetState();
+      const state = await window.prism.getPdfState();
       // Drop the previous repo's rows immediately so a stale list cannot
       // drive collection pruning or tab restoration while the new repo is
       // still being listed.
@@ -71,7 +71,7 @@ export function usePdfLibrary(active: boolean) {
       setRepoPath(state.repoPath);
       setRepoExists(state.exists);
       if (state.repoPath && state.exists) {
-        const rows = await window.prism.pdfList();
+        const rows = await window.prism.listPdfs();
         // Ignore a response that finished after another repo switch.
         if (loadedRepoRef.current !== state.repoPath) return;
         setDocuments(rows);
@@ -93,7 +93,7 @@ export function usePdfLibrary(active: boolean) {
   useEffect(() => window.prism.onPdfUpdated(() => { void load(); }), [load]);
 
   const chooseRepo = useCallback(async () => {
-    const dir = await window.prism.pdfChooseRepo();
+    const dir = await window.prism.choosePdfRepo();
     if (!dir) return;
     setSearch("");
     setSetting("pdf_repo_path", dir);
@@ -103,7 +103,7 @@ export function usePdfLibrary(active: boolean) {
     if (scanning) return;
     setScanning(true);
     try {
-      await window.prism.pdfRescan();
+      await window.prism.rescanPdfs();
       await load();
     } finally {
       setScanning(false);
@@ -111,7 +111,7 @@ export function usePdfLibrary(active: boolean) {
   }, [load, scanning]);
 
   const removeDocuments = useCallback(async (ids: number[]) => {
-    const result = await window.prism.pdfDeleteDocuments(ids);
+    const result = await window.prism.deletePdfDocuments(ids);
     await load();
     return result;
   }, [load]);
@@ -137,7 +137,7 @@ export function usePdfLibrary(active: boolean) {
       list = list.filter(
         (doc) =>
           doc.title.toLowerCase().includes(query) ||
-          doc.rel_path.toLowerCase().includes(query),
+          doc.relPath.toLowerCase().includes(query),
       );
     }
     const sorted = [...list].sort((a, b) => compareDocs(sort, sortDir, a, b));

@@ -5,7 +5,7 @@ import { useToast } from "../../lib/toast";
 import { useSettings } from "../../lib/settings";
 import type { AppSettings } from "../../shared/settings";
 import Button from "../Button";
-import { SectionHeader, Select, SettingBlock, Slider } from "./controls";
+import { Select, SettingBlock, Slider } from "./controls";
 
 export default function PdfSection() {
   const { t } = useT();
@@ -18,7 +18,7 @@ export default function PdfSection() {
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      window.prism.pdfGetState()
+      window.prism.getPdfState()
         .then((state) => { if (!cancelled) setCount(state.count); })
         .catch(() => { /* ignore */ });
     };
@@ -31,18 +31,18 @@ export default function PdfSection() {
   }, []);
 
   const handleChoose = async () => {
-    const dir = await window.prism.pdfChooseRepo();
+    const dir = await window.prism.choosePdfRepo();
     if (!dir) return;
     set("pdf_repo_path", dir);
     setTimeout(() => {
-      window.prism.pdfGetState().then((state) => setCount(state.count)).catch(() => { /* ignore */ });
+      window.prism.getPdfState().then((state) => setCount(state.count)).catch(() => { /* ignore */ });
     }, 1200);
   };
 
   const handleOpen = async () => {
     if (!repoPath) return;
     try {
-      await window.prism.pdfOpenRepo(repoPath);
+      await window.prism.openPdfRepo(repoPath);
     } catch {
       showToast(t["pdf.openRepoFailed"], "error");
     }
@@ -52,7 +52,7 @@ export default function PdfSection() {
     if (!repoPath || scanning) return;
     setScanning(true);
     try {
-      const result = await window.prism.pdfRescan();
+      const result = await window.prism.rescanPdfs();
       showToast(
         t["settings.pdfScanResult"]
           .replace("{total}", String(result.total))
@@ -67,8 +67,6 @@ export default function PdfSection() {
 
   return (
     <section>
-      <SectionHeader title={t["settings.catPdf"]} description={t["settings.pdfDesc"]} />
-
       <SettingBlock label={t["settings.pdfRepo"]} description={t["settings.pdfRepoDesc"]}>
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0 px-3 py-1.5 rounded-control border border-line/50 bg-base text-body font-mono truncate text-secondary">

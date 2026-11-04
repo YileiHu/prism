@@ -1,12 +1,11 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import {
-  ChevronDown,
   ChevronRight,
   Inbox,
   Clock,
   FolderKanban,
   Lightbulb,
-  CheckCircle2,
+  Archive,
   type LucideIcon,
 } from "lucide-react";
 import CollapsibleSidebar from "../CollapsibleSidebar";
@@ -35,12 +34,16 @@ export default function GtdView({ active, focus }: Props) {
     someday: 0,
     waiting: 0,
     project: 0,
-    done: 0,
+    archived: 0,
   });
   const [projects, setProjects] = useState<GtdItem[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(true);
+  const [archivedProjects, setArchivedProjects] = useState<GtdItem[]>([]);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
+  const [selectedArchivedId, setSelectedArchivedId] = useState<number | null>(null);
+  const [archivedOpen, setArchivedOpen] = useState(true);
   const [processing, setProcessing] = useState<GtdItem | null>(null);
   const [version, setVersion] = useState(0);
   const [activeFocus, setActiveFocus] = useState<GtdFocus | null>(null);
@@ -69,6 +72,7 @@ export default function GtdView({ active, focus }: Props) {
 
   useEffect(() => {
     window.prism.getGtdItems("project").then(setProjects).finally(() => setProjectsLoaded(true));
+    window.prism.getGtdItems("archived").then(setArchivedProjects).finally(() => setArchivedLoaded(true));
   }, [version]);
 
   const handleChanged = useCallback(() => {
@@ -76,17 +80,69 @@ export default function GtdView({ active, focus }: Props) {
     reloadCounts();
   }, [reloadCounts]);
 
+  // Captures created elsewhere (e.g. the Home inbox input) bump the list and
+  // sidebar counts without unmounting the GTD pane
+  useEffect(() => {
+    window.addEventListener("gtd-changed", handleChanged);
+    return () => window.removeEventListener("gtd-changed", handleChanged);
+  }, [handleChanged]);
+
   // Fall back to the first project when nothing (valid) is selected — e.g. the
   // current one was completed or deleted
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? projects[0] ?? null;
+  const selectedArchived = archivedProjects.find((p) => p.id === selectedArchivedId) ?? archivedProjects[0] ?? null;
 
   const nav: { key: GtdListKey; icon: LucideIcon; label: string; count?: number }[] = [
     { key: "inbox", icon: Inbox, label: t["gtd.inbox"], count: counts.inbox },
+    { key: "project", icon: FolderKanban, label: t["gtd.projects"] },
     { key: "waiting", icon: Clock, label: t["gtd.waiting"], count: counts.waiting },
-    { key: "project", icon: FolderKanban, label: t["gtd.projects"], count: counts.project },
     { key: "someday", icon: Lightbulb, label: t["gtd.someday"], count: counts.someday },
-    { key: "done", icon: CheckCircle2, label: t["gtd.done"] },
+    { key: "archived", icon: Archive, label: t["gtd.archived"] },
   ];
+
+  const renderGroup = (opts: {
+    key: "project" | "archived";
+    icon: LucideIcon;
+    label: string;
+    items: GtdItem[];
+    open: boolean;
+    toggle: () => void;
+    selected: GtdItem | null;
+    selectedId: number | null;
+    select: (id: number) => void;
+  }) => {
+    const Icon = opts.icon;
+    return (
+      <Fragment key={opts.key}>
+        <NavItem
+          onClick={opts.toggle}
+          active={list === opts.key && !opts.selected}
+          parentActive={list === opts.key && !!opts.selected}
+          leading={<Icon size={15} />}
+          label={opts.label}
+          trailing={
+            // Nudge right so the caret's visible edge lines up with the digit
+            // counts on sibling rows (a 12px lucide chevron sits ~4px inset)
+            <ChevronRight
+              size={12}
+              className={`translate-x-1 transition-transform duration-200 ${opts.open ? "rotate-90" : ""}`}
+            />
+          }
+        />
+        {opts.open && opts.items.length > 0 && (
+          <div className="sidebar-group mb-1 mt-0.5">
+            <GtdProjectList
+              projects={opts.items}
+              archived={opts.key === "archived"}
+              selectedId={list === opts.key ? opts.selectedId : null}
+              onSelect={opts.select}
+              onChanged={handleChanged}
+            />
+          </div>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <div className="h-full flex">
@@ -94,40 +150,47 @@ export default function GtdView({ active, focus }: Props) {
         <CollapsibleSidebar>
           {nav.map(({ key, icon: Icon, label, count }) =>
             key === "project" ? (
-              <Fragment key={key}>
-                <NavItem
-                  onClick={() => {
-                    if (list === "project") setProjectsOpen((open) => !open);
-                    else {
-                      setList("project");
-                      setProjectsOpen(true);
-                    }
-                  }}
-                  active={list === "project" && !selectedProject}
-                  sectionActive={list === "project" && !!selectedProject}
-                  leading={<Icon size={15} />}
-                  label={label}
-                  trailing={
-                    <span className="flex items-center gap-1">
-                      {count !== undefined && count > 0 ? count : null}
-                      {projectsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </span>
+              renderGroup({
+                key,
+                icon: Icon,
+                label,
+                items: projects,
+                open: projectsOpen,
+                toggle: () => {
+                  if (list === "project") setProjectsOpen((open) => !open);
+                  else {
+                    setList("project");
+                    setProjectsOpen(true);
                   }
-                />
-                {projectsOpen && projects.length > 0 && (
-                  <div className="pl-2 pt-0.5">
-                    <GtdProjectList
-                      projects={projects}
-                      selectedId={list === "project" ? selectedProject?.id ?? null : null}
-                      onSelect={(id) => {
-                        setList("project");
-                        setSelectedProjectId(id);
-                      }}
-                      onChanged={handleChanged}
-                    />
-                  </div>
-                )}
-              </Fragment>
+                },
+                selected: selectedProject,
+                selectedId: selectedProject?.id ?? null,
+                select: (id) => {
+                  setList("project");
+                  setSelectedProjectId(id);
+                },
+              })
+            ) : key === "archived" ? (
+              renderGroup({
+                key,
+                icon: Icon,
+                label,
+                items: archivedProjects,
+                open: archivedOpen,
+                toggle: () => {
+                  if (list === "archived") setArchivedOpen((open) => !open);
+                  else {
+                    setList("archived");
+                    setArchivedOpen(true);
+                  }
+                },
+                selected: selectedArchived,
+                selectedId: selectedArchived?.id ?? null,
+                select: (id) => {
+                  setList("archived");
+                  setSelectedArchivedId(id);
+                },
+              })
             ) : (
               <NavItem
                 key={key}
@@ -146,7 +209,7 @@ export default function GtdView({ active, focus }: Props) {
         {list === "inbox" && (
           <GtdInbox version={version} onProcess={setProcessing} onChanged={handleChanged} />
         )}
-        {(list === "waiting" || list === "someday" || list === "done") && (
+        {(list === "waiting" || list === "someday") && (
           <GtdItemList
             key={list}
             status={list}
@@ -177,6 +240,21 @@ export default function GtdView({ active, focus }: Props) {
                     ? { projectId: activeFocus.projectId, actionId: activeFocus.actionId ?? 0, seq: activeFocus.seq }
                     : null
                 }
+              />
+            )
+          ))}
+        {list === "archived" &&
+          (!archivedLoaded ? (
+            <SkeletonRows count={7} className="p-2" />
+          ) : archivedProjects.length === 0 ? (
+            <EmptyState size="module" text={t["gtd.emptyArchived"]} />
+          ) : (
+            selectedArchived && (
+              <GtdProjectDetail
+                key={`archived-${selectedArchived.id}`}
+                project={selectedArchived}
+                version={version}
+                onChanged={handleChanged}
               />
             )
           ))}

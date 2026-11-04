@@ -1,6 +1,19 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { app } from "electron";
+import type {
+  FavoriteNote,
+  GtdAction,
+  GtdItem,
+  GtdNextList,
+  GtdStatus,
+  NoteBrief,
+  NoteContentHit,
+  PdfDocument,
+  RecentNote,
+  Resource,
+  TagInfo,
+} from "../src/shared/models";
 
 let db: Database.Database;
 
@@ -72,8 +85,9 @@ export function initDatabase(): void {
       is_next INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT '',
+      due_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      done_at TEXT
+      archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_gtd_items_status ON gtd_items(status, created_at DESC);
 
@@ -84,6 +98,7 @@ export function initDatabase(): void {
       is_done INTEGER NOT NULL DEFAULT 0,
       is_next INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      due_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       done_at TEXT,
       FOREIGN KEY (project_id) REFERENCES gtd_items(id) ON DELETE CASCADE
@@ -152,6 +167,23 @@ export function initDatabase(): void {
   if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "color")) {
     db.exec("ALTER TABLE gtd_items ADD COLUMN color TEXT NOT NULL DEFAULT ''");
   }
+  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "due_date")) {
+    db.exec("ALTER TABLE gtd_items ADD COLUMN due_date TEXT");
+  }
+  // Projects now end up archived instead of done, so reuse the timestamp as
+  // the archive time and re-label existing completed rows.
+  if (gtdItemCols.length > 0 && gtdItemCols.some((c) => c.name === "done_at") && !gtdItemCols.some((c) => c.name === "archived_at")) {
+    db.exec("ALTER TABLE gtd_items RENAME COLUMN done_at TO archived_at");
+  }
+  db.exec("UPDATE gtd_items SET status = 'archived' WHERE status = 'done'");
+  const gtdActionCols = db.prepare("PRAGMA table_info(gtd_actions)").all() as { name: string }[];
+  if (gtdActionCols.length > 0 && !gtdActionCols.some((c) => c.name === "due_date")) {
+    db.exec("ALTER TABLE gtd_actions ADD COLUMN due_date TEXT");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_gtd_items_due ON gtd_items(due_date) WHERE due_date IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_gtd_actions_due ON gtd_actions(due_date) WHERE due_date IS NOT NULL;
+  `);
 
   // Migration: resource ordering was added after resources shipped — seed it
   // from id so the existing newest-first display order is preserved.
@@ -194,15 +226,6 @@ interface ResourceRow {
   notes: string;
   created_at: string;
   tag_names: string | null;
-}
-
-export interface Resource {
-  id: number;
-  url: string;
-  title: string;
-  notes: string;
-  created_at: string;
-  tags: string[];
 }
 
 export function addResource(url: string, title: string, tags: string[], notes: string): Resource {
@@ -317,7 +340,7 @@ function rowToResource(row: ResourceRow): Resource {
     url: row.url,
     title: row.title,
     notes: row.notes,
-    created_at: row.created_at,
+    createdAt: row.created_at,
     tags: row.tag_names ? row.tag_names.split("\x1f") : [],
   };
 }
@@ -378,7 +401,7 @@ export function syncVaultNotes(vaultPath: string, upsert: NoteUpsertRow[], delet
   }
 }
 
-export interface NoteBrief {
+interface NoteBriefRow {
   id: number;
   path: string;
   title: string;
@@ -386,8 +409,19 @@ export interface NoteBrief {
   modified_at: string;
 }
 
+function toNoteBrief(row: NoteBriefRow): NoteBrief {
+  return {
+    id: row.id,
+    path: row.path,
+    title: row.title,
+    tags: row.tags,
+    modifiedAt: row.modified_at,
+  };
+}
+
 export function getNoteList(vaultPath: string): NoteBrief[] {
-  return db.prepare("SELECT id, path, title, tags, modified_at FROM notes WHERE vault_path = ? ORDER BY modified_at DESC").all(vaultPath) as NoteBrief[];
+  const rows = db.prepare("SELECT id, path, title, tags, modified_at FROM notes WHERE vault_path = ? ORDER BY modified_at DESC").all(vaultPath) as NoteBriefRow[];
+  return rows.map(toNoteBrief);
 }
 
 export function searchNotes(vaultPath: string, query: string, limit = 200): NoteBrief[] {
@@ -397,18 +431,13 @@ export function searchNotes(vaultPath: string, query: string, limit = 200): Note
   const clauses = terms.map(() => "title LIKE ? ESCAPE '\\'").join(" AND ");
   const params = terms.map((t) => `%${escapeLike(t)}%`);
 
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT id, path, title, tags, modified_at FROM notes
     WHERE vault_path = ? AND ${clauses}
     ORDER BY modified_at DESC
     LIMIT ?
-  `).all(vaultPath, ...params, limit) as NoteBrief[];
-}
-
-export interface NoteContentHit {
-  path: string;
-  title: string;
-  snippet: string;
+  `).all(vaultPath, ...params, limit) as NoteBriefRow[];
+  return rows.map(toNoteBrief);
 }
 
 const SNIPPET_BEFORE = 60;
@@ -490,7 +519,7 @@ export function deleteNotesByPaths(paths: string[]): void {
 
 // ---- PDF operations ----
 
-export interface PdfDocumentRow {
+interface PdfDocumentRow {
   id: number;
   repo_path: string;
   path: string;
@@ -504,6 +533,24 @@ export interface PdfDocumentRow {
   cover_custom: number;
   cover_dirty: number;
   added_at: string;
+}
+
+function toPdfDocument(row: PdfDocumentRow): PdfDocument {
+  return {
+    id: row.id,
+    repoPath: row.repo_path,
+    path: row.path,
+    relPath: row.rel_path,
+    title: row.title,
+    pageCount: row.page_count,
+    fileSize: row.file_size,
+    modifiedAt: row.modified_at,
+    coverPath: row.cover_path,
+    coverVersion: row.cover_version,
+    coverCustom: row.cover_custom === 1,
+    coverDirty: row.cover_dirty === 1,
+    addedAt: row.added_at,
+  };
 }
 
 export interface PdfUpsertRow {
@@ -558,18 +605,21 @@ export function syncPdfDocuments(repoPath: string, upsert: PdfUpsertRow[], delet
   }
 }
 
-export function listPdfDocuments(repoPath: string): PdfDocumentRow[] {
-  return db.prepare("SELECT * FROM pdf_documents WHERE repo_path = ? ORDER BY title COLLATE NOCASE ASC").all(repoPath) as PdfDocumentRow[];
+export function listPdfDocuments(repoPath: string): PdfDocument[] {
+  const rows = db.prepare("SELECT * FROM pdf_documents WHERE repo_path = ? ORDER BY title COLLATE NOCASE ASC").all(repoPath) as PdfDocumentRow[];
+  return rows.map(toPdfDocument);
 }
 
-export function getPdfDocument(id: number): PdfDocumentRow | null {
-  return (db.prepare("SELECT * FROM pdf_documents WHERE id = ?").get(id) as PdfDocumentRow | undefined) ?? null;
+export function getPdfDocument(id: number): PdfDocument | null {
+  const row = db.prepare("SELECT * FROM pdf_documents WHERE id = ?").get(id) as PdfDocumentRow | undefined;
+  return row ? toPdfDocument(row) : null;
 }
 
-export function getPdfDocumentsByIds(ids: number[]): PdfDocumentRow[] {
+export function getPdfDocumentsByIds(ids: number[]): PdfDocument[] {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => "?").join(",");
-  return db.prepare(`SELECT * FROM pdf_documents WHERE id IN (${placeholders})`).all(...ids) as PdfDocumentRow[];
+  const rows = db.prepare(`SELECT * FROM pdf_documents WHERE id IN (${placeholders})`).all(...ids) as PdfDocumentRow[];
+  return rows.map(toPdfDocument);
 }
 
 export function updatePdfCover(id: number, coverPath: string, pageCount: number | null): number {
@@ -633,12 +683,6 @@ export function getAllSettings(): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [row.key, row.value]));
 }
 
-export interface TagInfo {
-  name: string;
-  count: number;
-  color: string;
-}
-
 export function getAllTags(): TagInfo[] {
   return db.prepare(`
     SELECT t.name, COUNT(rt.resource_id) as count, t.color
@@ -688,38 +732,78 @@ export function deleteTag(name: string): void {
 
 // ---- GTD operations ----
 
-export type GtdStatus = "inbox" | "someday" | "waiting" | "project" | "done";
-
-export interface GtdItem {
+interface GtdItemRow {
   id: number;
   title: string;
   status: GtdStatus;
   is_next: number;
   description: string;
   color: string;
+  due_date: string | null;
   created_at: string;
-  done_at: string | null;
+  archived_at: string | null;
   action_count: number;
   done_action_count: number;
 }
 
-export interface GtdAction {
+interface GtdActionRow {
   id: number;
   project_id: number;
   title: string;
   is_done: number;
   is_next: number;
   sort_order: number;
+  due_date: string | null;
   created_at: string;
   done_at: string | null;
 }
 
-export interface GtdNextList {
-  waiting: GtdItem[];
-  projects: { project: GtdItem; action: GtdAction }[];
+function toGtdItem(row: GtdItemRow): GtdItem {
+  return {
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    isNext: row.is_next === 1,
+    description: row.description,
+    color: row.color,
+    dueDate: row.due_date,
+    createdAt: row.created_at,
+    archivedAt: row.archived_at,
+    actionCount: row.action_count,
+    doneActionCount: row.done_action_count,
+  };
 }
 
-const GTD_STATUSES: GtdStatus[] = ["inbox", "someday", "waiting", "project", "done"];
+function toGtdAction(row: GtdActionRow): GtdAction {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    isDone: row.is_done === 1,
+    isNext: row.is_next === 1,
+    sortOrder: row.sort_order,
+    dueDate: row.due_date,
+    createdAt: row.created_at,
+    doneAt: row.done_at,
+  };
+}
+
+const GTD_STATUSES: GtdStatus[] = ["inbox", "someday", "waiting", "project", "archived"];
+
+const DATE_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function assertDateKey(value: string | null): void {
+  if (value === null) return;
+  const match = DATE_KEY_RE.exec(value);
+  if (!match) throw new Error(`Invalid due date: ${value}`);
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+    throw new Error(`Invalid due date: ${value}`);
+  }
+}
 
 const GTD_ITEM_SELECT = `
   SELECT i.*, (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = i.id) AS action_count,
@@ -733,12 +817,13 @@ export function addGtdItem(title: string): GtdItem {
 }
 
 export function getGtdItem(id: number): GtdItem | null {
-  const row = db.prepare(`${GTD_ITEM_SELECT} WHERE i.id = ?`).get(id) as GtdItem | undefined;
-  return row ?? null;
+  const row = db.prepare(`${GTD_ITEM_SELECT} WHERE i.id = ?`).get(id) as GtdItemRow | undefined;
+  return row ? toGtdItem(row) : null;
 }
 
 export function getGtdItems(status: GtdStatus): GtdItem[] {
-  return db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = ? ORDER BY COALESCE(i.done_at, i.created_at) DESC`).all(status) as GtdItem[];
+  const rows = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = ? ORDER BY COALESCE(i.archived_at, i.created_at) DESC`).all(status) as GtdItemRow[];
+  return rows.map(toGtdItem);
 }
 
 export function getGtdCounts(): Record<GtdStatus, number> {
@@ -750,17 +835,23 @@ export function getGtdCounts(): Record<GtdStatus, number> {
 
 export function setGtdItemStatus(id: number, status: GtdStatus): void {
   if (!GTD_STATUSES.includes(status)) throw new Error(`Invalid GTD status: ${status}`);
-  db.transaction(() => {
-    db.prepare(`
-      UPDATE gtd_items SET status = ?,
-        done_at = CASE WHEN ? = 'done' THEN datetime('now') ELSE NULL END,
-        is_next = CASE WHEN ? = 'waiting' THEN is_next ELSE 0 END
-      WHERE id = ?
-    `).run(status, status, status, id);
-    if (status === "done") {
-      db.prepare("UPDATE gtd_actions SET is_done = 1, is_next = 0, done_at = datetime('now') WHERE project_id = ? AND is_done = 0").run(id);
-    }
-  })();
+  db.prepare(`
+    UPDATE gtd_items SET status = ?,
+      archived_at = CASE WHEN ? = 'archived' THEN datetime('now') ELSE NULL END,
+      is_next = CASE WHEN ? = 'waiting' THEN is_next ELSE 0 END,
+      due_date = CASE WHEN ? = 'waiting' THEN due_date ELSE NULL END
+    WHERE id = ?
+  `).run(status, status, status, status, id);
+}
+
+// Archiving leaves actions untouched so unarchiving restores the project
+// exactly as it was.
+export function setGtdItemArchived(id: number, archived: boolean): void {
+  if (archived) {
+    db.prepare("UPDATE gtd_items SET status = 'archived', archived_at = datetime('now') WHERE id = ? AND status = 'project'").run(id);
+  } else {
+    db.prepare("UPDATE gtd_items SET status = 'project', archived_at = NULL WHERE id = ? AND status = 'archived'").run(id);
+  }
 }
 
 export function renameGtdItem(id: number, title: string): void {
@@ -775,6 +866,11 @@ export function setGtdItemColor(id: number, color: string): void {
   db.prepare("UPDATE gtd_items SET color = ? WHERE id = ?").run(color, id);
 }
 
+export function setGtdItemDueDate(id: number, dueDate: string | null): void {
+  assertDateKey(dueDate);
+  db.prepare("UPDATE gtd_items SET due_date = ? WHERE id = ? AND status = 'waiting'").run(dueDate, id);
+}
+
 export function deleteGtdItem(id: number): boolean {
   return db.prepare("DELETE FROM gtd_items WHERE id = ?").run(id).changes > 0;
 }
@@ -784,12 +880,13 @@ export function setGtdItemNext(id: number, isNext: boolean): void {
 }
 
 export function getGtdActions(projectId: number): GtdAction[] {
-  return db.prepare("SELECT * FROM gtd_actions WHERE project_id = ? ORDER BY sort_order ASC, id ASC").all(projectId) as GtdAction[];
+  const rows = db.prepare("SELECT * FROM gtd_actions WHERE project_id = ? ORDER BY sort_order ASC, id ASC").all(projectId) as GtdActionRow[];
+  return rows.map(toGtdAction);
 }
 
 export function getGtdAction(id: number): GtdAction | null {
-  const row = db.prepare("SELECT * FROM gtd_actions WHERE id = ?").get(id) as GtdAction | undefined;
-  return row ?? null;
+  const row = db.prepare("SELECT * FROM gtd_actions WHERE id = ?").get(id) as GtdActionRow | undefined;
+  return row ? toGtdAction(row) : null;
 }
 
 export function addGtdAction(projectId: number, title: string): GtdAction {
@@ -802,6 +899,11 @@ export function addGtdAction(projectId: number, title: string): GtdAction {
 
 export function renameGtdAction(id: number, title: string): void {
   db.prepare("UPDATE gtd_actions SET title = ? WHERE id = ?").run(title, id);
+}
+
+export function setGtdActionDueDate(id: number, dueDate: string | null): void {
+  assertDateKey(dueDate);
+  db.prepare("UPDATE gtd_actions SET due_date = ? WHERE id = ?").run(dueDate, id);
 }
 
 function promoteFrontmostAction(projectId: number): void {
@@ -857,8 +959,9 @@ interface GtdNextProjectRow {
   is_next: number;
   description: string;
   color: string;
+  due_date: string | null;
   created_at: string;
-  done_at: string | null;
+  archived_at: string | null;
   action_count: number;
   done_action_count: number;
   action_id: number;
@@ -866,18 +969,20 @@ interface GtdNextProjectRow {
   action_is_done: number;
   action_is_next: number;
   action_sort_order: number;
+  action_due_date: string | null;
   action_created_at: string;
   action_done_at: string | null;
 }
 
 export function getGtdNextList(): GtdNextList {
-  const waiting = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = 'waiting' AND i.is_next = 1 ORDER BY i.created_at DESC`).all() as GtdItem[];
+  const waitingRows = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = 'waiting' AND i.is_next = 1 ORDER BY i.created_at DESC`).all() as GtdItemRow[];
   const rows = db.prepare(`
     SELECT p.*,
       (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id) AS action_count,
       (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id AND a.is_done = 1) AS done_action_count,
       a.id AS action_id, a.title AS action_title, a.is_done AS action_is_done, a.is_next AS action_is_next,
-      a.sort_order AS action_sort_order, a.created_at AS action_created_at, a.done_at AS action_done_at
+      a.sort_order AS action_sort_order, a.due_date AS action_due_date,
+      a.created_at AS action_created_at, a.done_at AS action_done_at
     FROM gtd_items p
     JOIN (
       SELECT *, ROW_NUMBER() OVER (
@@ -890,47 +995,37 @@ export function getGtdNextList(): GtdNextList {
     ORDER BY p.created_at DESC
   `).all() as GtdNextProjectRow[];
   return {
-    waiting,
+    waiting: waitingRows.map(toGtdItem),
     projects: rows.map((row) => ({
-      project: {
+      project: toGtdItem({
         id: row.id,
         title: row.title,
         status: row.status,
         is_next: row.is_next,
         description: row.description,
         color: row.color,
+        due_date: row.due_date,
         created_at: row.created_at,
-        done_at: row.done_at,
+        archived_at: row.archived_at,
         action_count: row.action_count,
         done_action_count: row.done_action_count,
-      },
-      action: {
+      }),
+      action: toGtdAction({
         id: row.action_id,
         project_id: row.id,
         title: row.action_title,
         is_done: row.action_is_done,
         is_next: row.action_is_next,
         sort_order: row.action_sort_order,
+        due_date: row.action_due_date,
         created_at: row.action_created_at,
         done_at: row.action_done_at,
-      },
+      }),
     })),
   };
 }
 
 // ---- Favorite / recent notes ----
-
-export interface FavoriteNote {
-  path: string;
-  title: string;
-  created_at: string;
-}
-
-export interface RecentNote {
-  path: string;
-  title: string;
-  opened_at: string;
-}
 
 export function toggleFavoriteNote(notePath: string, title: string): boolean {
   const existing = db.prepare("SELECT path FROM favorite_notes WHERE path = ?").get(notePath);
@@ -943,7 +1038,9 @@ export function toggleFavoriteNote(notePath: string, title: string): boolean {
 }
 
 export function getFavoriteNotes(): FavoriteNote[] {
-  return db.prepare("SELECT * FROM favorite_notes ORDER BY created_at DESC").all() as FavoriteNote[];
+  const rows = db.prepare("SELECT * FROM favorite_notes ORDER BY created_at DESC").all() as
+    { path: string; title: string; created_at: string }[];
+  return rows.map((row) => ({ path: row.path, title: row.title, createdAt: row.created_at }));
 }
 
 export function getFavoriteStatus(paths: string[]): string[] {
@@ -972,7 +1069,9 @@ export function recordRecentOpen(notePath: string): void {
 }
 
 export function getRecentNotes(limit = 20): RecentNote[] {
-  return db.prepare("SELECT * FROM recent_notes ORDER BY opened_at DESC LIMIT ?").all(limit) as RecentNote[];
+  const rows = db.prepare("SELECT * FROM recent_notes ORDER BY opened_at DESC LIMIT ?").all(limit) as
+    { path: string; title: string; opened_at: string }[];
+  return rows.map((row) => ({ path: row.path, title: row.title, openedAt: row.opened_at }));
 }
 
 // Keep favorites/recents pointing at the right file after a rename, even when

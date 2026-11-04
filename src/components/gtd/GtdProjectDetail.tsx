@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Check, Star, Pencil, Trash2 } from "lucide-react";
+import { Check, Star, Pencil, Trash2, CalendarDays, ArchiveRestore } from "lucide-react";
 import Button from "../Button";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
@@ -13,6 +13,8 @@ import Modal from "../Modal";
 import { Textarea } from "../Input";
 import { arrayMove } from "@dnd-kit/sortable";
 import SortableList from "../SortableList";
+import DueDateChip from "./DueDateChip";
+import GtdDueDateModal from "./GtdDueDateModal";
 import type { GtdAction, GtdItem } from "./types";
 
 interface Props {
@@ -30,9 +32,11 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const [draft, setDraft] = useState("");
   const [renaming, setRenaming] = useState<GtdAction | null>(null);
   const [deleting, setDeleting] = useState<GtdAction | null>(null);
+  const [dueEditing, setDueEditing] = useState<GtdAction | null>(null);
   const [descOpen, setDescOpen] = useState(false);
   const [descDraft, setDescDraft] = useState("");
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState(false);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const handledSeqRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -53,16 +57,17 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
     setTimeout(() => setHighlightId(null), 1600);
   }, [focusAction, actions, project.id]);
 
-  const allDone = actions.length > 0 && actions.every((a) => a.is_done === 1);
+  const readonly = project.status === "archived";
+  const allDone = actions.length > 0 && actions.every((a) => a.isDone);
 
   useEffect(() => {
     if (!allDone) setBannerDismissed(false);
   }, [allDone]);
 
   const progress = t["gtd.projectProgress"]
-    .replace("{done}", String(project.done_action_count))
-    .replace("{total}", String(project.action_count));
-  const percent = project.action_count > 0 ? (project.done_action_count / project.action_count) * 100 : 0;
+    .replace("{done}", String(project.doneActionCount))
+    .replace("{total}", String(project.actionCount));
+  const percent = project.actionCount > 0 ? (project.doneActionCount / project.actionCount) * 100 : 0;
 
   // Grow with the content up to ~4 lines, then scroll internally
   const autoGrow = (el: HTMLTextAreaElement) => {
@@ -116,7 +121,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
 
   const toggleNext = async (action: GtdAction) => {
     try {
-      await window.prism.setGtdActionNext(project.id, action.is_next ? null : action.id);
+      await window.prism.setGtdActionNext(project.id, action.isNext ? null : action.id);
     } catch {
       showToast(t["common.saveFailed"], "error");
       return;
@@ -124,13 +129,35 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
     onChanged();
   };
 
-  const completeProject = async () => {
+  const archiveProject = async () => {
     try {
-      await window.prism.setGtdItemStatus(project.id, "done");
+      await window.prism.setGtdItemArchived(project.id, true);
     } catch {
       showToast(t["common.saveFailed"], "error");
       return;
     }
+    onChanged();
+  };
+
+  const unarchiveProject = async () => {
+    try {
+      await window.prism.setGtdItemArchived(project.id, false);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      return;
+    }
+    onChanged();
+  };
+
+  const deleteProject = async () => {
+    try {
+      await window.prism.deleteGtdItem(project.id);
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      return;
+    }
+    setConfirmDeleteProject(false);
+    showToast(t["common.deleted"]);
     onChanged();
   };
 
@@ -158,17 +185,33 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
-      <span className="min-w-0 text-body font-medium text-primary truncate">{t["gtd.projects"]}</span>
+      <span className="min-w-0 text-body font-medium text-primary truncate">
+        {readonly ? t["gtd.archived"] : t["gtd.projects"]}
+      </span>
     ),
-  }), [t]);
+  }), [readonly, t]);
 
   useToolbarContribution("module:gtd", toolbar);
 
   return (
     <>
       <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-line/30">
-        <h2 className="text-section font-semibold text-primary truncate">{project.title}</h2>
-        {project.action_count > 0 && (
+        <div className="flex items-start gap-2">
+          <h2 className="min-w-0 flex-1 text-section font-semibold text-primary truncate">{project.title}</h2>
+          {readonly && (
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <Button variant="secondary" size="xs" onClick={unarchiveProject}>
+                <ArchiveRestore size={13} />
+                {t["gtd.unarchive"]}
+              </Button>
+              <Button variant="danger-subtle" size="xs" onClick={() => setConfirmDeleteProject(true)}>
+                <Trash2 size={13} />
+                {t["menu.delete"]}
+              </Button>
+            </div>
+          )}
+        </div>
+        {!readonly && project.actionCount > 0 && (
           <div className="mt-2 flex items-center gap-3">
             <span className="surface-inset block flex-1 h-1.5 rounded-chip overflow-hidden">
               <span
@@ -179,46 +222,61 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
             <span className="text-caption text-muted tabular-nums whitespace-nowrap">{progress}</span>
           </div>
         )}
-        <button
-          type="button"
-          onClick={openDescription}
-          className="group/desc field-inset w-full text-left rounded-control border px-3 py-2 hover:border-strong transition-colors mt-3"
-        >
-          <span className="flex items-center gap-1.5 text-meta text-muted mb-1">
-            {t["gtd.projectDescription"]}
-            <Pencil size={11} className="ml-auto opacity-0 group-hover/desc:opacity-100 transition-opacity" />
-          </span>
-          {project.description ? (
-            <span className="block whitespace-pre-wrap text-body leading-relaxed text-secondary max-h-28 overflow-y-auto pr-1">
-              {project.description}
-            </span>
-          ) : (
-            <span className="block text-body text-muted truncate">{t["gtd.projectDescriptionPlaceholder"]}</span>
-          )}
-        </button>
-        <Textarea
-          ref={inputRef}
-          rows={1}
-          value={draft}
-          onChange={(e) => { setDraft(e.target.value); autoGrow(e.currentTarget); }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={t["gtd.addAction"]}
-          autoFocus
-          className="w-full max-h-24 resize-none overflow-y-auto mt-2"
-        />
+        {readonly ? (
+          <div className="field-inset rounded-control border px-3 py-2 mt-3">
+            <div className="text-meta text-muted mb-1">{t["gtd.projectDescription"]}</div>
+            {project.description ? (
+              <div className="whitespace-pre-wrap text-body leading-relaxed text-secondary max-h-28 overflow-y-auto pr-1">
+                {project.description}
+              </div>
+            ) : (
+              <div className="text-body text-muted">{t["gtd.projectDescriptionEmpty"]}</div>
+            )}
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={openDescription}
+              className="group/desc field-inset w-full text-left rounded-control border px-3 py-2 hover:border-strong transition-colors mt-3"
+            >
+              <span className="flex items-center gap-1.5 text-meta text-muted mb-1">
+                {t["gtd.projectDescription"]}
+                <Pencil size={11} className="ml-auto opacity-0 group-hover/desc:opacity-100 transition-opacity" />
+              </span>
+              {project.description ? (
+                <span className="block whitespace-pre-wrap text-body leading-relaxed text-secondary max-h-28 overflow-y-auto pr-1">
+                  {project.description}
+                </span>
+              ) : (
+                <span className="block text-body text-muted truncate">{t["gtd.projectDescriptionPlaceholder"]}</span>
+              )}
+            </button>
+            <Textarea
+              ref={inputRef}
+              rows={1}
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); autoGrow(e.currentTarget); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder={t["gtd.addAction"]}
+              autoFocus
+              className="w-full max-h-24 resize-none overflow-y-auto mt-2"
+            />
+          </>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {allDone && !bannerDismissed && (
+        {!readonly && allDone && !bannerDismissed && (
           <div className="flex items-center gap-3 mx-4 mt-3 px-3 py-2 rounded-control bg-[var(--accent-muted)] border border-[var(--accent-border)]">
             <span className="flex-1 text-body text-[var(--accent-text)]">{t["gtd.projectCompletePrompt"]}</span>
-            <Button variant="primary" size="xs" onClick={completeProject}>
-              {t["gtd.completeProject"]}
+            <Button variant="primary" size="xs" onClick={archiveProject}>
+              {t["gtd.archiveProject"]}
             </Button>
             <Button variant="ghost" size="xs" onClick={() => setBannerDismissed(true)}>
               {t["gtd.later"]}
@@ -226,7 +284,36 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
           </div>
         )}
         {!loaded && actions.length === 0 && <SkeletonRows count={5} />}
-        {loaded && actions.length === 0 && <EmptyState size="module" text={t["gtd.emptyActions"]} />}
+        {loaded && actions.length === 0 && (
+          <EmptyState size="module" text={readonly ? t["gtd.emptyActionsArchived"] : t["gtd.emptyActions"]} />
+        )}
+        {readonly &&
+          actions.map((action) => (
+            <ItemRow
+              key={action.id}
+              id={`gtd-action-${action.id}`}
+              variant="list"
+              className="border-b border-line/30"
+              leading={
+                <span
+                  className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center ${
+                    action.isDone
+                      ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)] text-on-accent"
+                      : "surface-inset"
+                  }`}
+                >
+                  {action.isDone && <Check size={11} strokeWidth={3} />}
+                </span>
+              }
+              title={
+                action.isDone
+                  ? <span className="text-muted line-through">{action.title}</span>
+                  : action.title
+              }
+              meta={action.dueDate ? <DueDateChip dueDate={action.dueDate} /> : undefined}
+            />
+          ))}
+        {!readonly && (
         <SortableList
           items={actions}
           itemId={(action) => String(action.id)}
@@ -237,7 +324,14 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
               variant="list"
               className={`border-b border-line/30 ${highlightId === action.id ? "bg-[var(--accent-muted)]" : ""}`}
               menuItems={[
-                { label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(action) },
+                { label: action.isNext ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(action) },
+                ...(action.isDone
+                  ? []
+                  : [{
+                      label: action.dueDate ? t["gtd.dueDate.change"] : t["gtd.dueDate.set"],
+                      icon: <CalendarDays size={14} />,
+                      onClick: () => setDueEditing(action),
+                    }]),
                 { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(action) },
                 { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(action) },
               ]}
@@ -245,27 +339,32 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
                 <button
                   onClick={() => toggleActionDone(action)}
                   className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
-                    action.is_done
+                    action.isDone
                       ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)] text-on-accent"
                       : "surface-inset hover:border-[var(--accent)]"
                   }`}
                 >
-                  {action.is_done === 1 && <Check size={11} strokeWidth={3} />}
+                  {action.isDone && <Check size={11} strokeWidth={3} />}
                 </button>
               }
               title={
-                action.is_done
+                action.isDone
                   ? <span className="text-muted line-through">{action.title}</span>
                   : action.title
               }
+              meta={
+                !action.isDone && action.dueDate ? (
+                  <DueDateChip dueDate={action.dueDate} onClick={() => setDueEditing(action)} />
+                ) : undefined
+              }
               hoverActions={
-                action.is_done === 0
+                !action.isDone
                   ? [{
-                      icon: <Star size={14} fill={action.is_next ? "currentColor" : "none"} />,
-                      label: action.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"],
+                      icon: <Star size={14} fill={action.isNext ? "currentColor" : "none"} />,
+                      label: action.isNext ? t["gtd.unsetNext"] : t["gtd.setNext"],
                       onClick: () => toggleNext(action),
-                      active: !!action.is_next,
-                      className: action.is_next ? "text-[var(--accent-text)]" : undefined,
+                      active: !!action.isNext,
+                      className: action.isNext ? "text-[var(--accent-text)]" : undefined,
                     }]
                   : []
               }
@@ -273,18 +372,19 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
           )}
           renderOverlay={(action) => (
             <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
-              <span className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 ${action.is_done ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]" : "surface-inset"}`} />
-              <span className={`truncate ${action.is_done ? "text-muted line-through" : ""}`}>{action.title}</span>
+              <span className={`w-[18px] h-[18px] rounded-full border flex-shrink-0 ${action.isDone ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]" : "surface-inset"}`} />
+              <span className={`truncate ${action.isDone ? "text-muted line-through" : ""}`}>{action.title}</span>
             </div>
           )}
         />
+        )}
       </div>
 
       <Modal
         open={descOpen}
         onClose={() => setDescOpen(false)}
         title={t["gtd.projectDescription"]}
-        icon={<Pencil size={16} className="text-muted" />}
+        icon={Pencil}
         size="lg"
         footer={
           <>
@@ -327,6 +427,31 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
         message={t["gtd.deleteActionConfirm"]}
         onConfirm={handleDelete}
         onClose={() => setDeleting(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteProject}
+        message={t["gtd.deleteProjectConfirm"]}
+        onConfirm={deleteProject}
+        onClose={() => setConfirmDeleteProject(false)}
+      />
+
+      <GtdDueDateModal
+        open={dueEditing !== null}
+        title={dueEditing?.title ?? ""}
+        value={dueEditing?.dueDate ?? null}
+        onClose={() => setDueEditing(null)}
+        onSave={async (date) => {
+          if (!dueEditing) return;
+          try {
+            await window.prism.setGtdActionDueDate(dueEditing.id, date);
+          } catch {
+            showToast(t["common.saveFailed"], "error");
+            return;
+          }
+          setDueEditing(null);
+          onChanged();
+        }}
       />
     </>
   );

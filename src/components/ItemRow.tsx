@@ -17,9 +17,11 @@ interface Props extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   leading?: ReactNode;
   title: ReactNode;
   tooltip?: string;
+  trailing?: ReactNode;
   meta?: ReactNode;
   hoverActions?: ItemRowHoverAction[];
   variant?: "dense" | "list";
+  multiline?: boolean;
 }
 
 export default function ItemRow({
@@ -29,14 +31,31 @@ export default function ItemRow({
   leading,
   title,
   tooltip,
+  trailing,
   meta,
   hoverActions,
   variant = "list",
+  multiline = false,
   className = "",
   onContextMenu: propsOnContextMenu,
   ...rest
 }: Props) {
   const { onContextMenu: openMenu } = useContextMenu();
+  const hasHoverActions = !!hoverActions?.length;
+  // Overlaying an always-visible action would collide with meta, so only swap
+  // when every action is hover-only.
+  const swapMeta = meta != null && hasHoverActions && hoverActions!.every((a) => !a.active);
+
+  const renderHoverAction = (action: ItemRowHoverAction, i: number) => (
+    <button
+      key={i}
+      title={action.label}
+      onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+      className={`flex-shrink-0 transition-opacity ${action.active ? "" : "opacity-0 group-hover:opacity-100"} ${action.className ?? "text-faint hover:text-secondary"}`}
+    >
+      {action.icon}
+    </button>
+  );
 
   return (
     <div
@@ -44,25 +63,28 @@ export default function ItemRow({
       title={tooltip}
       onClick={onPrimaryClick}
       onContextMenu={menuItems ? (e) => openMenu(e, menuItems) : propsOnContextMenu}
-      className={`group flex items-center gap-2 transition-colors ${variant === "dense" ? "px-2 py-1.5 rounded-control" : "px-3 py-1.5"} ${
+      className={`group flex gap-2 transition-colors ${multiline ? "items-start" : "items-center"} ${variant === "dense" ? "px-2 py-1.5 rounded-control" : "px-3 py-1.5"} ${
         selected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/50"
       } ${onPrimaryClick ? "cursor-pointer" : ""} ${className}`}
     >
       {leading}
-      <span className={`flex-1 min-w-0 truncate text-body ${selected ? "text-[var(--accent-text)]" : "text-primary"}`}>
+      <span className={`flex-1 min-w-0 text-body ${multiline ? "whitespace-pre-wrap break-words" : "truncate"} ${selected ? "text-[var(--accent-text)]" : "text-primary"}`}>
         {title}
       </span>
-      {meta}
-      {hoverActions?.map((a, i) => (
-        <button
-          key={i}
-          title={a.label}
-          onClick={(e) => { e.stopPropagation(); a.onClick(); }}
-          className={`flex-shrink-0 transition-opacity ${a.active ? "" : "opacity-0 group-hover:opacity-100"} ${a.className ?? "text-faint hover:text-secondary"}`}
-        >
-          {a.icon}
-        </button>
-      ))}
+      {trailing}
+      {swapMeta ? (
+        <span className="relative flex flex-shrink-0 items-center justify-end">
+          <span className="flex items-center transition-opacity group-hover:opacity-0">{meta}</span>
+          <span className="absolute inset-y-0 right-0 flex items-center gap-2">
+            {hoverActions!.map(renderHoverAction)}
+          </span>
+        </span>
+      ) : (
+        <>
+          {meta}
+          {hoverActions?.map(renderHoverAction)}
+        </>
+      )}
     </div>
   );
 }

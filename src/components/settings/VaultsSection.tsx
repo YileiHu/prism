@@ -10,7 +10,7 @@ import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import { type VaultEntry } from "../../types";
 import { VaultIcon } from "../../lib/vaultIcons";
-import { SectionHeader, Select, SettingBlock, TextField } from "./controls";
+import { Select, SettingBlock, TextField } from "./controls";
 
 interface Props {
   onSaved: () => void;
@@ -107,8 +107,6 @@ export default function VaultsSection({ onSaved }: Props) {
 
   return (
     <section>
-      <SectionHeader title={t["settings.catVaults"]} description={t["settings.vaultsDesc"]} />
-
       <div className="space-y-2 mb-4">
         {!loaded && <SkeletonRows count={2} />}
         {loaded && vaults.length === 0 && <EmptyState size="card" text={t["settings.noVaults"]} />}

@@ -39,7 +39,7 @@ export function usePdfCollections(repoPath: string) {
 
   const persist = useCallback((colls: PdfCollectionData[]) => {
     return window.prism
-      .pdfSaveCollections(repoPath, { version: 1, collections: colls })
+      .savePdfCollections(repoPath, { version: 1, collections: colls })
       .then(() => { saveFailedRef.current = false; })
       .catch(() => {
         if (saveFailedRef.current) return;
@@ -92,7 +92,7 @@ export function usePdfCollections(repoPath: string) {
     }
     void (async () => {
       try {
-        const data = (await window.prism.pdfLoadCollections()) as PdfCollectionsFile | null;
+        const data = (await window.prism.loadPdfCollections()) as PdfCollectionsFile | null;
         if (cancelled) return;
         const colls = Array.isArray(data?.collections)
           ? data.collections.map(normalizeCollection).filter((c): c is PdfCollectionData => c !== null)
@@ -230,6 +230,12 @@ export function usePdfCollections(repoPath: string) {
     return removed;
   }, [collections, saveCollections]);
 
+  const findCollectionForPath = useCallback((relPath: string): string | null => {
+    const key = relKey(relPath);
+    const owner = collections.find((c) => c.pdfPaths.some((p) => relKey(p) === key));
+    return owner?.id ?? null;
+  }, [collections]);
+
   const selected = useMemo(
     () => (selectedId ? collections.find((c) => c.id === selectedId) ?? null : null),
     [collections, selectedId],
@@ -241,6 +247,7 @@ export function usePdfCollections(repoPath: string) {
     selected,
     loaded,
     selectCollection,
+    findCollectionForPath,
     createCollection,
     renameCollection,
     deleteCollection,

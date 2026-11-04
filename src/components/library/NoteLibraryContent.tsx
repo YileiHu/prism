@@ -46,7 +46,8 @@ import { useDraggable } from "@dnd-kit/core";
 import { type MenuItem } from "../ContextMenu";
 import { toRelativePath } from "../useCollections";
 import type { CollectionData } from "../collectionTypes";
-import type { NoteLibrary, VaultNote } from "./useNoteLibrary";
+import type { NoteLibrary } from "./useNoteLibrary";
+import type { NoteBrief } from "../../shared/models";
 
 interface Props {
   lib: NoteLibrary;
@@ -100,7 +101,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CollectionData | null>(null);
   const [renameGroupTarget, setRenameGroupTarget] = useState<{ id: string; name: string } | null>(null);
-  const [renameNoteTarget, setRenameNoteTarget] = useState<VaultNote | null>(null);
+  const [renameNoteTarget, setRenameNoteTarget] = useState<NoteBrief | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -317,7 +318,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       {
         label: t["menu.rename"],
         icon: <Pencil size={14} />,
-        onClick: () => setRenameNoteTarget(note as VaultNote),
+        onClick: () => setRenameNoteTarget(note as NoteBrief),
       },
       {
         label: t["menu.moveToTrash"],
@@ -555,8 +556,8 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
             {
               collectionId: selectedCollectionId,
               groupId,
-              relPath: note.relativePath,
-              onRemove: () => handleRemoveNote(selectedCollectionId, note.relativePath, groupId),
+              relPath: note.relPath,
+              onRemove: () => handleRemoveNote(selectedCollectionId, note.relPath, groupId),
             },
           ))}
           onOpenNote={openNote}
@@ -641,7 +642,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                         <>
                           {(() => {
                             const noteColls = noteCollections.get(relPath.replace(/\//g, "\\").toLowerCase()) ?? [];
-                            if (noteColls.length === 0) return <Badge tone="warning">{t["vault.uncategorized"]}</Badge>;
+                            if (noteColls.length === 0) return <Badge variant="warning">{t["vault.uncategorized"]}</Badge>;
                             return (
                               <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                                 {noteColls.slice(0, 3).map((name) => (
@@ -656,7 +657,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                           {note.tags && (
                             <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                               {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
-                                <Badge key={tag} tone="accent">{tag}</Badge>
+                                <Badge key={tag} variant="accent">{tag}</Badge>
                               ))}
                             </span>
                           )}
@@ -741,7 +742,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         open={renameGroupTarget !== null}
         initialValue={renameGroupTarget?.name ?? ""}
         title={t["collections.rename"]}
-        icon={<Pencil size={18} className="text-[var(--accent-text)]" />}
+        icon={Pencil}
         onClose={() => setRenameGroupTarget(null)}
         onSubmit={(name) => {
           if (selectedCollectionId && renameGroupTarget) {
@@ -753,7 +754,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         open={renameNoteTarget !== null}
         initialValue={renameNoteTarget?.title ?? ""}
         placeholder={t["vault.renameTitle"]}
-        icon={<Pencil size={18} className="text-[var(--accent-text)]" />}
+        icon={Pencil}
         onClose={() => setRenameNoteTarget(null)}
         onSubmit={handleRenameNote}
       />

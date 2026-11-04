@@ -1,24 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSettings } from "../../lib/settings";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
-import { useCollections } from "../useCollections";
+import { toRelativePath, useCollections } from "../useCollections";
 import { resolveTagColor, type PaletteColor } from "../../lib/colors";
 import type { CollectionData } from "../collectionTypes";
-
-export interface VaultNote {
-  id: number;
-  path: string;
-  title: string;
-  content?: string;
-  tags: string;
-  modified_at: string;
-}
+import type { NoteBrief } from "../../shared/models";
 
 const norm = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
 export function useNoteLibrary(vaultPath: string) {
   const { values: settings } = useSettings();
-  const [notes, setNotes] = useState<VaultNote[]>([]);
+  const [notes, setNotes] = useState<NoteBrief[]>([]);
   const [scanning, setScanning] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [vaultError, setVaultError] = useState(false);
@@ -122,7 +114,7 @@ export function useNoteLibrary(vaultPath: string) {
         await window.prism.setVaultPath(vaultPath);
         const [cachedNotes, collData] = await Promise.all([
           window.prism.getNoteList(vaultPath),
-          window.prism.loadCollections(vaultPath) as Promise<{ collections: CollectionData[] } | null>,
+          window.prism.loadNoteCollections(vaultPath) as Promise<{ collections: CollectionData[] } | null>,
         ]);
         if (cancelled) return;
         const colls = collData?.collections ?? [];
@@ -238,6 +230,18 @@ export function useNoteLibrary(vaultPath: string) {
     if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
   }, [setSelectedCollectionId, vaultPath]);
 
+  // Collection (root list or group) that contains an absolute note path
+  const findCollectionForNote = useCallback((absPath: string): string | null => {
+    const rel = toRelativePath(absPath, viewVaultPath).replace(/\\/g, "/").toLowerCase();
+    const owner = collectionsApi.collections.find((c) =>
+      c.notePaths.some((p) => p.replace(/\\/g, "/").toLowerCase() === rel) ||
+      (c.groups ?? []).some((g) =>
+        g.notePaths.some((p) => p.replace(/\\/g, "/").toLowerCase() === rel),
+      ),
+    );
+    return owner?.id ?? null;
+  }, [collectionsApi.collections, viewVaultPath]);
+
   const collectionColorByName = useMemo(() => {
     const map = new Map<string, PaletteColor>();
     if (!collectionsApi.collections) return map;
@@ -263,6 +267,7 @@ export function useNoteLibrary(vaultPath: string) {
     searchScope,
     changeSearchScope,
     selectCollection,
+    findCollectionForNote,
     favorites,
     toggleFavorite,
     loadNotes,

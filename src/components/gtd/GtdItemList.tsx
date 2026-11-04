@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Star, Check, ListChecks, Trash2, Pencil } from "lucide-react";
+import { Star, Check, ListChecks, Trash2, Pencil, CalendarDays } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
@@ -10,10 +10,12 @@ import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import ConfirmDialog from "../ConfirmDialog";
 import RenameModal from "../RenameModal";
+import DueDateChip from "./DueDateChip";
+import GtdDueDateModal from "./GtdDueDateModal";
 import { formatGtdDate, type GtdItem } from "./types";
 
 interface Props {
-  status: "waiting" | "someday" | "done";
+  status: "waiting" | "someday";
   version: number;
   onProcess: (item: GtdItem) => void;
   onChanged: () => void;
@@ -27,6 +29,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
   const [loaded, setLoaded] = useState(false);
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [deleting, setDeleting] = useState<GtdItem | null>(null);
+  const [dueEditing, setDueEditing] = useState<GtdItem | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const handledSeqRef = useRef<number | null>(null);
 
@@ -49,7 +52,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
 
   const toggleNext = async (item: GtdItem) => {
     try {
-      await window.prism.setGtdItemNext(item.id, !item.is_next);
+      await window.prism.setGtdItemNext(item.id, !item.isNext);
     } catch {
       showToast(t["common.saveFailed"], "error");
       return;
@@ -57,11 +60,11 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
     onChanged();
   };
 
-  const markDone = async (item: GtdItem) => {
+  const completeItem = async (item: GtdItem) => {
     try {
-      await window.prism.setGtdItemStatus(item.id, "done");
+      await window.prism.deleteGtdItem(item.id);
     } catch {
-      showToast(t["common.saveFailed"], "error");
+      showToast(t["common.deleteFailed"], "error");
       return;
     }
     onChanged();
@@ -79,9 +82,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
     onChanged();
   };
 
-  const titleKey = status === "waiting"
-    ? "gtd.waiting"
-    : status === "someday" ? "gtd.someday" : "gtd.done";
+  const titleKey = status === "waiting" ? "gtd.waiting" : "gtd.someday";
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <span className="min-w-0 text-body font-medium text-primary truncate">
@@ -97,8 +98,13 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
     const moduleActions: MenuItem[] =
       status === "waiting"
         ? [
-            { label: item.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(item) },
-            { label: t["gtd.markDone"], icon: <Check size={14} />, onClick: () => markDone(item) },
+            { label: item.isNext ? t["gtd.unsetNext"] : t["gtd.setNext"], icon: <Star size={14} />, onClick: () => toggleNext(item) },
+            {
+              label: item.dueDate ? t["gtd.dueDate.change"] : t["gtd.dueDate.set"],
+              icon: <CalendarDays size={14} />,
+              onClick: () => setDueEditing(item),
+            },
+            { label: t["gtd.markDone"], icon: <Check size={14} />, onClick: () => completeItem(item) },
             { label: t["gtd.reprocess"], icon: <ListChecks size={14} />, onClick: () => onProcess(item) },
           ]
         : status === "someday"
@@ -121,6 +127,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
           key={item.id}
           id={`gtd-item-${item.id}`}
           variant="list"
+          multiline
           className={`border-b border-line/30 ${highlightId === item.id ? "bg-[var(--accent-muted)]" : ""}`}
           menuItems={menuFor(item)}
           leading={
@@ -129,21 +136,20 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => toggleNext(item)}
-                title={item.is_next ? t["gtd.unsetNext"] : t["gtd.setNext"]}
-                className={item.is_next ? "!text-[var(--accent-text)]" : "!text-faint hover:!text-tertiary"}
+                title={item.isNext ? t["gtd.unsetNext"] : t["gtd.setNext"]}
+                className={item.isNext ? "!text-[var(--accent-text)]" : "!text-faint hover:!text-tertiary"}
               >
-                <Star size={15} fill={item.is_next ? "currentColor" : "none"} />
+                <Star size={15} fill={item.isNext ? "currentColor" : "none"} />
               </Button>
             ) : undefined
           }
-          title={
-            status === "done"
-              ? <span className="text-muted line-through">{item.title}</span>
-              : item.title
-          }
+          title={item.title}
           meta={
-            <span className="text-caption text-faint flex-shrink-0">
-              {formatGtdDate(status === "done" && item.done_at ? item.done_at : item.created_at)}
+            <span className="flex flex-shrink-0 items-center gap-2">
+              {status === "waiting" && (
+                <DueDateChip dueDate={item.dueDate} onClick={() => setDueEditing(item)} />
+              )}
+              <span className="text-caption text-faint">{formatGtdDate(item.createdAt)}</span>
             </span>
           }
         />
@@ -153,6 +159,7 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
     <RenameModal
       open={renaming !== null}
       initialValue={renaming?.title ?? ""}
+      multiline
       onClose={() => setRenaming(null)}
       onSubmit={async (title) => {
         try {
@@ -170,6 +177,24 @@ export default function GtdItemList({ status, version, onProcess, onChanged, foc
       message={t["gtd.deleteItemConfirm"]}
       onConfirm={handleDelete}
       onClose={() => setDeleting(null)}
+    />
+
+    <GtdDueDateModal
+      open={dueEditing !== null}
+      title={dueEditing?.title ?? ""}
+      value={dueEditing?.dueDate ?? null}
+      onClose={() => setDueEditing(null)}
+      onSave={async (date) => {
+        if (!dueEditing) return;
+        try {
+          await window.prism.setGtdItemDueDate(dueEditing.id, date);
+        } catch {
+          showToast(t["common.saveFailed"], "error");
+          return;
+        }
+        setDueEditing(null);
+        onChanged();
+      }}
     />
     </>
   );

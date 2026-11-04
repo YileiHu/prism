@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Check, Trash2 } from "lucide-react";
+import { Pencil, Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import NavItem from "../NavItem";
 import Badge from "../Badge";
 import { useT } from "../../i18n";
@@ -16,18 +16,19 @@ interface Props {
   selectedId: number | null;
   onSelect: (id: number) => void;
   onChanged: () => void;
+  archived?: boolean;
 }
 
-export default function GtdProjectList({ projects, selectedId, onSelect, onChanged }: Props) {
+export default function GtdProjectList({ projects, selectedId, onSelect, onChanged, archived = false }: Props) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
   const showToast = useToast();
   const [renaming, setRenaming] = useState<GtdItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<GtdItem | null>(null);
 
-  const completeProject = async (item: GtdItem) => {
+  const setProjectArchived = async (item: GtdItem, value: boolean) => {
     try {
-      await window.prism.setGtdItemStatus(item.id, "done");
+      await window.prism.setGtdItemArchived(item.id, value);
     } catch {
       showToast(t["common.saveFailed"], "error");
       return;
@@ -64,21 +65,29 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
           key={p.id}
           onClick={() => onSelect(p.id)}
           onContextMenu={(e) =>
-            onContextMenu(e, [
-              { label: t["gtd.completeProject"], icon: <Check size={14} />, onClick: () => completeProject(p) },
-              { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
-              buildColorMenuItem(t, {
-                label: t["gtd.projectColor"],
-                autoLabel: t["collections.colorAuto"],
-                autoSource: p.title,
-                current: p.color,
-                onSelect: (color) => setProjectColor(p, color),
-              }),
-              { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
-            ])
+            onContextMenu(
+              e,
+              archived
+                ? [
+                    { label: t["gtd.unarchive"], icon: <ArchiveRestore size={14} />, onClick: () => setProjectArchived(p, false) },
+                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
+                  ]
+                : [
+                    { label: t["gtd.archiveProject"], icon: <Archive size={14} />, onClick: () => setProjectArchived(p, true) },
+                    { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
+                    buildColorMenuItem(t, {
+                      label: t["gtd.projectColor"],
+                      autoLabel: t["collections.colorAuto"],
+                      autoSource: p.title,
+                      current: p.color,
+                      onSelect: (color) => setProjectColor(p, color),
+                    }),
+                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
+                  ],
+            )
           }
           active={selectedId === p.id}
-          className="mb-0.5"
+          className="mb-0.5 last:mb-0"
           leading={
             <span
               className="w-2 h-2 rounded-full"
@@ -86,7 +95,7 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
             />
           }
           label={p.title}
-          trailing={p.action_count === 0 ? <Badge tone="accent">{t["gtd.pendingRefine"]}</Badge> : undefined}
+          trailing={!archived && p.actionCount === 0 ? <Badge variant="accent">{t["gtd.pendingRefine"]}</Badge> : undefined}
         />
       ))}
 

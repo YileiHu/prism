@@ -49,8 +49,8 @@ export default function PdfLibraryContent({
   useEffect(() => {
     if (!pdf.loaded || !pdf.repoExists || !cols.loaded) return;
     if (pdf.documents.length === 0) return;
-    if (relKey(pdf.documents[0].repo_path) !== relKey(pdf.repoPath)) return;
-    const valid = new Set(pdf.documents.map((doc) => relKey(doc.rel_path)));
+    if (relKey(pdf.documents[0].repoPath) !== relKey(pdf.repoPath)) return;
+    const valid = new Set(pdf.documents.map((doc) => relKey(doc.relPath)));
     const removed = cols.pruneMissing(valid);
     if (removed > 0) {
       showToast(t["pdf.collectionRemovedMissing"].replace("{count}", String(removed)));
@@ -60,11 +60,11 @@ export default function PdfLibraryContent({
   const displayed = useMemo(() => {
     if (!selectedCollection) return pdf.visible;
     const keys = new Set(selectedCollection.pdfPaths.map(relKey));
-    return pdf.visible.filter((doc) => keys.has(relKey(doc.rel_path)));
+    return pdf.visible.filter((doc) => keys.has(relKey(doc.relPath)));
   }, [pdf.visible, selectedCollection]);
 
   const openPdf = (doc: PdfDocument) => {
-    openDoc(makePdfDoc(pdf.repoPath, doc.rel_path, doc.title));
+    openDoc(makePdfDoc(pdf.repoPath, doc.relPath, doc.title));
   };
 
   const confirmDeleteDoc = async () => {
@@ -74,7 +74,7 @@ export default function PdfLibraryContent({
     try {
       const result = await pdf.removeDocuments([target.id]);
       if (result.allSuccess) {
-        removeDocs([pdfDocId(pdf.repoPath, target.rel_path)]);
+        removeDocs([pdfDocId(pdf.repoPath, target.relPath)]);
         showToast(t["pdf.trashed"].replace("{name}", target.title));
       } else {
         const failure = result.results.find((entry) => !entry.success);
@@ -174,7 +174,7 @@ export default function PdfLibraryContent({
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={() => { void window.prism.pdfOpenRepo(pdf.repoPath); }}
+          onClick={() => { void window.prism.openPdfRepo(pdf.repoPath); }}
           title={t["pdf.openRepo"]}
         >
           <FolderOpen size={15} />
@@ -260,7 +260,7 @@ export default function PdfLibraryContent({
           onOpen={openPdf}
           onAddToCollection={(doc, collectionId) => {
             const target = cols.collections.find((collection) => collection.id === collectionId);
-            const added = cols.addPaths(collectionId, [doc.rel_path]);
+            const added = cols.addPaths(collectionId, [doc.relPath]);
             if (!target) return;
             showToast(
               added > 0
@@ -269,10 +269,10 @@ export default function PdfLibraryContent({
             );
           }}
           onRemoveFromCollection={(doc) => {
-            if (selectedCollection) cols.removePath(selectedCollection.id, doc.rel_path);
+            if (selectedCollection) cols.removePath(selectedCollection.id, doc.relPath);
           }}
           onDelete={setDeleteDocTarget}
-          onShowInFolder={(doc) => { void window.prism.pdfShowInFolder(doc.id); }}
+          onShowInFolder={(doc) => { void window.prism.showPdfInFolder(doc.id); }}
           onDocUpdated={(doc, patch) => pdf.patchDocument(doc.id, patch)}
         />
       </div>

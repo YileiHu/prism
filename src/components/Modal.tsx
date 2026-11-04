@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { X, type LucideIcon } from "lucide-react";
 import Button from "./Button";
 import { useAnimatedMount } from "../lib/useAnimatedMount";
 
@@ -19,7 +19,7 @@ interface ModalProps {
   open: boolean;
   onClose: () => void;
   title?: string;
-  icon?: ReactNode;
+  icon?: LucideIcon;
   width?: string;
   size?: ModalSize;
   position?: "top" | "center";
@@ -34,7 +34,7 @@ export default function Modal({
   open,
   onClose,
   title,
-  icon,
+  icon: Icon,
   width,
   size,
   position = "top",
@@ -139,7 +139,7 @@ export default function Modal({
         {title !== undefined && (
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
-              {icon}
+              {Icon && <Icon size={18} className="text-[var(--accent-text)]" />}
               <h2 id={titleId} className="text-section font-semibold text-primary">{title}</h2>
             </div>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>

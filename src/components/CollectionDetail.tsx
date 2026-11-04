@@ -21,11 +21,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { resolveTagColor, type PaletteColor } from "../lib/colors";
 import { useDragClickGuard } from "../lib/useDragClickGuard";
+import type { NoteRef } from "../shared/models";
 
-export interface NoteInfo {
-  path: string;
-  relativePath: string;
-  title: string;
+export interface NoteInfo extends NoteRef {
+  relPath: string;
   missing: boolean;
 }
 
@@ -55,9 +54,9 @@ interface Props {
 // Returns the group containing the note, null for ungrouped, undefined when absent
 function findNoteGroupId(relPath: string, groups: GroupView[], ungrouped: NoteInfo[]): string | null | undefined {
   for (const g of groups) {
-    if (g.notes.some((n) => n.relativePath === relPath)) return g.id;
+    if (g.notes.some((n) => n.relPath === relPath)) return g.id;
   }
-  if (ungrouped.some((n) => n.relativePath === relPath)) return null;
+  if (ungrouped.some((n) => n.relPath === relPath)) return null;
   return undefined;
 }
 
@@ -109,7 +108,7 @@ function SortableGroupCard({
     opacity: isDragging ? 0.4 : 1,
   };
 
-  const noteIds = useMemo(() => group.notes.map((n) => makeNoteId(n.relativePath)), [group.notes]);
+  const noteIds = useMemo(() => group.notes.map((n) => makeNoteId(n.relPath)), [group.notes]);
 
   return (
     <div
@@ -148,7 +147,7 @@ function SortableGroupCard({
               <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
                 {group.notes.map((note) => (
                   <SortableNoteRow
-                    key={note.relativePath}
+                    key={note.relPath}
                     note={note}
                     groupId={group.id}
                     onRemoveNote={onRemoveNote}
@@ -191,7 +190,7 @@ function SortableNoteRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: makeNoteId(note.relativePath) });
+  } = useSortable({ id: makeNoteId(note.relPath) });
 
   const clickGuard = useDragClickGuard(isDragging);
 
@@ -275,7 +274,7 @@ export default function CollectionDetail({
   );
 
   const groupIds = useMemo(() => groups.map((g) => makeGroupId(g.id)), [groups]);
-  const ungroupedIds = useMemo(() => ungroupedNotes.map((n) => makeNoteId(n.relativePath)), [ungroupedNotes]);
+  const ungroupedIds = useMemo(() => ungroupedNotes.map((n) => makeNoteId(n.relPath)), [ungroupedNotes]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -290,10 +289,10 @@ export default function CollectionDetail({
     const relPath = parseNoteRelPath(active.id as string);
     if (relPath) {
       for (const g of groups) {
-        const n = g.notes.find((x) => x.relativePath === relPath);
+        const n = g.notes.find((x) => x.relPath === relPath);
         if (n) { setActiveDrag({ type: "note", note: n }); return; }
       }
-      const n = ungroupedNotes.find((x) => x.relativePath === relPath);
+      const n = ungroupedNotes.find((x) => x.relPath === relPath);
       if (n) { setActiveDrag({ type: "note", note: n }); return; }
     }
   };
@@ -341,8 +340,8 @@ export default function CollectionDetail({
         const containerNotes = toGroupId === null
           ? ungroupedNotes
           : (groups.find((g) => g.id === toGroupId)?.notes ?? []);
-        const fromIdx = containerNotes.findIndex((n) => n.relativePath === activeRelPath);
-        const toIdx = containerNotes.findIndex((n) => n.relativePath === overRelPath);
+        const fromIdx = containerNotes.findIndex((n) => n.relPath === activeRelPath);
+        const toIdx = containerNotes.findIndex((n) => n.relPath === overRelPath);
         if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
           onReorderNotes(toGroupId, fromIdx, toIdx);
         }
@@ -351,7 +350,7 @@ export default function CollectionDetail({
         const toNotes = toGroupId === null
           ? ungroupedNotes
           : (groups.find((g) => g.id === toGroupId)?.notes ?? []);
-        const toIdx = toNotes.findIndex((n) => n.relativePath === overRelPath);
+        const toIdx = toNotes.findIndex((n) => n.relPath === overRelPath);
         onMoveNote(activeRelPath, fromGroupId, toGroupId, toIdx === -1 ? undefined : toIdx);
       }
     }
@@ -415,7 +414,7 @@ export default function CollectionDetail({
                   <SortableContext items={ungroupedIds} strategy={verticalListSortingStrategy}>
                     {ungroupedNotes.map((note) => (
                       <SortableNoteRow
-                        key={note.relativePath}
+                        key={note.relPath}
                         note={note}
                         groupId={null}
                         onRemoveNote={onRemoveNote}

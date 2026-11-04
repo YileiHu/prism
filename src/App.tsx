@@ -348,7 +348,7 @@ export default function App() {
 
               <main className="flex-1 overflow-hidden relative app-main">
                 <div style={paneStyle(moduleActive === "home")} className={moduleActive === "home" ? "pane-enter" : ""}>
-                  <HomeView active={moduleActive === "home"} onNavigateToGtd={handleNavigateToGtd} />
+                  <HomeView active={moduleActive === "home"} vaults={vaults} onNavigateToGtd={handleNavigateToGtd} />
                 </div>
                 <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
                   <WebResources active={moduleActive === "resources"} />

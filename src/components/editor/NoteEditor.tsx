@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
-import { BookOpen, Columns3, Pencil, Table, TextQuote, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Columns3, Pencil, Table, TextQuote, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
@@ -57,6 +57,7 @@ interface Props {
   toolbarScope: string;
   splitOpen: boolean;
   onToggleSplit: () => void;
+  onBackToLibrary: () => void;
   onClose: () => void;
   onNoteGone: (path: string) => void;
   onOpenWikilink: (target: string) => void;
@@ -201,6 +202,7 @@ export default function NoteEditor({
   toolbarScope,
   splitOpen,
   onToggleSplit,
+  onBackToLibrary,
   onClose,
   onNoteGone,
   onOpenWikilink,
@@ -777,6 +779,14 @@ export default function NoteEditor({
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onBackToLibrary}
+          title={t["workspace.backToLibrary"]}
+        >
+          <ArrowLeft size={15} />
+        </Button>
         <span className="min-w-0 text-body font-medium text-primary truncate" title={notePath}>
           {title}
         </span>
@@ -816,7 +826,8 @@ export default function NoteEditor({
       </>
     ),
   }), [
-    dirty, mode, notePath, onClose, onToggleSplit, savedAt, splitOpen, switchMode, t, title,
+    dirty, mode, notePath, onBackToLibrary, onClose, onToggleSplit, savedAt, splitOpen,
+    switchMode, t, title,
   ]);
 
   useToolbarContribution(toolbarScope, toolbar);

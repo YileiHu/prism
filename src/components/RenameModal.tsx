@@ -1,8 +1,6 @@
-import { useState, useEffect, type ReactNode } from "react";
-import Modal from "./Modal";
-import Button from "./Button";
-import Input, { Textarea } from "./Input";
+import type { LucideIcon } from "lucide-react";
 import { useT } from "../i18n";
+import PromptModal from "./PromptModal";
 
 interface Props {
   open: boolean;
@@ -10,69 +8,24 @@ interface Props {
   onClose: () => void;
   onSubmit: (title: string) => void | Promise<void>;
   title?: string;
-  icon?: ReactNode;
+  icon?: LucideIcon;
   placeholder?: string;
   multiline?: boolean;
 }
 
 export default function RenameModal({ open, initialValue, onClose, onSubmit, title, icon, placeholder, multiline }: Props) {
   const { t } = useT();
-  const [draft, setDraft] = useState(initialValue);
-
-  useEffect(() => {
-    if (open) setDraft(initialValue);
-  }, [open, initialValue]);
-
-  const submit = async () => {
-    const value = draft.trim();
-    if (!value) return;
-    await onSubmit(value);
-    onClose();
-  };
 
   return (
-    <Modal
+    <PromptModal
       open={open}
-      onClose={onClose}
       title={title ?? t["menu.rename"]}
       icon={icon}
-      footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            {t["resources.cancel"]}
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit} disabled={!draft.trim()}>
-            {t["resources.save"]}
-          </Button>
-        </>
-      }
-    >
-      {multiline ? (
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={placeholder}
-          autoFocus
-          rows={4}
-          className="w-full max-h-[50vh] min-h-[96px] resize-y overflow-y-auto"
-        />
-      ) : (
-        <Input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder={placeholder}
-          autoFocus
-          className="w-full"
-        />
-      )}
-    </Modal>
+      initialValue={initialValue}
+      placeholder={placeholder}
+      multiline={multiline}
+      onSubmit={onSubmit}
+      onClose={onClose}
+    />
   );
 }

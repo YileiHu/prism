@@ -2,9 +2,7 @@ import { useState } from "react";
 import { FilePlus } from "lucide-react";
 import { useT } from "../i18n";
 import type { CollectionData } from "./collectionTypes";
-import Button from "./Button";
-import Input from "./Input";
-import Modal from "./Modal";
+import PromptModal from "./PromptModal";
 import SelectButton from "./SelectButton";
 
 interface Props {
@@ -16,7 +14,6 @@ interface Props {
 
 export default function CreateNoteModal({ vaultPath, collections, onCreated, onClose }: Props) {
   const { t } = useT();
-  const [title, setTitle] = useState("");
   const [collectionId, setCollectionId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [creating, setCreating] = useState(false);
@@ -29,12 +26,11 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
     setGroupId("");
   };
 
-  const handleSave = async () => {
-    const trimmed = title.trim();
-    if (!trimmed || creating) return;
+  const handleSave = async (title: string) => {
+    if (creating) return;
     setCreating(true);
     try {
-      const note = await window.prism.createNote(vaultPath, trimmed);
+      const note = await window.prism.createNote(vaultPath, title);
       onCreated(
         { id: note.id, path: note.path, title: note.title },
         collectionId || undefined,
@@ -48,31 +44,16 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
   };
 
   return (
-    <Modal
+    <PromptModal
       open
       title={t["vault.newNote"]}
-      icon={<FilePlus size={18} className="text-[var(--accent-text)]" />}
+      icon={FilePlus}
+      placeholder={t["vault.newNoteTitle"]}
+      submitting={creating}
+      onSubmit={handleSave}
       onClose={onClose}
-      footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>{t["resources.cancel"]}</Button>
-          <Button variant="primary" size="md" onClick={handleSave} disabled={!title.trim() || creating}>{t["resources.save"]}</Button>
-        </>
-      }
     >
-      <div className="space-y-4">
-        <div>
-          <Input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
-            placeholder={t["vault.newNoteTitle"]}
-            autoFocus
-            className="w-full"
-          />
-        </div>
-
+      <div className="space-y-4 mt-4">
         <div>
           <label className="block text-caption text-muted mb-1.5">{t["vault.newNoteCollection"]}</label>
           <SelectButton
@@ -101,6 +82,6 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
           </div>
         )}
       </div>
-    </Modal>
+    </PromptModal>
   );
 }

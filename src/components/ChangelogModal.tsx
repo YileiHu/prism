@@ -33,7 +33,7 @@ export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
       open={open}
       onClose={onClose}
       title={t["changelog.title"]}
-      icon={<PartyPopper size={18} className="text-[var(--accent-text)]" />}
+      icon={PartyPopper}
       width="680px"
       position="center"
     >
@@ -43,7 +43,7 @@ export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
           return (
             <div key={entry.version}>
               <div className="flex items-center gap-2 mb-3">
-                <Badge tone="accent" className="font-semibold">
+                <Badge variant="accent" className="font-semibold">
                   v{entry.version}
                 </Badge>
                 <span className="text-caption text-muted">{entry.date}</span>

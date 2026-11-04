@@ -1,9 +1,8 @@
+import type { NoteRef } from "../../shared/models";
+
 const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
-export interface LinkNoteBrief {
-  path: string;
-  title: string;
-}
+export type LinkNoteBrief = NoteRef;
 
 // Resolve a wikilink target against the vault's notes: exact path match
 // (absolute-in-vault or vault-relative, with/without .md), then title match

@@ -89,7 +89,7 @@ function LibraryRow({
       onContextMenu={onContextMenu}
       className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer ${
         active
-          ? "bg-[var(--sidebar-item-active)] text-primary font-medium active-bar"
+          ? "bg-[var(--sidebar-item-active)] text-primary font-medium"
           : "text-secondary hover:text-primary hover:bg-[var(--sidebar-item-hover)]"
       }`}
     >
@@ -312,7 +312,7 @@ export default function LibrarySidebar({
 
   return (
     <Sidebar fill>
-      <SectionHeader label={t["library.noteLibraries"]} open={librariesOpen} onToggle={toggleLibraries} />
+      <SectionHeader label={t["nav.library"]} open={librariesOpen} onToggle={toggleLibraries} />
       {librariesOpen && (
         <div className="flex-shrink-0 max-h-[17rem] overflow-y-auto pr-0.5">
           {vaults.length === 0 && <EmptyState size="card" text={t["library.emptyVaults"]} />}
@@ -366,25 +366,30 @@ export default function LibrarySidebar({
                 label={t["collections.allNotes"]}
                 trailing={note.sortedNotes.length}
               />
-              <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-                {note.collections.length === 0 && <EmptyState size="card" text={t["collections.emptyHint"]} />}
-                {note.collections.map((collection, index) => (
-                  <NoteCollectionRow
-                    key={collection.id}
-                    collection={collection}
-                    selected={note.selectedCollectionId === collection.id}
-                    index={index}
-                    onSelect={() => {
-                      note.selectCollection(collection.id);
-                      note.setSearchQuery("");
-                      onOpenCollections?.();
-                    }}
-                    onRename={() => onRenameNoteCollection(collection)}
-                    onDelete={() => onDeleteNoteCollection(collection)}
-                    onSetColor={(color) => note.handleSetCollectionColor(collection.id, color)}
-                  />
-                ))}
-              </SortableContext>
+              {note.collections.length === 0 ? (
+                <EmptyState size="card" text={t["collections.emptyHint"]} />
+              ) : (
+                <div className="sidebar-group">
+                  <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
+                    {note.collections.map((collection, index) => (
+                      <NoteCollectionRow
+                        key={collection.id}
+                        collection={collection}
+                        selected={note.selectedCollectionId === collection.id}
+                        index={index}
+                        onSelect={() => {
+                          note.selectCollection(collection.id);
+                          note.setSearchQuery("");
+                          onOpenCollections?.();
+                        }}
+                        onRename={() => onRenameNoteCollection(collection)}
+                        onDelete={() => onDeleteNoteCollection(collection)}
+                        onSetColor={(color) => note.handleSetCollectionColor(collection.id, color)}
+                      />
+                    ))}
+                  </SortableContext>
+                </div>
+              )}
             </>
           )}
 
@@ -398,21 +403,26 @@ export default function LibrarySidebar({
                 label={t["pdf.all"]}
                 trailing={pdfAllCount}
               />
-              <SortableContext items={pdfIds} strategy={verticalListSortingStrategy}>
-                {pdfCols.collections.length === 0 && <EmptyState size="card" text={t["collections.emptyHint"]} />}
-                {pdfCols.collections.map((collection, index) => (
-                  <PdfCollectionRow
-                    key={collection.id}
-                    collection={collection}
-                    selected={pdfCols.selectedId === collection.id}
-                    index={index}
-                    onSelect={() => { pdfCols.selectCollection(collection.id); onOpenCollections?.(); }}
-                    onRename={() => onRenamePdfCollection(collection)}
-                    onDelete={() => onDeletePdfCollection(collection)}
-                    onSetColor={(color) => pdfCols.setCollectionColor(collection.id, color)}
-                  />
-                ))}
-              </SortableContext>
+              {pdfCols.collections.length === 0 ? (
+                <EmptyState size="card" text={t["collections.emptyHint"]} />
+              ) : (
+                <div className="sidebar-group">
+                  <SortableContext items={pdfIds} strategy={verticalListSortingStrategy}>
+                    {pdfCols.collections.map((collection, index) => (
+                      <PdfCollectionRow
+                        key={collection.id}
+                        collection={collection}
+                        selected={pdfCols.selectedId === collection.id}
+                        index={index}
+                        onSelect={() => { pdfCols.selectCollection(collection.id); onOpenCollections?.(); }}
+                        onRename={() => onRenamePdfCollection(collection)}
+                        onDelete={() => onDeletePdfCollection(collection)}
+                        onSetColor={(color) => pdfCols.setCollectionColor(collection.id, color)}
+                      />
+                    ))}
+                  </SortableContext>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -422,7 +432,7 @@ export default function LibrarySidebar({
         open={iconTarget !== null}
         onClose={() => setIconTarget(null)}
         title={t["library.vaultIcon"]}
-        icon={<Palette size={18} className="text-[var(--accent-text)]" />}
+        icon={Palette}
         size="sm"
       >
         <div className="grid grid-cols-6 gap-2">
