@@ -9,6 +9,7 @@ import NoteListCard, { type NoteRow } from "./NoteListCard";
 import ToolbarClock from "./ToolbarClock";
 import { useNoteCollectionIndex } from "./useNoteCollectionIndex";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
+import { tagColor } from "../../lib/colors";
 import type { FavoriteNote, RecentNote } from "./types";
 import type { GtdFocusRequest } from "../gtd/types";
 import type { VaultEntry } from "../../types";
@@ -124,7 +125,7 @@ export default function HomeView({ active, vaults, onNavigateToGtd }: Props) {
             icon={Star}
             rows={favoriteRows}
             emptyText={t["home.emptyFavorites"]}
-            accent
+            tintColor={tagColor("gold")}
             loading={!favoritesLoaded}
             menuFor={noteMenu}
           />
@@ -133,6 +134,7 @@ export default function HomeView({ active, vaults, onNavigateToGtd }: Props) {
             icon={History}
             rows={recentRows}
             emptyText={t["home.emptyRecents"]}
+            tintColor={tagColor("teal")}
             loading={!recentsLoaded}
             menuFor={noteMenu}
           />

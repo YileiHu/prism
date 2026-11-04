@@ -10,7 +10,7 @@ export default function SplashScreen({ fadeOut }: Props) {
       }`}
     >
       <div className="flex flex-col items-center gap-6 -mt-12">
-        <img src="icon.png" alt="" draggable={false} className="w-20 h-20 drop-shadow-[0_0_24px_var(--glow)]" />
+        <img src="icon.png" alt="" draggable={false} className="w-20 h-20" />
         <h1
           className="text-4xl font-bold tracking-[0.25em] text-primary"
           style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}

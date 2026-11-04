@@ -28,10 +28,6 @@ function hexToRgbTriplet(hex: string): string {
   return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  return `rgba(${hexToRgbTriplet(hex)}, ${alpha})`;
-}
-
 function readStoredMode(): ColorMode {
   try {
     return decodeSetting("color_mode", localStorage.getItem(MODE_STORAGE_KEY));
@@ -53,8 +49,6 @@ function applyTheme(id: string, mode: ResolvedMode): void {
   for (const [key, value] of Object.entries(variant.surfaces)) {
     root.style.setProperty(`--c-${key}`, value);
   }
-  root.style.setProperty("--glow", hexToRgba(theme.primary, mode === "dark" ? 0.25 : 0.16));
-  root.style.setProperty("--aurora", variant.aurora);
   root.dataset.theme = id;
   root.dataset.mode = mode;
   root.style.colorScheme = mode;

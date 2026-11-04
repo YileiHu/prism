@@ -20,8 +20,6 @@ export interface ThemeVariant {
   primaryText: string;
   primaryBorder: string;
   surfaces: SurfacePalette;
-  // Full body background (multi-layer radial gradients + base color).
-  aurora: string;
 }
 
 export interface ThemeColors {
@@ -276,11 +274,6 @@ const aeroLightSurfaces: SurfacePalette = {
   strong: "176 204 224",
 };
 
-// Accent-tinted aurora tuned for light surfaces (lower alpha than dark, but
-// strong enough that the background isn't washed out)
-const lightAurora = (accent: string) =>
-  `radial-gradient(85% 60% at 10% -10%, rgba(${accent}, 0.18), transparent 60%), radial-gradient(65% 50% at 90% 112%, rgba(${accent}, 0.13), transparent 65%), radial-gradient(50% 40% at 68% 28%, rgba(${accent}, 0.07), transparent 70%), rgb(var(--c-base))`;
-
 export const themes: ThemeColors[] = [
   {
     id: "violet",
@@ -293,7 +286,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#c4b5fd",
       primaryBorder: "rgba(139, 92, 246, 0.3)",
       surfaces: violetDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 10% -10%, rgba(139, 92, 246, 0.16), transparent 60%), radial-gradient(65% 50% at 90% 110%, rgba(99, 102, 241, 0.13), transparent 65%), radial-gradient(50% 40% at 70% 25%, rgba(168, 85, 247, 0.08), transparent 70%), radial-gradient(40% 35% at 18% 90%, rgba(217, 70, 239, 0.05), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#7c3aed",
@@ -301,7 +293,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#6d28d9",
       primaryBorder: "rgba(124, 58, 237, 0.35)",
       surfaces: violetLightSurfaces,
-      aurora: lightAurora("139, 92, 246"),
     },
   },
   {
@@ -315,7 +306,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#93c5fd",
       primaryBorder: "rgba(59, 130, 246, 0.3)",
       surfaces: oceanDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 12% -10%, rgba(59, 130, 246, 0.16), transparent 60%), radial-gradient(65% 50% at 88% 112%, rgba(6, 182, 212, 0.13), transparent 65%), radial-gradient(55% 45% at 68% 30%, rgba(14, 165, 233, 0.08), transparent 70%), radial-gradient(40% 35% at 20% 88%, rgba(99, 102, 241, 0.06), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#2563eb",
@@ -323,7 +313,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#1d4ed8",
       primaryBorder: "rgba(37, 99, 235, 0.35)",
       surfaces: oceanLightSurfaces,
-      aurora: lightAurora("59, 130, 246"),
     },
   },
   {
@@ -337,7 +326,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#6ee7b7",
       primaryBorder: "rgba(16, 185, 129, 0.3)",
       surfaces: emeraldDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 10% -10%, rgba(16, 185, 129, 0.15), transparent 60%), radial-gradient(65% 50% at 90% 112%, rgba(20, 184, 166, 0.12), transparent 65%), radial-gradient(55% 45% at 68% 28%, rgba(34, 197, 94, 0.07), transparent 70%), radial-gradient(40% 35% at 22% 88%, rgba(45, 212, 191, 0.05), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#059669",
@@ -345,7 +333,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#047857",
       primaryBorder: "rgba(5, 150, 105, 0.35)",
       surfaces: emeraldLightSurfaces,
-      aurora: lightAurora("16, 185, 129"),
     },
   },
   {
@@ -359,7 +346,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#fdba74",
       primaryBorder: "rgba(249, 115, 22, 0.3)",
       surfaces: sunsetDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 12% -10%, rgba(249, 115, 22, 0.16), transparent 60%), radial-gradient(65% 50% at 88% 110%, rgba(239, 68, 68, 0.12), transparent 65%), radial-gradient(55% 45% at 70% 30%, rgba(245, 158, 11, 0.08), transparent 70%), radial-gradient(40% 35% at 20% 90%, rgba(251, 146, 60, 0.06), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#ea580c",
@@ -367,7 +353,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#c2410c",
       primaryBorder: "rgba(234, 88, 12, 0.35)",
       surfaces: sunsetLightSurfaces,
-      aurora: lightAurora("249, 115, 22"),
     },
   },
   {
@@ -381,7 +366,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#fda4af",
       primaryBorder: "rgba(244, 63, 94, 0.3)",
       surfaces: roseDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 10% -10%, rgba(244, 63, 94, 0.16), transparent 60%), radial-gradient(65% 50% at 90% 112%, rgba(236, 72, 153, 0.13), transparent 65%), radial-gradient(50% 40% at 68% 28%, rgba(217, 70, 239, 0.08), transparent 70%), radial-gradient(40% 35% at 20% 88%, rgba(251, 113, 133, 0.06), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#e11d48",
@@ -389,7 +373,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#be123c",
       primaryBorder: "rgba(225, 29, 72, 0.35)",
       surfaces: roseLightSurfaces,
-      aurora: lightAurora("244, 63, 94"),
     },
   },
   {
@@ -403,7 +386,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#fcd34d",
       primaryBorder: "rgba(245, 158, 11, 0.3)",
       surfaces: amberDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 12% -10%, rgba(245, 158, 11, 0.15), transparent 60%), radial-gradient(65% 50% at 88% 110%, rgba(234, 179, 8, 0.12), transparent 65%), radial-gradient(55% 45% at 70% 30%, rgba(251, 146, 60, 0.08), transparent 70%), radial-gradient(40% 35% at 22% 90%, rgba(250, 204, 21, 0.05), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#d97706",
@@ -411,7 +393,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#b45309",
       primaryBorder: "rgba(217, 119, 6, 0.35)",
       surfaces: amberLightSurfaces,
-      aurora: lightAurora("245, 158, 11"),
     },
   },
   {
@@ -425,7 +406,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#94a3b8",
       primaryBorder: "rgba(100, 116, 139, 0.3)",
       surfaces: neutralDarkSurfaces,
-      aurora: `radial-gradient(85% 60% at 10% -10%, rgba(100, 116, 139, 0.18), transparent 60%), radial-gradient(65% 50% at 90% 112%, rgba(56, 189, 248, 0.10), transparent 65%), radial-gradient(55% 45% at 68% 28%, rgba(129, 140, 248, 0.08), transparent 70%), radial-gradient(40% 35% at 20% 88%, rgba(148, 163, 184, 0.06), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#475569",
@@ -433,7 +413,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#475569",
       primaryBorder: "rgba(71, 85, 105, 0.35)",
       surfaces: lightSurfaces,
-      aurora: lightAurora("100, 116, 139"),
     },
   },
   {
@@ -447,7 +426,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#a5f3fc",
       primaryBorder: "rgba(34, 211, 238, 0.35)",
       surfaces: aeroSurfaces,
-      aurora: `radial-gradient(85% 60% at 12% -10%, rgba(34, 211, 238, 0.18), transparent 60%), radial-gradient(65% 50% at 88% 112%, rgba(99, 102, 241, 0.16), transparent 65%), radial-gradient(55% 45% at 70% 30%, rgba(56, 189, 248, 0.09), transparent 70%), radial-gradient(40% 35% at 22% 88%, rgba(45, 212, 191, 0.08), transparent 70%), rgb(var(--c-base))`,
     },
     light: {
       primaryHover: "#0891b2",
@@ -455,7 +433,6 @@ export const themes: ThemeColors[] = [
       primaryText: "#0e7490",
       primaryBorder: "rgba(8, 145, 178, 0.35)",
       surfaces: aeroLightSurfaces,
-      aurora: lightAurora("8, 145, 178"),
     },
   },
 ];

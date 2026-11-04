@@ -42,7 +42,13 @@ export default function SectionCard({
         {onToggle && (
           <span className="text-muted">{collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
         )}
-        {Icon && <Icon size={13} className={accent ? "text-[var(--accent-text)]" : "text-muted"} />}
+        {Icon && (
+          <Icon
+            size={13}
+            className={tintColor ? "" : accent ? "text-[var(--accent-text)]" : "text-muted"}
+            style={tintColor ? { color: tintColor.name } : undefined}
+          />
+        )}
         <span
           className={`text-caption font-medium truncate ${tintColor || accent ? "" : "text-secondary"}`}
           style={tintColor ? { color: tintColor.name } : accent ? { color: "var(--accent-text)" } : undefined}

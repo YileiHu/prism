@@ -9,11 +9,9 @@ import {
   Library,
   ListChecks,
   Minus,
-  Moon,
   PartyPopper,
   Settings2,
   Square,
-  Sun,
   X,
 } from "lucide-react";
 import WebResources from "./components/WebResources";
@@ -31,11 +29,11 @@ import Button from "./components/Button";
 import ChangelogModal from "./components/ChangelogModal";
 import SplashScreen from "./components/SplashScreen";
 import TabStrip from "./components/TabStrip";
+import ThemeQuickMenu from "./components/ThemeQuickMenu";
 import { useContextMenu } from "./lib/useContextMenu";
 import { useGlobalShortcuts } from "./lib/useShortcuts";
 import { ToastProvider } from "./lib/toast";
 import { useT } from "./i18n";
-import { useTheme } from "./theme/ThemeProvider";
 import type { Translation } from "./i18n/zh";
 import { useWorkspace } from "./lib/workspace/WorkspaceProvider";
 import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState";
@@ -60,7 +58,6 @@ export default function App() {
   const pdf = usePdfDocuments();
   const { onContextMenu } = useContextMenu();
   const sidebarCollapsed = useSidebarCollapsed();
-  const { resolvedMode, setMode } = useTheme();
 
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [maximized, setMaximized] = useState(false);
@@ -277,16 +274,7 @@ export default function App() {
                 onTabContextMenu={handleTabContextMenu}
                 rightActions={
                   <>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setMode(resolvedMode === "dark" ? "light" : "dark")}
-                      title={t[resolvedMode === "dark" ? "nav.toggleLight" : "nav.toggleDark"]}
-                    >
-                      {resolvedMode === "dark"
-                        ? <Moon size={16} strokeWidth={1.5} />
-                        : <Sun size={16} strokeWidth={1.5} />}
-                    </Button>
+                    <ThemeQuickMenu />
                     <Button
                       variant="ghost"
                       size="icon-sm"

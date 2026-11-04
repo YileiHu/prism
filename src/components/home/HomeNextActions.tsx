@@ -4,7 +4,7 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import ItemRow from "../ItemRow";
 import Badge from "../Badge";
-import { resolveTagColor } from "../../lib/colors";
+import { resolveTagColor, tagColor } from "../../lib/colors";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
@@ -61,6 +61,7 @@ export default function HomeNextActions({ version, onChanged, onNavigateToGtd }:
       icon={ListChecks}
       title={t["home.nextActions"]}
       count={total}
+      tintColor={tagColor("green")}
       className="flex h-full min-h-0 flex-col"
       bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >

@@ -5,7 +5,7 @@ import Badge from "../Badge";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
-import { resolveTagColor } from "../../lib/colors";
+import { resolveTagColor, type PaletteColor } from "../../lib/colors";
 import type { NoteRef } from "../../shared/models";
 import type { NoteOwner } from "./useNoteCollectionIndex";
 import type { MenuItem } from "../ContextMenu";
@@ -22,12 +22,12 @@ interface Props {
   icon: LucideIcon;
   rows: NoteRow[];
   emptyText: string;
-  accent?: boolean;
+  tintColor?: PaletteColor;
   loading?: boolean;
   menuFor?: (row: NoteRow) => MenuItem[];
 }
 
-export default function NoteListCard({ title, icon, rows, emptyText, accent, loading, menuFor }: Props) {
+export default function NoteListCard({ title, icon, rows, emptyText, tintColor, loading, menuFor }: Props) {
   const { t } = useT();
 
   return (
@@ -35,7 +35,7 @@ export default function NoteListCard({ title, icon, rows, emptyText, accent, loa
       icon={icon}
       title={title}
       count={rows.length}
-      accent={accent}
+      tintColor={tintColor}
       className="flex min-h-0 flex-1 flex-col"
       bodyClassName="p-1.5 overflow-y-auto flex-1 min-h-0"
     >

@@ -65,6 +65,10 @@ export const TAG_COLORS: readonly TagColorOption[] = [
   { key: "slate", bar: "#6f7f95", name: "light-dark(#526276, #93a3b8)", bg: "light-dark(rgba(111, 127, 149, 0.14), rgba(111, 127, 149, 0.08))", tint: tint(111, 127, 149) },
 ];
 
+export function tagColor(key: TagColorKey): TagColorOption {
+  return TAG_COLORS.find((c) => c.key === key) ?? TAG_COLORS[0];
+}
+
 // Tags store a palette `bar` hex in the DB; anything unrecognized falls back
 // to the deterministic hash color.
 export function resolveTagColor(name: string, bar?: string | null): PaletteColor {

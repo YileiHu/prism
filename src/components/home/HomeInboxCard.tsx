@@ -11,6 +11,7 @@ import RenameModal from "../RenameModal";
 import InboxCapture from "../gtd/InboxCapture";
 import GtdProcessDialog from "../gtd/GtdProcessDialog";
 import { formatGtdDate, type GtdItem } from "../gtd/types";
+import { tagColor } from "../../lib/colors";
 
 interface Props {
   version: number;
@@ -53,6 +54,7 @@ export default function HomeInboxCard({ version }: Props) {
         icon={Inbox}
         title={t["gtd.inbox"]}
         count={items.length}
+        tintColor={tagColor("blue")}
         className="flex h-full min-h-0 flex-col"
         bodyClassName="flex min-h-0 flex-1 flex-col p-0"
       >

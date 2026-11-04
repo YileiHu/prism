@@ -69,7 +69,7 @@ export default function PdfSection() {
     <section>
       <SettingBlock label={t["settings.pdfRepo"]} description={t["settings.pdfRepoDesc"]}>
         <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0 px-3 py-1.5 rounded-control border border-line/50 bg-base text-body font-mono truncate text-secondary">
+          <div className="field-inset flex-1 min-w-0 px-3 py-1.5 rounded-control border text-body font-mono truncate text-secondary">
             {repoPath || <span className="text-faint">{t["settings.pdfNoRepo"]}</span>}
           </div>
           <Button variant="secondary" size="sm" onClick={handleChoose}>

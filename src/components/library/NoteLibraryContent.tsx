@@ -632,7 +632,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                         <div className={`w-4 h-4 rounded-chip border flex-shrink-0 flex items-center justify-center transition-colors ${
                           isSelected
                             ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]"
-                            : "surface-inset border-[var(--inset-border)]"
+                            : "surface-inset"
                         }`}>
                           {isSelected && <CheckSquare size={12} className="text-on-accent" />}
                         </div>

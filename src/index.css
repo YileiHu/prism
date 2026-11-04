@@ -33,8 +33,6 @@
   --c-line: 31 41 55;
   --c-strong: 55 65 81;
 
-  --glow: transparent;
-  --aurora: rgb(var(--c-base));
   --window-ring: rgba(255, 255, 255, 0.08);
 
   /* Shared chrome tokens (overridden in light mode) */
@@ -43,19 +41,16 @@
   --md-code-bg: rgba(30, 30, 30, 0.92);
   --md-code-fg: #d4d4d4;
 
-  /* Raised/inset pair: a recessed track holding a raised selected chip.
-     Light-mode values live in the [data-mode="light"] block below. */
+  /* Raised/inset pair: a recessed well holding a raised selected chip. Every
+     recessed box (tracks, grouped lists, inputs, checkboxes) shares this one
+     palette — only the shape differs. Light-mode values live in the
+     [data-mode="light"] block below. */
   --raised-bg: rgb(var(--c-elevated));
   --raised-highlight: rgb(var(--c-tint) / 0.05);
   --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.4);
   --inset-bg: rgb(var(--c-overlay) / 0.28);
   --inset-border: rgb(var(--c-strong) / 0.55);
   --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.25);
-  /* Inputs cover far more area than a track, so their well is fainter on
-     light backgrounds and relies on a brighter edge in dark mode. */
-  --field-bg: rgb(var(--c-overlay) / 0.34);
-  --field-border: rgb(var(--c-strong) / 0.8);
-  --field-shadow: inset 0 1px 3px rgb(var(--c-overlay) / 0.4);
   /* Flat chrome ladder (dark): header is the lifted step, toolbar sits one
      step lower with a faint accent tint. */
   --header-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-tint)));
@@ -129,12 +124,9 @@
   --raised-bg: rgb(var(--c-elevated));
   --raised-highlight: transparent;
   --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.14);
-  --inset-bg: rgb(var(--c-tint) / 0.08);
+  --inset-bg: rgb(var(--c-tint) / 0.05);
   --inset-border: rgb(var(--c-strong) / 0.6);
   --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.05);
-  --field-bg: rgb(var(--c-tint) / 0.045);
-  --field-border: rgb(var(--c-strong) / 0.55);
-  --field-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.04);
 }
 
 body {
@@ -176,16 +168,15 @@ body {
 }
 
 /* App shell stays transparent; each chrome band and the main canvas paint
-   their own flat theme-tinted fills on top of the body aurora. */
+   their own flat theme-tinted fills. */
 .app-shell {
   background: transparent;
 }
 
-/* Universal aurora background — every theme gets its own accent-tinted
-   gradient layers */
+/* Flat base fill behind the shell — the chrome bands paint over it, but it
+   keeps the first paint from flashing white. */
 body {
-  background: var(--aurora);
-  background-attachment: fixed;
+  background-color: rgb(var(--c-base));
 }
 
 /* App header — the lifted chrome step. Flat fill, no gradient. */
@@ -254,7 +245,6 @@ body {
 }
 .active-bar::before {
   background-color: var(--accent);
-  box-shadow: 0 0 8px var(--glow);
 }
 /* Neutral variant for surfaces that already tint with the theme accent (e.g.
    the outline's active row) — an accent tick blends in there */
@@ -263,8 +253,10 @@ body {
 }
 
 /* Raised/inset surfaces. Inset hosts a control (input, switch track, segmented
-   track); raised marks the selected item inside it. */
-.surface-inset {
+   track); raised marks the selected item inside it. Fields share the inset
+   palette so every recessed box reads the same color. */
+.surface-inset,
+.field-inset {
   background-color: var(--inset-bg);
   border-color: var(--inset-border);
   box-shadow: var(--inset-shadow);
@@ -296,11 +288,6 @@ body {
   background-color: var(--inset-bg);
   box-shadow: var(--inset-shadow);
 }
-.field-inset {
-  background-color: var(--field-bg);
-  border-color: var(--field-border);
-  box-shadow: var(--field-shadow);
-}
 /* Focused fields: keep the 1px border and add a 1px inner ring so the accent
    highlight reads a little thicker without shifting the layout. */
 .field-inset:focus,
@@ -308,7 +295,7 @@ body {
   border-color: var(--accent);
 }
 .field-inset:focus {
-  box-shadow: var(--field-shadow), inset 0 0 0 1px var(--accent);
+  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--accent);
 }
 .accent-focus:focus {
   box-shadow: inset 0 0 0 1px var(--accent);
