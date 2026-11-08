@@ -182,6 +182,15 @@ export default function VaultsSection({ onSaved }: Props) {
             mono
           />
         </SettingBlock>
+
+        <SettingBlock label={t["settings.canvasDir"]} description={t["settings.canvasDirDesc"]}>
+          <TextField
+            value={values.canvas_dir}
+            onCommit={(v) => set("canvas_dir", v.trim() || "canvases")}
+            placeholder={t["settings.canvasDirPlaceholder"]}
+            mono
+          />
+        </SettingBlock>
       </div>
 
       <ConfirmDialog

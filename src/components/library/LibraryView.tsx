@@ -15,7 +15,7 @@ import {
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
-import { normalizePath } from "../../lib/workspace/types";
+import { normalizePath, type LibraryRef } from "../../lib/workspace/types";
 import { useSidebarCollapsed } from "../../lib/sidebarState";
 import { resolveTagColor } from "../../lib/colors";
 import ConfirmDialog from "../ConfirmDialog";
@@ -29,6 +29,7 @@ import LibrarySidebar from "./LibrarySidebar";
 import { ModuleSidebar } from "../AppSidebarSlot";
 import NoteLibraryContent from "./NoteLibraryContent";
 import PdfLibraryContent from "./PdfLibraryContent";
+import CanvasLibraryContent from "./CanvasLibraryContent";
 
 interface Props {
   active: boolean;
@@ -46,7 +47,7 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const { state: workspace, setLibrary } = useWorkspace();
-  const { vaults, note, pdf, pdfCols, pdfMode } = useLibraryData();
+  const { vaults, note, pdf, pdfCols, pdfMode, canvasMode } = useLibraryData();
   const noteVaultPath = note.vaultPath;
   const sidebarCollapsed = useSidebarCollapsed();
 
@@ -124,7 +125,7 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
     }
   };
 
-  const selectLibrary = (library: { kind: "note"; vaultPath: string } | { kind: "pdf"; repoPath: string }) => {
+  const selectLibrary = (library: LibraryRef) => {
     setLibrary(library);
   };
 
@@ -149,6 +150,9 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
   const shownVaultPath = note.shownVaultPath || noteVaultPath;
 
   const content = useMemo(() => {
+    if (canvasMode) {
+      return <CanvasLibraryContent />;
+    }
     if (!pdfMode) {
       if (!noteVaultPath) {
         return (
@@ -172,7 +176,7 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
       />
     );
   }, [
-    noteVaultPath, note, onOpenSettings, pdfCols, pdfMode, shownVaultPath, sidebarCollapsed, t, vaults,
+    canvasMode, noteVaultPath, note, onOpenSettings, pdfCols, pdfMode, shownVaultPath, sidebarCollapsed, t, vaults,
   ]);
 
   return (
@@ -210,7 +214,7 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
         <div
           key={pdfMode
             ? `pdf:${workspace.library.kind === "pdf" ? workspace.library.repoPath : ""}`
-            : `note:${shownVaultPath}`}
+            : `${canvasMode ? "canvas" : "note"}:${shownVaultPath}`}
           className="flex-1 min-w-0 flex anim-fade-in"
         >
           {content}

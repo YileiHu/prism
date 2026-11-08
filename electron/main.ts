@@ -56,6 +56,8 @@ import {
   listPdfDocuments,
   syncPdfDocuments,
   getPdfDocument,
+  findPdfDocumentByRelPath,
+  findPdfDocumentByTitle,
   updatePdfCover,
   setPdfCustomCover,
   resetPdfCover,
@@ -63,7 +65,7 @@ import {
   deletePdfDocuments,
   type PdfUpsertRow,
 } from "./database";
-import type { GtdStatus } from "../src/shared/models";
+import type { CanvasFile, CanvasSaveResult, GtdStatus } from "../src/shared/models";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -774,6 +776,81 @@ function resolveAttachmentsDir(): string {
   return segs.join("/");
 }
 
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+// Writes one attachment into the vault's attachment folder and returns the
+// vault-relative ref (forward slashes).
+function persistAttachment(vaultPath: string, safeExt: string, data: Buffer): string {
+  const relDir = resolveAttachmentsDir();
+  const dir = path.join(vaultPath, ...relDir.split("/"));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  let name = `${stamp}.${safeExt}`;
+  let filePath = path.join(dir, name);
+  let counter = 2;
+  while (fs.existsSync(filePath)) {
+    name = `${stamp}-${counter}.${safeExt}`;
+    filePath = path.join(dir, name);
+    counter++;
+  }
+  fs.writeFileSync(filePath, data);
+  return `${relDir}/${name}`;
+}
+
+// Mind-map documents live in a vault-relative folder (default "canvases") as
+// plain JSON. The same sanitizing rules as attachments keep a bad setting from
+// escaping the vault.
+function resolveCanvasDir(vaultPath: string): string {
+  const raw = (getSetting("canvas_dir") ?? "").replace(/\\/g, "/").trim();
+  const segs = raw.split("/").filter((s) => s && s !== ".");
+  if (segs.length === 0 || segs.includes("..") || path.isAbsolute(raw) || /^[a-zA-Z]:/.test(raw)) {
+    return path.join(vaultPath, "canvases");
+  }
+  return path.join(vaultPath, ...segs);
+}
+
+function canvasTitle(filePath: string): string {
+  return path.basename(filePath).replace(/\.json$/i, "");
+}
+
+// Every canvas read/write must resolve to a .json file inside the owning
+// vault's canvas folder. Renames/imports elsewhere in the vault are refused.
+function assertCanvasFile(filePath: string): string {
+  const vaultPath = findOwningVault(filePath);
+  if (!vaultPath) throw new Error("CANVAS_OUTSIDE_VAULT");
+  if (!filePath.toLowerCase().endsWith(".json")) throw new Error("CANVAS_INVALID");
+  if (!isPathInside(resolveCanvasDir(vaultPath), filePath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+  return vaultPath;
+}
+
+function listCanvasFiles(vaultPath: string): CanvasFile[] {
+  const dir = resolveCanvasDir(vaultPath);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+    .map((entry) => {
+      const filePath = path.join(dir, entry.name);
+      const stat = fs.statSync(filePath);
+      return { path: filePath, title: canvasTitle(filePath), modifiedAt: stat.mtimeMs };
+    })
+    .sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+function uniqueCanvasName(dir: string, title: string): { path: string; title: string } {
+  const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
+  let fileName = `${safeName}.json`;
+  let filePath = path.join(dir, fileName);
+  let counter = 1;
+  while (fs.existsSync(filePath)) {
+    fileName = `${safeName} ${counter}.json`;
+    filePath = path.join(dir, fileName);
+    counter++;
+  }
+  return { path: filePath, title: counter > 1 ? `${safeName} ${counter - 1}` : safeName };
+}
+
 function registerIpcHandlers(): void {
   // Resources
   ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[], notes: string) => {
@@ -908,22 +985,90 @@ function registerIpcHandlers(): void {
     if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
     const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (!ASSET_MIME[safeExt]) throw new Error("UNSUPPORTED_TYPE");
-    const relDir = resolveAttachmentsDir();
-    const dir = path.join(vaultPath, ...relDir.split("/"));
+    return persistAttachment(vaultPath, safeExt, Buffer.from(data));
+  });
+
+  // "Insert image" picks a file from disk and copies it into the vault, so the
+  // note gets the same ![[...]] ref a paste would produce.
+  ipcMain.handle("vault:pick-attachment", async (_e, vaultPath: string) => {
+    if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    if (!mainWindow) return null;
+    const imageExts = Object.keys(ASSET_MIME).filter((ext) => ASSET_MIME[ext].startsWith("image/"));
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openFile"],
+      title: "Select Image",
+      filters: [{ name: "Images", extensions: imageExts }],
+    });
+    const source = result.canceled ? null : result.filePaths[0];
+    if (!source) return null;
+    const ext = path.extname(source).slice(1).toLowerCase();
+    if (!ASSET_MIME[ext] || !ASSET_MIME[ext].startsWith("image/")) throw new Error("UNSUPPORTED_TYPE");
+    const stat = await fs.promises.stat(source);
+    if (stat.size > MAX_ATTACHMENT_BYTES) throw new Error("FILE_TOO_LARGE");
+    return persistAttachment(vaultPath, ext, await fs.promises.readFile(source));
+  });
+
+  // Mind-map / canvas documents (plain JSON, no database index)
+  ipcMain.handle("canvas:list", (_e, vaultPath: string) => {
+    if (!findOwningVault(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+    return listCanvasFiles(vaultPath);
+  });
+
+  ipcMain.handle("canvas:read", async (_e, canvasPath: string) => {
+    assertCanvasFile(canvasPath);
+    const json = await fs.promises.readFile(canvasPath, "utf-8");
+    const stat = await fs.promises.stat(canvasPath);
+    return { path: canvasPath, title: canvasTitle(canvasPath), json, modifiedAt: stat.mtimeMs };
+  });
+
+  ipcMain.handle("canvas:save", async (_e, canvasPath: string, json: string, expectedModifiedAt: number | null) => {
+    assertCanvasFile(canvasPath);
+    if (!fs.existsSync(canvasPath)) throw new Error("CANVAS_MISSING");
+    const stat = await fs.promises.stat(canvasPath);
+    if (expectedModifiedAt !== null && Math.abs(stat.mtimeMs - expectedModifiedAt) > 0.5) {
+      return { conflict: true, modifiedAt: stat.mtimeMs } satisfies CanvasSaveResult;
+    }
+    // Write to a unique sibling temp file first so a crash mid-write cannot
+    // leave a truncated document behind, and two saves racing (autosave plus
+    // an unmount flush) never write the same temp path.
+    const tempPath = `${canvasPath}.${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`;
+    try {
+      await fs.promises.writeFile(tempPath, json, "utf-8");
+      await fs.promises.rename(tempPath, canvasPath);
+    } catch (error) {
+      await fs.promises.unlink(tempPath).catch(() => {});
+      throw error;
+    }
+    const next = await fs.promises.stat(canvasPath);
+    return { modifiedAt: next.mtimeMs } satisfies CanvasSaveResult;
+  });
+
+  ipcMain.handle("canvas:create", (_e, vaultPath: string, title: string, templateJson: string) => {
+    if (!findOwningVault(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+    const dir = resolveCanvasDir(vaultPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    let name = `${stamp}.${safeExt}`;
-    let filePath = path.join(dir, name);
-    let counter = 2;
-    while (fs.existsSync(filePath)) {
-      name = `${stamp}-${counter}.${safeExt}`;
-      filePath = path.join(dir, name);
+    const target = uniqueCanvasName(dir, title);
+    fs.writeFileSync(target.path, templateJson, "utf-8");
+    const stat = fs.statSync(target.path);
+    return { path: target.path, title: target.title, modifiedAt: stat.mtimeMs };
+  });
+
+  ipcMain.handle("canvas:rename", (_e, canvasPath: string, newTitle: string) => {
+    assertCanvasFile(canvasPath);
+    const dir = path.dirname(canvasPath);
+    const safeName = newTitle.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
+    let newPath = path.join(dir, `${safeName}.json`);
+    let counter = 1;
+    while (fs.existsSync(newPath) && !isSamePath(newPath, canvasPath)) {
+      newPath = path.join(dir, `${safeName} ${counter}.json`);
       counter++;
     }
-    fs.writeFileSync(filePath, Buffer.from(data));
-    return `${relDir}/${name}`;
+    const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
+    if (!isSamePath(newPath, canvasPath)) {
+      fs.renameSync(canvasPath, newPath);
+    }
+    const stat = fs.statSync(newPath);
+    return { path: newPath, title: finalTitle, modifiedAt: stat.mtimeMs };
   });
 
   // Open URL
@@ -1008,6 +1153,33 @@ function registerIpcHandlers(): void {
     fs.writeFileSync(path.join(dir, "collections.json"), JSON.stringify(data, null, 2), "utf-8");
   });
 
+  // Canvas groups — one virtual "mind maps" collection per vault.
+  const canvasGroupsFile = (vaultPath: string) => path.join(vaultPath, ".prism", "canvas-groups.json");
+  const requireVaultRoot = (vaultPath: string) => {
+    const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const owner = findOwningVault(vaultPath);
+    if (!owner || norm(owner) !== norm(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+  };
+
+  ipcMain.handle("canvas-groups:load", (_e, vaultPath: string) => {
+    requireVaultRoot(vaultPath);
+    const file = canvasGroupsFile(vaultPath);
+    if (!fs.existsSync(file)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf-8"));
+    } catch {
+      try { fs.copyFileSync(file, `${file}.bak`); } catch { /* ignore */ }
+      return null;
+    }
+  });
+
+  ipcMain.handle("canvas-groups:save", (_e, vaultPath: string, data: any) => {
+    requireVaultRoot(vaultPath);
+    const dir = path.join(vaultPath, ".prism");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(canvasGroupsFile(vaultPath), JSON.stringify(data, null, 2), "utf-8");
+  });
+
   // PDF library
   ipcMain.handle("pdf:get-state", () => {
     const repoPath = currentPdfRepo();
@@ -1040,6 +1212,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("pdf:list", () => {
     return pdfRepoPath ? listPdfDocuments(pdfRepoPath) : [];
+  });
+
+  // Note embeds resolve one target at a time — a repo-wide list would ship
+  // every PDF row over IPC just to render one cover card.
+  ipcMain.handle("pdf:resolve-embed", (_e, target: string) => {
+    if (!pdfRepoPath || typeof target !== "string") return null;
+    const rel = target.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!rel) return null;
+    const withExt = /\.pdf$/i.test(rel) ? rel : `${rel}.pdf`;
+    return findPdfDocumentByRelPath(pdfRepoPath, rel)
+      ?? findPdfDocumentByRelPath(pdfRepoPath, withExt)
+      ?? findPdfDocumentByTitle(pdfRepoPath, rel.replace(/\.pdf$/i, ""));
   });
 
   ipcMain.handle("pdf:save-cover", (_e, id: number, jpeg: Uint8Array, pageCount: number | null) => {

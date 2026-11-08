@@ -5,7 +5,19 @@ import taskLists from "markdown-it-task-lists";
 import { load as loadYaml } from "js-yaml";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/core";
-import { imageSizeAttrs, parseEmbedInner, parseImageAlt, type ImageSize } from "./imageSize";
+import { formatSizeToken, imageSizeAttrs, parseImageAlt } from "./imageSize";
+import { IMAGE_EXTS, assetSrc, prismFileUrl, type AssetContext } from "./assetUrl";
+import {
+  clampEmbedSize,
+  detectEmbedKind,
+  domainOf,
+  parseEmbedSpec,
+  type EmbedKind,
+  type EmbedSpec,
+} from "../embeds/model";
+
+export { IMAGE_EXTS, prismFileUrl };
+export type { AssetContext };
 
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -82,7 +94,6 @@ const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
 const CALLOUT_RE = /^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const TAG_RE = /^#([\p{L}\p{N}_/-]+)/u;
-export const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
 
 // ---- Callout: "> [!type] Title" → styled div with a title bar ----
 
@@ -181,7 +192,7 @@ function wikilinkRule(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
-// ---- Embed: "![[target|alt]]" → image, or a link for non-image targets ----
+// ---- Embed: "![[target|label|WxH]]" → unified card (image/canvas/note/link) ----
 
 function embedRule(state: StateInline, silent: boolean): boolean {
   const { src, pos } = state;
@@ -190,21 +201,17 @@ function embedRule(state: StateInline, silent: boolean): boolean {
   if (end === -1) return false;
   const inner = src.slice(pos + 3, end);
   if (!inner.trim() || inner.includes("\n")) return false;
-  const pipe = inner.indexOf("|");
-  const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
-  if (!target) return false;
-
-  const isImage = IMAGE_EXTS.test(target);
-  // Size syntax only applies to images; non-image embeds keep the first-pipe
-  // alias semantics (so "![[note|400]]" doesn't lose its label)
-  const parsed = isImage ? parseEmbedInner(inner) : null;
-  const alt = parsed ? parsed.alt : pipe === -1 ? target : inner.slice(pipe + 1).trim() || target;
+  const spec = parseEmbedSpec(inner);
+  if (!spec.target) return false;
 
   if (!silent) {
     const token = state.push("wikilink_embed", "", 0);
-    token.content = alt;
-    token.attrSet("data-embed-target", target);
-    if (parsed?.size) token.meta = { imageSize: parsed.size };
+    token.content = spec.label ?? spec.target;
+    token.meta = { embed: spec };
+    token.attrSet("data-embed-target", spec.target);
+    token.attrSet("data-embed-kind", spec.kind);
+    if (spec.label) token.attrSet("data-embed-label", spec.label);
+    if (spec.size) token.attrSet("data-embed-size", formatSizeToken(spec.size));
   }
   state.pos = end + 2;
   return true;
@@ -257,7 +264,7 @@ const md: MarkdownItType = new MarkdownIt({
 });
 
 md.core.ruler.after("inline", "prism_callouts", transformCallouts);
-// Images that sit alone in their paragraph render as centered blocks; images
+// Embeds that sit alone in their paragraph render as centered blocks; embeds
 // mixed with text keep the inline flow
 md.core.ruler.after("inline", "prism_standalone_images", (state) => {
   const tokens = state.tokens;
@@ -266,17 +273,13 @@ md.core.ruler.after("inline", "prism_standalone_images", (state) => {
     const inline = tokens[i + 1];
     if (inline?.type !== "inline") continue;
     const children = inline.children ?? [];
-    let images = 0;
+    let embeds = 0;
     let standalone = true;
     for (const child of children) {
       if (child.type === "image") {
-        images++;
+        embeds++;
       } else if (child.type === "wikilink_embed") {
-        if (!IMAGE_EXTS.test(String(child.attrGet("data-embed-target") ?? ""))) {
-          standalone = false;
-          break;
-        }
-        images++;
+        embeds++;
       } else if (child.type === "text") {
         if (child.content.trim()) {
           standalone = false;
@@ -292,10 +295,10 @@ md.core.ruler.after("inline", "prism_standalone_images", (state) => {
         break;
       }
     }
-    if (!standalone || images === 0) continue;
+    if (!standalone || embeds === 0) continue;
     for (const child of children) {
       if (child.type === "image") child.attrJoin("class", "md-img-standalone");
-      else if (child.type === "wikilink_embed") child.attrJoin("class", "md-embed md-img-standalone");
+      else if (child.type === "wikilink_embed") child.attrJoin("class", "md-embed-standalone");
     }
   }
 });
@@ -332,31 +335,52 @@ md.renderer.rules.wikilink = (tokens, idx) => {
 // ---- Local asset URLs ----
 // Images live on disk inside the vault, which the renderer can't fetch
 // directly — they go through the prism-file:// protocol (electron/main.ts),
-// which resolves the ref against the note's folder and the vault root
-
-export interface AssetContext {
-  vaultPath: string;
-  noteDir: string;
-}
-
-export function prismFileUrl(vaultPath: string, ref: string, noteDir: string): string {
-  return `prism-file:///asset?vault=${encodeURIComponent(vaultPath)}&ref=${encodeURIComponent(ref)}&dir=${encodeURIComponent(noteDir)}`;
-}
+// which resolves the ref against the note's folder and the vault root.
+// The helpers live in assetUrl.ts so embed code can import them without
+// pulling in markdown-it.
 
 // markdown-it renders synchronously; the context is only valid during a call
 let assetCtx: AssetContext | null = null;
 
+function specOf(token: Token): EmbedSpec | null {
+  const spec = (token.meta as { embed?: EmbedSpec } | null)?.embed;
+  if (spec) return spec;
+  const target = String(token.attrGet("data-embed-target") ?? "");
+  if (!target) return null;
+  const kind = (token.attrGet("data-embed-kind") as EmbedKind | null) ?? detectEmbedKind(target);
+  return { kind, target, size: null };
+}
+
+function embedBlockClass(token: Token): string {
+  const cls = token.attrGet("class");
+  return typeof cls === "string" && cls.includes("md-embed-standalone") ? " md-embed-block" : "";
+}
+
 md.renderer.rules.wikilink_embed = (tokens, idx) => {
   const token = tokens[idx];
-  const target = String(token.attrGet("data-embed-target") ?? "");
-  if (IMAGE_EXTS.test(target)) {
-    if (!assetCtx) return `<span class="md-img-missing">${md.utils.escapeHtml(target)}</span>`;
-    const size = (token.meta as { imageSize?: ImageSize } | null)?.imageSize ?? null;
-    const cls = String(token.attrGet("class") ?? "md-embed");
-    return `<img class="${escapeAttr(cls)}" src="${escapeAttr(prismFileUrl(assetCtx.vaultPath, target, assetCtx.noteDir))}" alt="${escapeAttr(token.content)}"${imageSizeAttrs(size)} loading="lazy">`;
+  const spec = specOf(token);
+  if (!spec) return md.utils.escapeHtml(token.content);
+  const cls = `md-embed-card md-embed-card-${spec.kind} md-embed-${spec.kind}${embedBlockClass(token)}`;
+
+  if (spec.kind === "image") {
+    if (!assetCtx) return `<span class="md-img-missing">${md.utils.escapeHtml(spec.target)}</span>`;
+    const label = spec.label ?? "";
+    return `<span class="${cls}"><img src="${escapeAttr(assetSrc(spec.target, assetCtx))}" alt="${escapeAttr(label)}"${imageSizeAttrs(clampEmbedSize(spec.size))} loading="lazy"></span>`;
   }
-  // .md transcludes (and anything else) degrade to a wikilink
-  return `<a data-wikilink="${escapeAttr(target)}" class="wikilink">${md.utils.escapeHtml(token.content)}</a>`;
+
+  if (spec.kind === "link") {
+    const label = spec.label || spec.target;
+    return `<span class="${cls}"><a class="md-embed-link-anchor" href="${escapeAttr(spec.target)}" rel="noreferrer noopener"><span class="md-embed-link-body"><span class="md-embed-link-domain">${md.utils.escapeHtml(domainOf(spec.target))}</span><span class="md-embed-link-label">${md.utils.escapeHtml(label)}</span></span></a></span>`;
+  }
+
+  // canvas / note / pdf: the reading view mounts a React card into this placeholder
+  const attrs = [
+    `data-embed-kind="${escapeAttr(spec.kind)}"`,
+    `data-embed-target="${escapeAttr(spec.target)}"`,
+    spec.label ? `data-embed-label="${escapeAttr(spec.label)}"` : "",
+    spec.size ? `data-embed-size="${formatSizeToken(spec.size)}"` : "",
+  ].filter(Boolean).join(" ");
+  return `<span class="md-embed-pending${embedBlockClass(token)}" ${attrs}></span>`;
 };
 
 md.renderer.rules.image = (tokens, idx, options, env) => {
@@ -377,7 +401,8 @@ md.renderer.rules.image = (tokens, idx, options, env) => {
   }
   const title = token.attrGet("title");
   const cls = token.attrGet("class");
-  return `<img${cls ? ` class="${escapeAttr(String(cls))}"` : ""} src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${title ? ` title="${escapeAttr(String(title))}"` : ""}${imageSizeAttrs(size)}>`;
+  const block = typeof cls === "string" && cls.includes("md-img-standalone") ? " md-embed-block" : "";
+  return `<span class="md-embed-card md-embed-card-image md-embed-image${block}"><img${cls ? ` class="${escapeAttr(String(cls))}"` : ""} src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${title ? ` title="${escapeAttr(String(title))}"` : ""}${imageSizeAttrs(clampEmbedSize(size))}></span>`;
 };
 
 md.renderer.rules.mdtag = (tokens, idx) => {

@@ -18,10 +18,19 @@ export interface PdfDocTab {
   title: string;
 }
 
-export type DocTab = NoteDocTab | PdfDocTab;
+export interface CanvasDocTab {
+  id: string;
+  kind: "canvas";
+  vaultPath: string;
+  path: string;
+  title: string;
+}
+
+export type DocTab = NoteDocTab | PdfDocTab | CanvasDocTab;
 
 export type LibraryRef =
   | { kind: "note"; vaultPath: string }
+  | { kind: "canvas"; vaultPath: string }
   | { kind: "pdf"; repoPath: string };
 
 export interface SplitState {
@@ -51,12 +60,20 @@ export function pdfDocId(repoPath: string, relPath: string): string {
   return `pdf::${normalizePath(repoPath)}::${normalizePath(relPath)}`;
 }
 
+export function canvasDocId(canvasPath: string): string {
+  return `canvas::${normalizePath(canvasPath)}`;
+}
+
 export function makeNoteDoc(vaultPath: string, notePath: string, title: string): NoteDocTab {
   return { id: noteDocId(notePath), kind: "note", vaultPath, path: notePath, title };
 }
 
 export function makePdfDoc(repoPath: string, relPath: string, title: string): PdfDocTab {
   return { id: pdfDocId(repoPath, relPath), kind: "pdf", repoPath, relPath, title };
+}
+
+export function makeCanvasDoc(vaultPath: string, canvasPath: string, title: string): CanvasDocTab {
+  return { id: canvasDocId(canvasPath), kind: "canvas", vaultPath, path: canvasPath, title };
 }
 
 export function initialWorkspaceState(): WorkspaceState {

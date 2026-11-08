@@ -11,7 +11,9 @@ import {
 import type { VaultEntry } from "../../types";
 import { relKey } from "../../components/pdf/types";
 import {
+  canvasDocId,
   initialWorkspaceState,
+  makeCanvasDoc,
   makeNoteDoc,
   makePdfDoc,
   noteDocId,
@@ -82,6 +84,7 @@ function validSplit(raw: unknown, tabs: DocTab[]): SplitState | null {
 function resolvePersistedTab(
   raw: unknown,
   noteMaps: Map<string, Map<string, string>>,
+  canvasMaps: Map<string, Map<string, string>>,
   pdfRepoPath: string,
   pdfTitles: Map<string, string>,
 ): DocTab | null {
@@ -91,6 +94,11 @@ function resolvePersistedTab(
     const notes = noteMaps.get(normalizePath(tab.vaultPath));
     const title = notes?.get(normalizePath(tab.path));
     return title ? makeNoteDoc(tab.vaultPath, tab.path, title) : null;
+  }
+  if (tab.kind === "canvas" && typeof tab.vaultPath === "string" && typeof tab.path === "string") {
+    const canvases = canvasMaps.get(normalizePath(tab.vaultPath));
+    const title = canvases?.get(normalizePath(tab.path));
+    return title ? makeCanvasDoc(tab.vaultPath, tab.path, title) : null;
   }
   if (tab.kind === "pdf" && typeof tab.relPath === "string") {
     if (typeof tab.repoPath === "string" && normalizePath(tab.repoPath) !== normalizePath(pdfRepoPath)) {
@@ -105,10 +113,10 @@ function resolvePersistedTab(
 function validLibrary(raw: unknown, vaults: VaultEntry[], pdfRepoPath: string): LibraryRef | null {
   if (!raw || typeof raw !== "object") return null;
   const ref = raw as { kind?: unknown; vaultPath?: unknown; repoPath?: unknown };
-  if (ref.kind === "note" && typeof ref.vaultPath === "string") {
+  if ((ref.kind === "note" || ref.kind === "canvas") && typeof ref.vaultPath === "string") {
     const vaultPath = ref.vaultPath;
     return vaults.some((vault) => normalizePath(vault.path) === normalizePath(vaultPath))
-      ? { kind: "note", vaultPath }
+      ? { kind: ref.kind, vaultPath }
       : null;
   }
   if (ref.kind === "pdf" && typeof ref.repoPath === "string") {
@@ -152,6 +160,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const restore = rawRestore === null ? true : rawRestore !== "false" && rawRestore !== "0";
 
       const noteMaps = new Map<string, Map<string, string>>();
+      const canvasMaps = new Map<string, Map<string, string>>();
       for (const vault of vaults) {
         try {
           await window.prism.setVaultPath(vault.path);
@@ -162,6 +171,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
         } catch {
           noteMaps.set(normalizePath(vault.path), new Map());
+        }
+        try {
+          const canvases = await window.prism.listCanvases(vault.path);
+          canvasMaps.set(
+            normalizePath(vault.path),
+            new Map(canvases.map((canvas) => [normalizePath(canvas.path), canvas.title])),
+          );
+        } catch {
+          canvasMaps.set(normalizePath(vault.path), new Map());
         }
       }
 
@@ -195,7 +213,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (restore && parsed && parsed.version === 1) {
         tabs = dedupeTabs(
           (Array.isArray(parsed.tabs) ? parsed.tabs : [])
-            .map((raw) => resolvePersistedTab(raw, noteMaps, pdfRepoPath, pdfTitles))
+            .map((raw) => resolvePersistedTab(raw, noteMaps, canvasMaps, pdfRepoPath, pdfTitles))
             .filter((tab): tab is DocTab => tab !== null),
         );
         restoredActiveId = tabs.some((tab) => tab.id === parsed?.activeId)
@@ -267,8 +285,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } else if (activeId && !byId.has(activeId)) {
           activeId = merged[0]?.id ?? null;
         }
-        const prevLibrarySet =
-          prev.library.kind === "note" ? prev.library.vaultPath !== "" : prev.library.repoPath !== "";
+        const prevLibrarySet = prev.library.kind === "pdf"
+          ? prev.library.repoPath !== ""
+          : prev.library.vaultPath !== "";
         const library = prevLibrarySet
           ? validLibrary(prev.library, vaults, pdfRepoPath) ?? restoredLibrary
           : restoredLibrary;
@@ -293,11 +312,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const payload: PersistedWorkspace = {
       version: 1,
       module: state.module,
-      tabs: state.tabs.map((tab) =>
-        tab.kind === "note"
-          ? { kind: "note", vaultPath: tab.vaultPath, path: tab.path, title: tab.title }
-          : { kind: "pdf", repoPath: tab.repoPath, relPath: tab.relPath, title: tab.title },
-      ),
+      tabs: state.tabs.map((tab) => {
+        if (tab.kind === "note") {
+          return { kind: "note", vaultPath: tab.vaultPath, path: tab.path, title: tab.title };
+        }
+        if (tab.kind === "canvas") {
+          return { kind: "canvas", vaultPath: tab.vaultPath, path: tab.path, title: tab.title };
+        }
+        return { kind: "pdf", repoPath: tab.repoPath, relPath: tab.relPath, title: tab.title };
+      }),
       activeId: state.activeId,
       split: state.split,
       library: state.library,
@@ -448,6 +471,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const path = patch.path ?? old.path;
           next = { ...old, path, title: patch.title ?? old.title, id: noteDocId(path) };
           nextId = next.id;
+        } else if (old.kind === "canvas") {
+          const path = patch.path ?? old.path;
+          next = { ...old, path, title: patch.title ?? old.title, id: canvasDocId(path) };
+          nextId = next.id;
         } else {
           const relPath = patch.relPath ?? old.relPath;
           next = {
@@ -527,7 +554,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const closeVaultDocs = useCallback((vaultPath: string) => {
     const key = normalizePath(vaultPath);
     const ids = stateRef.current.tabs
-      .filter((tab) => tab.kind === "note" && normalizePath(tab.vaultPath) === key)
+      .filter((tab) => tab.kind !== "pdf" && normalizePath(tab.vaultPath) === key)
       .map((tab) => tab.id);
     removeDocs(ids);
   }, [removeDocs]);

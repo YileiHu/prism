@@ -49,6 +49,7 @@ interface Props {
   onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
+  emptyGroupText?: string;
 }
 
 // Returns the group containing the note, null for ungrouped, undefined when absent
@@ -72,6 +73,7 @@ function SortableGroupCard({
   collapsed,
   color,
   isOverlay,
+  emptyText,
   onToggle,
   onGroupContextMenu,
   onRemoveNote,
@@ -83,6 +85,7 @@ function SortableGroupCard({
   collapsed: boolean;
   color: PaletteColor;
   isOverlay?: boolean;
+  emptyText: string;
   onToggle: () => void;
   onGroupContextMenu: (e: React.MouseEvent, groupId: string) => void;
   onRemoveNote: (relPath: string, groupId: string | null) => void;
@@ -90,7 +93,6 @@ function SortableGroupCard({
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
 }) {
-  const { t } = useT();
   const {
     attributes,
     listeners,
@@ -141,7 +143,7 @@ function SortableGroupCard({
           <div className="p-2">
             {group.notes.length === 0 ? (
               <p className="text-caption text-faint text-center py-3">
-                {t["collections.dropNotesHere"]}
+                {emptyText}
               </p>
             ) : (
               <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
@@ -265,8 +267,10 @@ export default function CollectionDetail({
   onReorderNotes,
   onNoteContextMenu,
   onOpenNote,
+  emptyGroupText,
 }: Props) {
   const { t } = useT();
+  const emptyText = emptyGroupText ?? t["collections.dropNotesHere"];
   const [activeDrag, setActiveDrag] = useState<{ type: "group"; group: GroupView; color: PaletteColor } | { type: "note"; note: NoteInfo } | null>(null);
 
   const sensors = useSensors(
@@ -381,6 +385,7 @@ export default function CollectionDetail({
               group={group}
               collapsed={collapsedGroups.has(group.id)}
               color={resolveTagColor(group.name, group.color)}
+              emptyText={emptyText}
               onToggle={() => onToggleGroup(group.id)}
               onGroupContextMenu={onGroupContextMenu}
               onRemoveNote={onRemoveNote}

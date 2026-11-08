@@ -4,6 +4,9 @@ import type { Translation } from "../i18n/zh";
 import { TAG_COLORS, hashColor } from "../lib/colors";
 import type { MenuItem } from "./ContextMenu";
 
+// Neutral swatch for the "auto" option where auto means "no explicit color".
+export const AUTO_SWATCH_COLOR = "rgb(var(--c-strong))";
+
 function Swatch({ color }: { color: string }) {
   return <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: color }} />;
 }
@@ -12,19 +15,20 @@ interface ColorMenuItemOptions {
   label: string;
   autoLabel: string;
   autoSource: string;
+  autoBar?: string;
   current?: string | null;
   onSelect: (color: string) => void;
 }
 
 export function buildColorMenuItem(t: Translation, options: ColorMenuItemOptions): MenuItem {
-  const { label, autoLabel, autoSource, current, onSelect } = options;
+  const { label, autoLabel, autoSource, autoBar, current, onSelect } = options;
   return {
     label,
     icon: <Palette size={14} />,
     children: [
       {
         label: autoLabel,
-        icon: <Swatch color={hashColor(autoSource).bar} />,
+        icon: <Swatch color={autoBar ?? hashColor(autoSource).bar} />,
         checked: !current,
         onClick: () => onSelect(""),
       },
@@ -41,14 +45,15 @@ export function buildColorMenuItem(t: Translation, options: ColorMenuItemOptions
 interface ColorSwatchPickerProps {
   name: string;
   value: string;
+  autoBar?: string;
   onChange: (color: string) => void;
 }
 
-export function ColorSwatchPicker({ name, value, onChange }: ColorSwatchPickerProps) {
+export function ColorSwatchPicker({ name, value, autoBar, onChange }: ColorSwatchPickerProps) {
   const { t } = useT();
   const autoLabel = t["collections.colorAuto"];
   const options = [
-    { key: "auto", label: autoLabel, bar: hashColor(name).bar, color: "" },
+    { key: "auto", label: autoLabel, bar: autoBar ?? hashColor(name).bar, color: "" },
     ...TAG_COLORS.map((color) => ({
       key: color.key,
       label: t[`tagColor.${color.key}`],

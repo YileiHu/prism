@@ -60,8 +60,11 @@ export default function DocumentWorkspace({ active }: Props) {
   useEffect(() => {
     if (!activeTab || syncedTabRef.current === activeTab.id) return;
     syncedTabRef.current = activeTab.id;
-    if (activeTab.kind === "note") setLibrary({ kind: "note", vaultPath: activeTab.vaultPath });
-    else setLibrary({ kind: "pdf", repoPath: activeTab.repoPath });
+    if (activeTab.kind === "note" || activeTab.kind === "canvas") {
+      setLibrary({ kind: activeTab.kind, vaultPath: activeTab.vaultPath });
+    } else {
+      setLibrary({ kind: "pdf", repoPath: activeTab.repoPath });
+    }
   }, [activeTab, setLibrary]);
 
   // Module pages hide the workspace without unmounting it, so readers keep

@@ -625,11 +625,229 @@ body {
   border-radius: 3px;
 }
 
-/* ![[image]] embeds and local images */
-.markdown-preview .md-embed {
+/* ---- Unified embeds (image / canvas / note / pdf / link) ---- */
+.md-embed-card {
+  position: relative;
+  display: inline-block;
   max-width: 100%;
-  border-radius: 8px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  background: rgb(var(--c-surface) / 0.5);
+  overflow: hidden;
+  vertical-align: top;
   margin: 0.3em 0;
+}
+.markdown-preview .md-embed-card img {
+  display: block;
+  max-width: 100%;
+  border-radius: 0;
+}
+.markdown-preview .md-embed-card img.md-img-standalone {
+  margin: 0;
+}
+.md-embed-block {
+  display: block;
+  width: fit-content;
+  margin: 1.4em auto;
+}
+.md-embed-pending {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+.md-embed-pending.md-embed-block {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 1.4em 0;
+}
+.md-embed-visual {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--c-base));
+}
+.embed-visual-frame {
+  pointer-events: none;
+  user-select: none;
+}
+/* Arrow labels set inline pointer-events: all, so the whole preview subtree
+   must be forced inert — the open layer above it handles clicks. */
+.embed-visual-frame * {
+  pointer-events: none !important;
+}
+.md-embed-open-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.md-embed-toolbar {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 6px;
+  width: max-content;
+  max-width: calc(100% - 12px);
+  padding: 3px 6px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 7px;
+  background: rgb(var(--c-surface));
+  box-shadow: rgb(var(--c-overlay) / 0.3) 0 2px 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.md-embed-card:hover .md-embed-toolbar,
+.md-embed-toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.md-embed-toolbar > button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgb(var(--c-tertiary));
+  cursor: pointer;
+  line-height: 1.4;
+}
+.md-embed-toolbar > button:hover {
+  background: rgb(var(--c-hover) / 0.7);
+  color: rgb(var(--c-primary));
+}
+.md-embed-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.md-embed-size-slider {
+  width: 96px;
+}
+.md-embed-size-value {
+  font-size: 11px;
+  line-height: 1;
+  color: rgb(var(--c-tertiary));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.md-embed-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 180px;
+  padding: 18px 24px;
+  font-size: 12px;
+  color: rgb(var(--c-muted));
+}
+.md-embed-note-body,
+.md-embed-link-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  max-width: 420px;
+  padding: 10px 14px;
+}
+.md-embed-note-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--c-primary));
+}
+.md-embed-note-path,
+.md-embed-link-domain {
+  font-size: 11px;
+  color: rgb(var(--c-faint));
+}
+.md-embed-note-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  color: rgb(var(--c-secondary));
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.md-embed-link-anchor {
+  display: block;
+  text-decoration: none;
+}
+.md-embed-link-label {
+  font-size: 13px;
+  color: var(--accent-text);
+}
+.md-embed-pdf-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 340px;
+  max-width: 100%;
+  padding: 10px;
+}
+.md-embed-pdf-cover {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 86px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(var(--c-elevated));
+}
+.md-embed-pdf-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.md-embed-pdf-cover-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: rgb(var(--c-faint));
+}
+.md-embed-pdf-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.md-embed-pdf-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--c-primary));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-embed-pdf-sub {
+  font-size: 11px;
+  color: rgb(var(--c-muted));
+}
+.md-embed-pdf-path {
+  overflow: hidden;
+  font-size: 11px;
+  color: rgb(var(--c-faint));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-embed-caption {
+  display: block;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: rgb(var(--c-muted));
+  text-align: center;
 }
 .markdown-preview .md-img-missing {
   display: inline-block;
@@ -702,8 +920,8 @@ body {
   overflow-y: hidden;
 }
 
-/* Edit-mode image preview: block widget below the raw ![]()/![[ ]] line */
-.cm-md-image-preview {
+/* Edit-mode embed cards: block widget below the raw ![]()/![[ ]] line */
+.cm-md-embed-preview {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -712,68 +930,12 @@ body {
   padding: 4px 0 6px;
   cursor: default;
 }
-.cm-md-image-item {
-  position: relative;
+.cm-md-embed-host {
   display: inline-flex;
   max-width: 100%;
 }
-.cm-md-image-preview img {
-  max-width: 100%;
-  max-height: 400px;
-  border-radius: 8px;
-  border: 1px solid rgb(var(--c-line));
-}
-/* Explicitly sized images keep their aspect ratio instead of being clipped
-   by the edit-mode max-height (width attr + auto height must stay in ratio) */
-.cm-md-image-preview img.cm-md-image-sized {
-  max-height: none;
-}
-.cm-md-image-toolbar {
-  /* Center-anchored: the image grows symmetrically around its center while
-     the slider is dragged, so the toolbar stays under the pointer */
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  /* Size to content: a small image must not squeeze the controls into
-     wrapping (width: max-content lets the bar overflow the image box) */
-  width: max-content;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
-  box-shadow: 0 2px 12px rgb(var(--c-overlay) / 0.3);
-  font-size: 11px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 2;
-}
-.cm-md-image-item:hover .cm-md-image-toolbar,
-.cm-md-image-toolbar:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-.cm-md-image-toolbar button {
-  padding: 2px 6px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: rgb(var(--c-tertiary));
-  cursor: pointer;
-  line-height: 1.4;
-}
-.cm-md-image-toolbar button:hover {
-  background: rgb(var(--c-hover) / 0.7);
-  color: rgb(var(--c-primary));
-}
-.cm-md-image-toolbar button.is-active {
-  background: var(--accent-muted);
-  color: var(--accent-text);
+.cm-md-embed-preview .md-embed-card {
+  margin: 0;
 }
 /* Unified range slider — settings, image size toolbar and any future slider.
    Callers set --slider-progress inline so the accent fill tracks the value. */
@@ -852,24 +1014,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 input[type="range"]:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-.cm-md-image-size-slider {
-  width: 120px;
-}
-.cm-md-image-size-value {
-  min-width: 44px;
-  text-align: right;
-  font-size: 10px;
-  color: rgb(var(--c-tertiary));
-  font-variant-numeric: tabular-nums;
-}
-.cm-md-image-missing {
-  display: inline-block;
-  padding: 0 0.5em;
-  border-radius: 4px;
-  border: 1px dashed rgb(var(--c-strong));
-  color: rgb(var(--c-muted));
-  font-size: 0.85em;
 }
 
 /* Fenced code blocks in the editor: continuous tinted block, monospace */
@@ -1025,3 +1169,97 @@ input[type="range"]:disabled {
   background: rgba(250, 204, 21, 0.35);
 }
 
+
+/* --- Whiteboard canvas (React Flow) ---------------------------------------
+   React Flow ships its own palette and control chrome. Everything is scoped to
+   .prism-canvas so no other surface picks up these defaults, and colors come
+   only from the shared semantic tokens. */
+.prism-canvas .react-flow__attribution {
+  display: none;
+}
+.prism-canvas .react-flow__controls {
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-popover);
+}
+.prism-canvas .react-flow__controls-button {
+  background: rgb(var(--c-surface));
+  border-bottom: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-secondary));
+  fill: rgb(var(--c-secondary));
+}
+.prism-canvas .react-flow__controls-button:hover {
+  background: rgb(var(--c-hover));
+}
+.prism-canvas .react-flow__controls-button svg {
+  fill: currentColor;
+}
+.prism-canvas .react-flow__minimap {
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  overflow: hidden;
+}
+.prism-canvas .react-flow__minimap-mask {
+  fill: rgb(var(--c-overlay) / 0.22);
+}
+.prism-canvas .react-flow__node {
+  font-family: inherit;
+}
+.prism-canvas .react-flow__node.selected,
+.prism-canvas .react-flow__node:focus,
+.prism-canvas .react-flow__node:focus-visible {
+  outline: none;
+}
+/* React Flow's own resize-control rules load after this file and match at the
+   same specificity, so target the base class too. */
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-line {
+  border-color: transparent;
+}
+/* Widen the invisible hit band so the edges are easy to grab. */
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-line.left,
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-line.right {
+  width: 8px;
+}
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-line.top,
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-line.bottom {
+  height: 8px;
+}
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  border: 1.5px solid rgb(var(--c-surface));
+  background-color: var(--prism-node-highlight, var(--accent));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 120ms ease;
+}
+.prism-canvas .react-flow__resize-control.prism-canvas-resizer-handle:hover {
+  transform: scale(1.25);
+}
+.prism-canvas .react-flow__selection {
+  background: rgb(var(--accent-rgb) / 0.08);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+.prism-canvas .react-flow__nodesselection-rect {
+  background: rgb(var(--accent-rgb) / 0.06);
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+}
+.prism-canvas .prism-canvas-handle {
+  width: 9px;
+  height: 9px;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--accent);
+  border-radius: 9999px;
+  background: rgb(var(--c-surface));
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.prism-canvas .react-flow__node:hover .prism-canvas-handle,
+.prism-canvas .react-flow__node.selected .prism-canvas-handle {
+  opacity: 1;
+}

@@ -134,6 +134,8 @@ export function initDatabase(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_pdf_documents_repo ON pdf_documents(repo_path);
     CREATE INDEX IF NOT EXISTS idx_pdf_documents_modified ON pdf_documents(modified_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pdf_documents_repo_rel ON pdf_documents(repo_path, rel_path COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_pdf_documents_repo_title ON pdf_documents(repo_path, title COLLATE NOCASE);
   `);
 
   // Migration: the notes table was previously named obsidian_notes — rename
@@ -612,6 +614,22 @@ export function listPdfDocuments(repoPath: string): PdfDocument[] {
 
 export function getPdfDocument(id: number): PdfDocument | null {
   const row = db.prepare("SELECT * FROM pdf_documents WHERE id = ?").get(id) as PdfDocumentRow | undefined;
+  return row ? toPdfDocument(row) : null;
+}
+
+// Single-row lookups for note embeds: a card needs one document, not the
+// whole library.
+export function findPdfDocumentByRelPath(repoPath: string, relPath: string): PdfDocument | null {
+  const row = db
+    .prepare("SELECT * FROM pdf_documents WHERE repo_path = ? AND rel_path = ? COLLATE NOCASE LIMIT 1")
+    .get(repoPath, relPath) as PdfDocumentRow | undefined;
+  return row ? toPdfDocument(row) : null;
+}
+
+export function findPdfDocumentByTitle(repoPath: string, title: string): PdfDocument | null {
+  const row = db
+    .prepare("SELECT * FROM pdf_documents WHERE repo_path = ? AND title = ? COLLATE NOCASE LIMIT 1")
+    .get(repoPath, title) as PdfDocumentRow | undefined;
   return row ? toPdfDocument(row) : null;
 }
 

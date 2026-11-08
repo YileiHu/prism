@@ -91,3 +91,30 @@ export interface RecentNote extends NoteRef {
   openedAt: string;
   missing?: boolean;
 }
+
+export interface CanvasFile {
+  path: string;
+  title: string;
+  modifiedAt: number;
+}
+
+export interface CanvasContent extends CanvasFile {
+  json: string;
+}
+
+export type CanvasSaveResult =
+  | { modifiedAt: number }
+  | { conflict: true; modifiedAt: number };
+
+export interface CanvasGroup {
+  id: string;
+  name: string;
+  color?: string;
+  paths: string[];
+}
+
+export interface CanvasGroupsFile {
+  version: number;
+  groups: CanvasGroup[];
+  paths: string[];
+}

@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { NoteBrief, NoteContentHit, PdfDocument } from "../src/shared/models";
+import type {
+  CanvasContent,
+  CanvasFile,
+  CanvasGroupsFile,
+  CanvasSaveResult,
+  NoteBrief,
+  NoteContentHit,
+  PdfDocument,
+} from "../src/shared/models";
 
 const api = {
   // Resources
@@ -26,6 +34,8 @@ const api = {
   saveNote: (notePath: string, content: string) => ipcRenderer.invoke("vault:save-note", notePath, content),
   saveAttachment: (vaultPath: string, ext: string, data: ArrayBuffer) =>
     ipcRenderer.invoke("vault:save-attachment", vaultPath, ext, new Uint8Array(data)) as Promise<string>,
+  pickAttachment: (vaultPath: string) =>
+    ipcRenderer.invoke("vault:pick-attachment", vaultPath) as Promise<string | null>,
   createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("vault:create-note", vaultPath, title),
   renameNote: (vaultPath: string, oldPath: string, newTitle: string) =>
     ipcRenderer.invoke("vault:rename-note", vaultPath, oldPath, newTitle),
@@ -34,6 +44,16 @@ const api = {
     ipcRenderer.on("vault:updated", handler);
     return () => { ipcRenderer.removeListener("vault:updated", handler); };
   },
+
+  // Mind-map / canvas documents
+  listCanvases: (vaultPath: string) => ipcRenderer.invoke("canvas:list", vaultPath) as Promise<CanvasFile[]>,
+  readCanvas: (canvasPath: string) => ipcRenderer.invoke("canvas:read", canvasPath) as Promise<CanvasContent>,
+  saveCanvas: (canvasPath: string, json: string, expectedModifiedAt: number | null) =>
+    ipcRenderer.invoke("canvas:save", canvasPath, json, expectedModifiedAt) as Promise<CanvasSaveResult>,
+  createCanvas: (vaultPath: string, title: string, templateJson: string) =>
+    ipcRenderer.invoke("canvas:create", vaultPath, title, templateJson) as Promise<CanvasFile>,
+  renameCanvas: (canvasPath: string, title: string) =>
+    ipcRenderer.invoke("canvas:rename", canvasPath, title) as Promise<CanvasFile>,
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),
@@ -83,12 +103,19 @@ const api = {
   loadNoteCollections: (vaultPath: string) => ipcRenderer.invoke("note-collections:load", vaultPath),
   saveNoteCollections: (vaultPath: string, data: any) => ipcRenderer.invoke("note-collections:save", vaultPath, data),
 
+  // Canvas groups
+  loadCanvasGroups: (vaultPath: string) =>
+    ipcRenderer.invoke("canvas-groups:load", vaultPath) as Promise<CanvasGroupsFile | null>,
+  saveCanvasGroups: (vaultPath: string, data: CanvasGroupsFile) =>
+    ipcRenderer.invoke("canvas-groups:save", vaultPath, data),
+
   // PDF library
   getPdfState: () => ipcRenderer.invoke("pdf:get-state") as Promise<{ repoPath: string; exists: boolean; count: number }>,
   choosePdfRepo: () => ipcRenderer.invoke("pdf:choose-repo") as Promise<string | null>,
   openPdfRepo: (repoPath: string) => ipcRenderer.invoke("pdf:open-repo", repoPath),
   rescanPdfs: () => ipcRenderer.invoke("pdf:rescan") as Promise<{ total: number; changed: number }>,
   listPdfs: () => ipcRenderer.invoke("pdf:list") as Promise<PdfDocument[]>,
+  resolvePdfEmbed: (target: string) => ipcRenderer.invoke("pdf:resolve-embed", target) as Promise<PdfDocument | null>,
   savePdfCover: (id: number, jpeg: Uint8Array, pageCount: number | null) =>
     ipcRenderer.invoke("pdf:save-cover", id, jpeg, pageCount) as Promise<{ coverVersion: number }>,
   choosePdfCover: (id: number) => ipcRenderer.invoke("pdf:choose-cover", id) as Promise<{ coverVersion: number } | null>,

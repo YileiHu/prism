@@ -41,29 +41,6 @@ export function withSizeInAlt(alt: string, size: ImageSize | null): string {
   return size ? `${base}|${formatSizeToken(size)}` : base;
 }
 
-// Wikilink embeds: ![[target|alt|size]] (alt optional, size must come last)
-export function parseEmbedInner(inner: string): { target: string; alt: string; size: ImageSize | null } {
-  const parts = inner.split("|");
-  const target = parts[0].trim();
-  let size: ImageSize | null = null;
-  if (parts.length > 1) {
-    const candidate = parseSizeToken(parts[parts.length - 1]);
-    if (candidate) {
-      size = candidate;
-      parts.pop();
-    }
-  }
-  const altParts = parts.slice(1).map((p) => p.trim()).filter(Boolean);
-  return { target, alt: altParts.length ? altParts.join("|") : target, size };
-}
-
-export function withSizeInEmbedInner(inner: string, size: ImageSize | null): string {
-  const { target, alt } = parseEmbedInner(inner);
-  const altPart = alt && alt !== target ? `|${alt}` : "";
-  const sizePart = size ? `|${formatSizeToken(size)}` : "";
-  return `${target}${altPart}${sizePart}`;
-}
-
 export function imageSizeAttrs(size: ImageSize | null): string {
   if (!size) return "";
   return ` width="${size.width}"${size.height ? ` height="${size.height}"` : ""}`;

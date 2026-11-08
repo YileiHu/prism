@@ -10,6 +10,9 @@ import { renderMarkdown, type AssetContext } from "./markdown";
 import { loadFolds, saveFold, FoldKeyCounter } from "./folds";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
 import { useSettings } from "../../lib/settings";
+import { mountEmbedCard } from "../embeds/embedMount";
+import { specFromData, type EmbedOpenTarget } from "../embeds/model";
+import type { EmbedLabels } from "../embeds/EmbedCard";
 
 // Icons per canonical callout family (see CALLOUT_FAMILIES in markdown.ts)
 const CALLOUT_ICONS: Record<string, typeof Info> = {
@@ -36,6 +39,8 @@ interface Props {
   onToggleTask: (taskIndex: number) => void;
   onOpenWikilink: (target: string) => void;
   onResolveRelativeLink: (href: string) => void;
+  onOpenEmbed: (target: EmbedOpenTarget) => void;
+  embedLabels: EmbedLabels;
   scrollRef?: RefObject<HTMLDivElement | null>;
   // Section index the mode-switch restore will scroll to (-1 = none). Used to
   // seed the outline highlight so it doesn't flash the first entry before the
@@ -68,10 +73,16 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, scrollRef, initialSection }: Props) {
+export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, onOpenEmbed, embedLabels, scrollRef, initialSection }: Props) {
   const { values } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
+  const openEmbedRef = useRef(onOpenEmbed);
+  openEmbedRef.current = onOpenEmbed;
   const { html, frontmatter, outline } = useMemo(() => renderMarkdown(content, assetContext), [content, assetContext]);
+  // React diffs dangerouslySetInnerHTML by object identity, so a fresh literal
+  // would rewrite the container on every unrelated re-render — detaching the
+  // embed roots mounted into its placeholders.
+  const htmlProps = useMemo(() => ({ dangerouslySetInnerHTML: { __html: html } }), [html]);
   const foldsRef = useRef<Set<string>>(new Set());
   // Per fold-body element: callback that expands it (owned by the fold effect
   // below). Outline jumps use these to reveal headings hidden inside
@@ -270,6 +281,35 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
     });
   }, [html]);
 
+  // canvas / note embeds render as placeholders; mount a card into each one.
+  // The React root is independent of the preview tree, so cards get their data
+  // from the loader and their navigation/copy from props refs.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root || !assetContext) return;
+    const hosts = root.querySelectorAll<HTMLElement>(".md-embed-pending[data-embed-kind]");
+    const cleanups: (() => void)[] = [];
+    for (const host of hosts) {
+      const spec = specFromData({
+        kind: host.dataset.embedKind,
+        target: host.dataset.embedTarget,
+        label: host.dataset.embedLabel,
+        size: host.dataset.embedSize,
+      });
+      if (!spec) continue;
+      cleanups.push(mountEmbedCard(host, {
+        spec,
+        ctx: assetContext,
+        editable: false,
+        labels: embedLabels,
+        onOpen: (target) => openEmbedRef.current(target),
+      }));
+    }
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, [html, assetContext, embedLabels]);
+
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
 
@@ -292,8 +332,8 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
     if (anchor) {
       e.preventDefault();
       const href = anchor.getAttribute("href") ?? "";
-      if (/^https?:\/\//i.test(href)) {
-        window.prism.openUrl(href);
+      if (/^(https?:|mailto:)/i.test(href)) {
+        onOpenEmbed({ kind: "link", url: href });
       } else if (/\.md$/i.test(href)) {
         onResolveRelativeLink(href);
       }
@@ -311,7 +351,7 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
           className="markdown-preview mx-auto px-8 pb-40 pt-4"
           style={{ maxWidth: "var(--content-width)" }}
           onClick={handleClick}
-          dangerouslySetInnerHTML={{ __html: html }}
+          {...htmlProps}
         />
       </div>
     </div>

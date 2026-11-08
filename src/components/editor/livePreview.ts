@@ -3,28 +3,28 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/v
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import { renderToString } from "katex";
-import { IMAGE_EXTS, prismFileUrl, type AssetContext } from "./markdown";
+import type { AssetContext } from "./assetUrl";
+import { withSizeInAlt } from "./imageSize";
+import { mountEmbedCard } from "../embeds/embedMount";
 import {
-  parseEmbedInner,
-  parseImageAlt,
-  withSizeInAlt,
-  withSizeInEmbedInner,
-  type ImageSize,
-} from "./imageSize";
+  parseEmbedSpec,
+  parseMarkdownImage,
+  serializeEmbedSpec,
+  type EmbedOpenTarget,
+  type EmbedSpec,
+} from "../embeds/model";
+import { DEFAULT_EMBED_LABELS, type EmbedLabels } from "../embeds/EmbedCard";
 
-export interface ImageToolbarLabels {
-  title: string;
-  original: string;
-  scale: string;
-}
+export type { EmbedLabels };
 
 export interface LivePreviewHooks {
   onOpenWikilink: (target: string) => void;
   onOpenLink: (url: string) => void;
+  onOpenEmbed: (target: EmbedOpenTarget) => void;
   // Resolves vault-relative image refs to prism-file:// URLs for the
-  // edit-mode image preview widgets
+  // edit-mode embed widgets
   assetCtx: AssetContext;
-  imageToolbarLabels?: () => ImageToolbarLabels;
+  embedLabels?: () => EmbedLabels;
 }
 
 // Nodes whose marker text hides while the selection is outside their parent
@@ -87,172 +87,98 @@ class BulletWidget extends WidgetType {
   }
 }
 
-// An image found in the raw source line. from/to span the editable part:
-// the alt text for ![alt](url), or the full inner "target|alt|size" for ![[...]]
-export interface PreviewImage {
-  src: string;
-  alt: string;
-  size: ImageSize | null;
-  kind: "md" | "embed";
+// An embed found in the raw source line. from/to span the editable part: the
+// alt text for ![alt](url), or the full "target|label|size" for ![[...]].
+interface PreviewEmbed {
+  spec: EmbedSpec;
+  syntax: "embed" | "md";
   from: number;
   to: number;
   raw: string;
 }
 
-const DEFAULT_IMAGE_LABELS: ImageToolbarLabels = {
-  title: "Image size",
-  original: "Original",
-  scale: "Scale",
-};
+function sameEmbed(a: PreviewEmbed, b: PreviewEmbed): boolean {
+  return a.syntax === b.syntax
+    && a.from === b.from
+    && a.to === b.to
+    && a.raw === b.raw
+    && a.spec.kind === b.spec.kind
+    && a.spec.target === b.spec.target
+    && (a.spec.label ?? "") === (b.spec.label ?? "")
+    && a.spec.size?.width === b.spec.size?.width
+    && a.spec.size?.height === b.spec.size?.height;
+}
 
-// Rewrite the markdown source for one image, preserving everything outside
-// the alt/inner span. Autosave picks the change up through the normal
-// doc-change listener.
-function applyPreviewSize(view: EditorView, image: PreviewImage, size: ImageSize | null): void {
-  if (image.from < 0 || image.to > view.state.doc.length) return;
-  if (view.state.sliceDoc(image.from, image.to) !== image.raw) return;
-  const insert = image.kind === "md"
-    ? withSizeInAlt(image.raw, size)
-    : withSizeInEmbedInner(image.raw, size);
-  if (insert === image.raw) return;
-  view.dispatch({ changes: { from: image.from, to: image.to, insert }, userEvent: "input" });
+// Rewrite the markdown source for one embed, preserving everything outside the
+// alt/inner span. Autosave picks the change up through the normal doc-change
+// listener.
+function commitEmbedChange(
+  view: EditorView,
+  embed: PreviewEmbed,
+  patch: { size?: EmbedSpec["size"]; label?: string },
+): void {
+  if (embed.from < 0 || embed.to > view.state.doc.length) return;
+  if (view.state.sliceDoc(embed.from, embed.to) !== embed.raw) return;
+  let insert: string;
+  if (embed.syntax === "embed") {
+    insert = serializeEmbedSpec({ ...embed.spec, ...patch });
+  } else {
+    const label = patch.label !== undefined ? patch.label : embed.spec.label ?? "";
+    const size = patch.size !== undefined ? patch.size : embed.spec.size;
+    insert = withSizeInAlt(label, size);
+  }
+  if (insert === embed.raw) return;
+  view.dispatch({ changes: { from: embed.from, to: embed.to, insert }, userEvent: "input" });
   view.focus();
 }
 
-function imagePreviewItem(image: PreviewImage, view: EditorView, labels: ImageToolbarLabels): HTMLElement {
-  const item = document.createElement("div");
-  item.className = "cm-md-image-item";
+// Card roots mount independent React trees; the widget owns their cleanup.
+const embedCleanups = new WeakMap<HTMLElement, (() => void)[]>();
 
-  const img = document.createElement("img");
-  img.src = image.src;
-  img.alt = image.alt;
-  img.draggable = false;
-  img.loading = "lazy";
-  if (image.size) {
-    img.width = image.size.width;
-    if (image.size.height) img.height = image.size.height;
-    // Any explicit size disables the max-height cap: otherwise a width-only
-    // size (width attr + auto height) would get clipped at 400px and the
-    // image would appear squashed/stretched
-    img.classList.add("cm-md-image-sized");
-  }
-  img.addEventListener("error", () => {
-    const missing = document.createElement("span");
-    missing.className = "cm-md-image-missing";
-    missing.textContent = image.alt || image.src;
-    img.replaceWith(missing);
-  });
-  item.appendChild(img);
-
-  const bar = document.createElement("div");
-  bar.className = "cm-md-image-toolbar";
-  bar.title = labels.title;
-
-  const addButton = (label: string, active: boolean, onClick: () => void) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = label;
-    if (active) button.classList.add("is-active");
-    button.addEventListener("click", onClick);
-    bar.appendChild(button);
-  };
-
-  // Width slider: 200–600px is the useful display range
-  const SIZE_MIN = 200;
-  const SIZE_MAX = 600;
-  const clampToRange = (width: number) =>
-    Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round(width)));
-
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = String(SIZE_MIN);
-  slider.max = String(SIZE_MAX);
-  slider.step = "10";
-  slider.value = String(image.size ? clampToRange(image.size.width) : SIZE_MAX);
-  slider.className = "cm-md-image-size-slider";
-  slider.title = labels.scale;
-  slider.setAttribute("aria-label", labels.scale);
-
-  const valueLabel = document.createElement("span");
-  valueLabel.className = "cm-md-image-size-value";
-  valueLabel.textContent = image.size ? `${image.size.width}px` : "";
-
-  const syncProgress = () => {
-    const progress = ((Number(slider.value) - SIZE_MIN) / (SIZE_MAX - SIZE_MIN)) * 100;
-    slider.style.setProperty("--slider-progress", `${progress}%`);
-  };
-  syncProgress();
-
-  // The natural width is only known after load — show it as the original
-  // value and position an unsized image at its real width (clamped to range)
-  img.addEventListener("load", () => {
-    if (!img.naturalWidth) return;
-    if (image.size) {
-      slider.value = String(clampToRange(image.size.width));
-      valueLabel.textContent = `${image.size.width}px`;
-    } else {
-      slider.value = String(clampToRange(img.naturalWidth));
-      valueLabel.textContent = `${img.naturalWidth}px`;
-    }
-    syncProgress();
-  });
-
-  // Drag updates only the local preview; the markdown change is committed on
-  // release so the widget isn't rebuilt mid-drag
-  slider.addEventListener("input", () => {
-    const width = Number(slider.value);
-    valueLabel.textContent = `${width}px`;
-    img.removeAttribute("height");
-    img.width = width;
-    img.classList.add("cm-md-image-sized");
-    syncProgress();
-  });
-  slider.addEventListener("change", () => {
-    applyPreviewSize(view, image, { width: Number(slider.value) });
-  });
-  slider.addEventListener("keydown", (event) => {
-    event.stopPropagation();
-    if (event.key === "Escape") slider.blur();
-  });
-
-  bar.appendChild(slider);
-  bar.appendChild(valueLabel);
-  addButton(labels.original, !image.size, () => applyPreviewSize(view, image, null));
-
-  // Keep clicks from moving the editor cursor, but let the input take focus
-  bar.addEventListener("mousedown", (event) => {
-    if ((event.target as HTMLElement).tagName !== "INPUT") event.preventDefault();
-  });
-  item.appendChild(bar);
-  return item;
-}
-
-// Non-editable image preview rendered as a block widget below the line that
-// holds the raw ![]()/![[ ]] syntax (edit mode keeps the link visible)
-class ImagePreviewWidget extends WidgetType {
-  constructor(readonly images: PreviewImage[], readonly labels: () => ImageToolbarLabels) { super(); }
+// Editable embed cards rendered as a block widget below the line that holds
+// the raw ![]()/![[ ]] syntax (the syntax itself stays visible and editable).
+class EmbedPreviewWidget extends WidgetType {
+  constructor(
+    readonly embeds: PreviewEmbed[],
+    readonly labels: () => EmbedLabels,
+    readonly assetCtx: AssetContext,
+    readonly onOpen: (target: EmbedOpenTarget) => void,
+  ) { super(); }
 
   override eq(other: this): boolean {
-    return other.images.length === this.images.length &&
-      other.images.every((im, i) => {
-        const cur = this.images[i];
-        return im.src === cur.src && im.alt === cur.alt && im.from === cur.from && im.to === cur.to &&
-          im.raw === cur.raw && im.size?.width === cur.size?.width && im.size?.height === cur.size?.height;
-      });
+    return other.embeds.length === this.embeds.length &&
+      other.embeds.every((embed, i) => sameEmbed(embed, this.embeds[i]));
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "cm-md-image-preview";
+    wrap.className = "cm-md-embed-preview";
     const labels = this.labels();
-    for (const image of this.images) wrap.appendChild(imagePreviewItem(image, view, labels));
+    const cleanups: (() => void)[] = [];
+    for (const embed of this.embeds) {
+      const host = document.createElement("div");
+      host.className = "cm-md-embed-host";
+      wrap.appendChild(host);
+      cleanups.push(mountEmbedCard(host, {
+        spec: embed.spec,
+        ctx: this.assetCtx,
+        editable: true,
+        labels,
+        onOpen: this.onOpen,
+        onSizeCommit: (size) => commitEmbedChange(view, embed, { size }),
+        onLabelCommit: (label) => commitEmbedChange(view, embed, { label }),
+      }));
+    }
+    embedCleanups.set(wrap, cleanups);
     return wrap;
   }
-}
 
-function imageSrc(ref: string, assetCtx: AssetContext): string {
-  if (/^(https?:|data:)/i.test(ref)) return ref;
-  return prismFileUrl(assetCtx.vaultPath, ref.replace(/^[\\/]+/, ""), assetCtx.noteDir);
+  override destroy(dom: HTMLElement): void {
+    const cleanups = embedCleanups.get(dom);
+    if (!cleanups) return;
+    embedCleanups.delete(dom);
+    for (const cleanup of cleanups) cleanup();
+  }
 }
 
 // ---- Helpers ----
@@ -315,8 +241,7 @@ function collectRegexDecorations(
   line: { from: number; text: string },
   ranges: Range<Decoration>[],
   builder: DecorationsBuilder,
-  assetCtx: AssetContext,
-  images: PreviewImage[],
+  embeds: PreviewEmbed[],
 ): void {
   // Per-match construct granularity: a construct stays raw only while the
   // selection overlaps its own range
@@ -331,32 +256,19 @@ function collectRegexDecorations(
     }
   };
 
-  // ![[embeds]] — image embeds stay raw and get a preview below the line;
-  // anything else (note transcludes) degrades to a plain wikilink
-  tryAdd(/!\[\[([^\[\]\n]+)\]\]/g, (m, from, to) => {
-    const { target, hiddenHead } = wikilinkParts(m[1]);
-    if (IMAGE_EXTS.test(target)) return;
-    const headTo = from + 3 + hiddenHead;
-    if (!builder.markReplace(ranges, from, headTo, { class: "cm-md-hidden" })) return;
-    builder.markReplace(ranges, to - 2, to, { class: "cm-md-hidden" });
-    ranges.push(Decoration.mark({ class: "cm-md-wikilink", attributes: { "data-wikilink": target } }).range(headTo, to - 2));
-  });
-
-  // Image embeds are collected WITHOUT the tryAdd selection check: the
-  // preview stays rendered even while the cursor sits on the link
+  // ![[embeds]] — collected WITHOUT the tryAdd selection check: the preview
+  // stays rendered even while the cursor sits on the syntax
   {
     const re = /!\[\[([^\[\]\n]+)\]\]/g;
     for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
       if (isInCode(state, line.from + m.index)) continue;
       const inner = m[1];
-      const parsed = parseEmbedInner(inner);
-      if (!IMAGE_EXTS.test(parsed.target)) continue;
+      const spec = parseEmbedSpec(inner);
+      if (!spec.target) continue;
       const from = line.from + m.index + 3;
-      images.push({
-        src: imageSrc(parsed.target, assetCtx),
-        alt: parsed.alt,
-        size: parsed.size,
-        kind: "embed",
+      embeds.push({
+        spec,
+        syntax: "embed",
         from,
         to: from + inner.length,
         raw: inner,
@@ -370,13 +282,10 @@ function collectRegexDecorations(
     for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
       if (isInCode(state, line.from + m.index)) continue;
       const rawAlt = m[1];
-      const parsed = parseImageAlt(rawAlt);
       const from = line.from + m.index + 2;
-      images.push({
-        src: imageSrc(m[2] ?? m[3], assetCtx),
-        alt: parsed.alt,
-        size: parsed.size,
-        kind: "md",
+      embeds.push({
+        spec: parseMarkdownImage(rawAlt, (m[2] ?? m[3]).replace(/^<|>$/g, "")),
+        syntax: "md",
         from,
         to: from + rawAlt.length,
         raw: rawAlt,
@@ -429,7 +338,7 @@ function collectRegexDecorations(
 // be specified via plugins" — so this lives in a StateField provided through
 // EditorView.decorations.from. Notes are small enough that whole-doc
 // decoration per transaction is fine, and it removes any viewport tracking.
-function buildDecorations(state: EditorState, assetCtx: AssetContext, labels: () => ImageToolbarLabels): DecorationSet {
+function buildDecorations(state: EditorState, hooks: LivePreviewHooks): DecorationSet {
   const activeLines = new Set<number>();
   for (const range of state.selection.ranges) {
     const from = state.doc.lineAt(range.from).number;
@@ -595,15 +504,16 @@ function buildDecorations(state: EditorState, assetCtx: AssetContext, labels: ()
     }
   }
 
-  // 4) Regex-driven decorations, line by line; lines that hold image syntax
-  // also get a non-editable preview widget directly below them
+  // 4) Regex-driven decorations, line by line; lines that hold embed syntax
+  // also get an embed card widget directly below them
+  const labels = hooks.embedLabels ?? (() => DEFAULT_EMBED_LABELS);
   for (let n = 1; n <= state.doc.lines; n++) {
     const line = state.doc.line(n);
-    const images: PreviewImage[] = [];
-    collectRegexDecorations(state, line, ranges, builder, assetCtx, images);
-    if (images.length > 0) {
+    const embeds: PreviewEmbed[] = [];
+    collectRegexDecorations(state, line, ranges, builder, embeds);
+    if (embeds.length > 0) {
       ranges.push(Decoration.widget({
-        widget: new ImagePreviewWidget(images, labels),
+        widget: new EmbedPreviewWidget(embeds, labels, hooks.assetCtx, hooks.onOpenEmbed),
         block: true,
         side: 1,
       }).range(line.to));
@@ -615,12 +525,11 @@ function buildDecorations(state: EditorState, assetCtx: AssetContext, labels: ()
 }
 
 export function livePreview(hooks: LivePreviewHooks) {
-  const labels = hooks.imageToolbarLabels ?? (() => DEFAULT_IMAGE_LABELS);
   const decorationsField = StateField.define<DecorationSet>({
-    create: (state) => buildDecorations(state, hooks.assetCtx, labels),
+    create: (state) => buildDecorations(state, hooks),
     update: (deco, tr) => {
       if (!tr.docChanged && !tr.selection) return deco;
-      return buildDecorations(tr.state, hooks.assetCtx, labels);
+      return buildDecorations(tr.state, hooks);
     },
     provide: (field) => EditorView.decorations.from(field),
   });

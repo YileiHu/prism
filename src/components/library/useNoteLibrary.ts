@@ -8,6 +8,10 @@ import type { NoteBrief } from "../../shared/models";
 
 const norm = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
+// Sentinel stored in the per-vault `last_coll_*` setting. The whiteboard view is
+// selectable exactly like a collection, so it shares the same memory slot.
+export const CANVAS_VIEW_ID = "__canvas__";
+
 export function useNoteLibrary(vaultPath: string) {
   const { values: settings } = useSettings();
   const [notes, setNotes] = useState<NoteBrief[]>([]);
@@ -230,6 +234,14 @@ export function useNoteLibrary(vaultPath: string) {
     if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
   }, [setSelectedCollectionId, vaultPath]);
 
+  // Whiteboards are a view, not a collection, but they occupy the same slot in
+  // the per-vault selection memory so switching vaults restores the last view.
+  const selectCanvasView = useCallback(() => {
+    setSelectedCollectionId(null);
+    setSearchQuery("");
+    if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, CANVAS_VIEW_ID);
+  }, [setSelectedCollectionId, vaultPath]);
+
   // Collection (root list or group) that contains an absolute note path
   const findCollectionForNote = useCallback((absPath: string): string | null => {
     const rel = toRelativePath(absPath, viewVaultPath).replace(/\\/g, "/").toLowerCase();
@@ -267,6 +279,7 @@ export function useNoteLibrary(vaultPath: string) {
     searchScope,
     changeSearchScope,
     selectCollection,
+    selectCanvasView,
     findCollectionForNote,
     favorites,
     toggleFavorite,

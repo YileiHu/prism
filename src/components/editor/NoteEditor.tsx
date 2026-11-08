@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
-import { ArrowLeft, BookOpen, Columns3, Pencil, Table, TextQuote, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Columns3, Pencil, Plus, Table, TextQuote, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
@@ -11,10 +11,14 @@ import { useTheme } from "../../theme/ThemeProvider";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { type MenuItem } from "../ContextMenu";
 import Button from "../Button";
+import Input from "../Input";
 import SegmentedToggle from "../SegmentedToggle";
 import Spinner from "../Spinner";
 import { buildExtensions, indentCompartment, schemeCompartment, wrapCompartment } from "./cmExtensions";
-import { type ImageToolbarLabels } from "./livePreview";
+import { type EmbedLabels } from "./livePreview";
+import type { EmbedOpenTarget } from "../embeds/model";
+import { imagePathFor } from "./imagePath";
+import InsertModal from "./InsertModal";
 import MarkdownPreview from "./MarkdownPreview";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
 import { toggleTaskInSource } from "./markdown";
@@ -22,32 +26,6 @@ import { resolveRelativeLink } from "./linkResolver";
 import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
 
 type EditorMode = "edit" | "read";
-
-// Path inserted for a pasted image, per the image_path_style setting:
-// "note" (default) = relative to the note's folder (../attachments/x.png),
-// "vault" = vault-root-relative, "name" = filename only
-async function markdownImagePath(ref: string, vaultPath: string, notePath: string): Promise<string> {
-  let style = "note";
-  try { style = (await window.prism.getSetting("image_path_style")) || "note"; } catch { /* default */ }
-  let target = ref;
-  if (style === "name") {
-    target = ref.split("/").pop() ?? ref;
-  } else if (style === "note") {
-    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-    const vaultN = norm(vaultPath);
-    let dir = norm(notePath);
-    dir = dir.slice(0, dir.lastIndexOf("/")); // note's folder
-    if (dir === vaultN) dir = "";
-    else if (dir.startsWith(vaultN + "/")) dir = dir.slice(vaultN.length + 1);
-    const from = dir ? dir.split("/") : [];
-    const toL = ref.toLowerCase().split("/");
-    let i = 0;
-    while (i < from.length && i < toL.length - 1 && from[i] === toL[i]) i++;
-    target = "../".repeat(from.length - i) + ref.split("/").slice(i).join("/");
-  }
-  // Angle brackets keep paths with spaces/parens valid markdown
-  return /[\s()]/.test(target) ? `<${target}>` : target;
-}
 
 interface Props {
   vaultPath: string;
@@ -60,7 +38,9 @@ interface Props {
   onBackToLibrary: () => void;
   onClose: () => void;
   onNoteGone: (path: string) => void;
+  onNoteRenamed: (newPath: string, newTitle: string) => void;
   onOpenWikilink: (target: string) => void;
+  onOpenEmbed: (target: EmbedOpenTarget) => void;
 }
 
 const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -205,7 +185,9 @@ export default function NoteEditor({
   onBackToLibrary,
   onClose,
   onNoteGone,
+  onNoteRenamed,
   onOpenWikilink,
+  onOpenEmbed,
 }: Props) {
   const { t } = useT();
   const showToast = useToast();
@@ -235,6 +217,21 @@ export default function NoteEditor({
     if (changes.length === 0) return;
     // Selection maps through the changes automatically
     view.dispatch({ changes, scrollIntoView: true, userEvent: "input" });
+    view.focus();
+  }, []);
+
+  // Insert an embed at the current selection. The edit view stays mounted while
+  // reading, so this works right after the mode switch.
+  const insertAtCursor = useCallback((text: string) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: { anchor: from + text.length },
+      scrollIntoView: true,
+      userEvent: "input",
+    });
     view.focus();
   }, []);
 
@@ -278,6 +275,7 @@ export default function NoteEditor({
     setMode(getSetting("default_view"));
   }, [notePath, settingsReady, getSetting]);
   const [ready, setReady] = useState(false);
+  const [insertOpen, setInsertOpen] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -295,23 +293,42 @@ export default function NoteEditor({
   const crlfRef = useRef(false);
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveNowRef = useRef<() => void>(() => {});
+  const saveNowRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const notePathRef = useRef(notePath);
   notePathRef.current = notePath;
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollAnchorRef = useRef<ScrollAnchor>({ section: -1, frac: 0, ratio: 0, token: null });
-  // Read at widget-render time so a language switch updates the toolbar
+  // Read at widget-render time so a language switch updates the toolbox
   // without rebuilding the editor view
-  const imageToolbarLabelsRef = useRef<ImageToolbarLabels>({
-    title: t["editor.imageSizeTitle"],
-    original: t["editor.imageSizeOriginal"],
-    scale: t["editor.imageSizeScale"],
+  const embedLabelsRef = useRef<EmbedLabels>({
+    open: t["embed.open"],
+    size: t["embed.size"],
+    label: t["embed.label"],
+    loading: t["embed.loading"],
+    missing: t["embed.missing"],
+    corrupt: t["embed.corrupt"],
+    emptyCanvas: t["embed.emptyCanvas"],
+    imageFailed: t["embed.imageFailed"],
+    pageCount: t["embed.pageCount"],
   });
-  imageToolbarLabelsRef.current = {
-    title: t["editor.imageSizeTitle"],
-    original: t["editor.imageSizeOriginal"],
-    scale: t["editor.imageSizeScale"],
+  embedLabelsRef.current = {
+    open: t["embed.open"],
+    size: t["embed.size"],
+    label: t["embed.label"],
+    loading: t["embed.loading"],
+    missing: t["embed.missing"],
+    corrupt: t["embed.corrupt"],
+    emptyCanvas: t["embed.emptyCanvas"],
+    imageFailed: t["embed.imageFailed"],
+    pageCount: t["embed.pageCount"],
   };
+  const embedLabels = useMemo<EmbedLabels>(() => embedLabelsRef.current, [t]);
+  const assetContext = useMemo(
+    () => ({ vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") }),
+    [vaultPath, notePath],
+  );
+  const onOpenEmbedRef = useRef(onOpenEmbed);
+  onOpenEmbedRef.current = onOpenEmbed;
 
   // Capture where the viewport is. Pixel offsets don't survive the mode swap
   // (rendered and source layouts have different heights), so the anchor is a
@@ -387,13 +404,13 @@ export default function NoteEditor({
     }
   }, []);
 
-  const doSave = useCallback(() => {
+  const doSave = useCallback((): Promise<void> => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
     const view = viewRef.current;
-    if (!view || !dirtyRef.current) return;
+    if (!view || !dirtyRef.current) return Promise.resolve();
     const savedPath = notePathRef.current;
     let content = view.state.doc.toString();
     if (crlfRef.current) content = content.replace(/\n/g, "\r\n");
@@ -401,7 +418,7 @@ export default function NoteEditor({
     // a fresh save instead of being silently swallowed
     dirtyRef.current = false;
     setDirty(false);
-    void window.prism.saveNote(savedPath, content)
+    return window.prism.saveNote(savedPath, content)
       .then(() => setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })))
       .catch(() => {
         showToast(t["editor.noteDeleted"], "error");
@@ -457,14 +474,16 @@ export default function NoteEditor({
               onSave: () => saveNowRef.current(),
               onOpenWikilink,
               onOpenLink: (url) => void window.prism.openUrl(url),
-              assetCtx: { vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") },
-              imageToolbarLabels: () => imageToolbarLabelsRef.current,
+              onOpenEmbed: (target) => onOpenEmbedRef.current(target),
+              assetCtx: assetContext,
+              embedLabels: () => embedLabelsRef.current,
               onPasteImage: async (file) => {
                 try {
                   const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
                   const buf = await file.arrayBuffer();
                   const ref = await window.prism.saveAttachment(vaultPath, ext, buf);
-                  return `![](${await markdownImagePath(ref, vaultPath, notePath)})`;
+                  const target = await imagePathFor(ref, vaultPath, notePath);
+                  return `![[${target}]]`;
                 } catch {
                   showToast(t["editor.pasteImageFailed"], "error");
                   return null;
@@ -517,7 +536,7 @@ export default function NoteEditor({
     return () => {
       cancelled = true;
       // Flush pending edits while the view is still alive
-      saveNowRef.current();
+      void saveNowRef.current();
       viewRef.current?.destroy();
       viewRef.current = null;
       if (saveTimerRef.current) {
@@ -776,6 +795,51 @@ export default function NoteEditor({
     if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
   }, []);
 
+  // ---- Inline rename from the toolbar title ----
+
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const renamingRef = useRef(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  const startRename = useCallback(() => {
+    if (renamingRef.current) return;
+    setDraftTitle(title);
+    renamingRef.current = true;
+    setRenaming(true);
+  }, [title]);
+
+  const finishRename = useCallback((save: boolean) => {
+    if (!renamingRef.current) return;
+    renamingRef.current = false;
+    setRenaming(false);
+    const nextTitle = draftTitle.trim();
+    if (!save || !nextTitle || nextTitle === title) return;
+    void (async () => {
+      // Flush pending edits before the file moves, so the dirty content lands
+      // on the old path and the remount at the new path reads it back intact
+      await saveNowRef.current();
+      try {
+        const result = await window.prism.renameNote(vaultPath, notePath, nextTitle);
+        onNoteRenamed(result.path, result.title);
+        showToast(t["vault.renamed"].replace("{name}", result.title));
+      } catch {
+        showToast(t["vault.renameFailed"], "error");
+      }
+    })();
+  }, [draftTitle, notePath, onNoteRenamed, showToast, t, title, vaultPath]);
+
+  useEffect(() => {
+    if (!renaming) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renaming]);
+
+  const openInsert = useCallback(() => {
+    if (mode === "read") switchMode("edit");
+    setInsertOpen(true);
+  }, [mode, switchMode]);
+
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <>
@@ -787,9 +851,36 @@ export default function NoteEditor({
         >
           <ArrowLeft size={15} />
         </Button>
-        <span className="min-w-0 text-body font-medium text-primary truncate" title={notePath}>
-          {title}
-        </span>
+        {renaming ? (
+          <Input
+            ref={renameInputRef}
+            value={draftTitle}
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onBlur={() => finishRename(true)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                finishRename(true);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                finishRename(false);
+              }
+            }}
+            aria-label={t["menu.rename"]}
+            spellCheck={false}
+            className="min-w-0 w-64 max-w-[50vw] font-medium"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={startRename}
+            title={`${t["menu.rename"]}\n${notePath}`}
+            className="min-w-0 max-w-full truncate text-left text-body font-medium text-primary rounded-chip px-1 -mx-1 cursor-text hover:bg-hover"
+          >
+            {title}
+          </button>
+        )}
         {dirty ? (
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" title={t["editor.unsaved"]} />
         ) : savedAt ? (
@@ -811,6 +902,9 @@ export default function NoteEditor({
     ),
     actions: (
       <>
+        <Button variant="ghost" size="icon-sm" onClick={openInsert} title={t["insert.title"]}>
+          <Plus size={15} />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -826,8 +920,8 @@ export default function NoteEditor({
       </>
     ),
   }), [
-    dirty, mode, notePath, onBackToLibrary, onClose, onToggleSplit, savedAt, splitOpen,
-    switchMode, t, title,
+    dirty, draftTitle, finishRename, mode, notePath, onBackToLibrary, onClose, onToggleSplit,
+    openInsert, renaming, savedAt, splitOpen, startRename, switchMode, t, title,
   ]);
 
   useToolbarContribution(toolbarScope, toolbar);
@@ -858,16 +952,26 @@ export default function NoteEditor({
         {mode === "read" && ready && (
           <MarkdownPreview
             content={docText}
-            assetContext={{ vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") }}
+            assetContext={assetContext}
             foldScope={notePath}
             scrollRef={previewScrollRef}
             initialSection={scrollAnchorRef.current.section}
             onToggleTask={handleToggleTask}
             onOpenWikilink={onOpenWikilink}
             onResolveRelativeLink={(href) => onOpenWikilink(resolveRelativeLink(href, notePath))}
+            onOpenEmbed={onOpenEmbed}
+            embedLabels={embedLabels}
           />
         )}
       </div>
+      {insertOpen && (
+        <InsertModal
+          vaultPath={vaultPath}
+          notePath={notePath}
+          onInsert={insertAtCursor}
+          onClose={() => setInsertOpen(false)}
+        />
+      )}
     </div>
   );
 }

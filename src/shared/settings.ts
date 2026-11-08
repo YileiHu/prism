@@ -3,8 +3,48 @@
 // validation and string codecs so both sides agree on the shape.
 
 import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutMap } from "./shortcuts";
+import {
+  DEFAULT_FONT_SIZE,
+  MAX_FONT_SIZE,
+  MAX_NODE_HEIGHT,
+  MAX_NODE_WIDTH,
+  MIN_FONT_SIZE,
+  MIN_NODE_HEIGHT,
+  MIN_NODE_WIDTH,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  TEXT_ALIGNS,
+  TEXT_VALIGNS,
+  type CanvasTextAlign,
+  type CanvasVerticalAlign,
+} from "../lib/canvas/model";
 
 export type ColorMode = "dark" | "light" | "system";
+
+export type CanvasMinimapPosition =
+  | "off"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+export type CanvasBackground = "dots" | "lines" | "cross" | "none";
+
+// Card style presets dragged from the canvas slot bar. Only style and size are
+// kept — text, notes and targets belong to the card instance.
+export interface CanvasPreset {
+  id: string;
+  name: string;
+  color: string;
+  fontSize: number;
+  bold: boolean;
+  align: CanvasTextAlign;
+  valign: CanvasVerticalAlign;
+  width: number;
+  height: number;
+}
+
+export const MAX_CANVAS_PRESETS = 8;
 
 export interface AppSettings {
   color_mode: ColorMode;
@@ -12,6 +52,7 @@ export interface AppSettings {
   home_recents_count: number;
   restore_note_tabs: boolean;
   attachments_dir: string;
+  canvas_dir: string;
   autosave_delay: number;
   default_view: "read" | "edit";
   indent_width: number;
@@ -25,6 +66,11 @@ export interface AppSettings {
   pdf_default_sort: "title" | "added" | "modified" | "pages";
   pdf_default_zoom: number;
   shortcuts: ShortcutMap;
+  canvas_presets: CanvasPreset[];
+  canvas_minimap_position: CanvasMinimapPosition;
+  canvas_background: CanvasBackground;
+  canvas_grid_size: number;
+  canvas_snap_to_grid: boolean;
   // Note heading / bold colors, configured independently per color mode
   md_h1_dark: string;
   md_h2_dark: string;
@@ -48,6 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   home_recents_count: 10,
   restore_note_tabs: true,
   attachments_dir: "attachments",
+  canvas_dir: "canvases",
   autosave_delay: 1000,
   default_view: "read",
   indent_width: 4,
@@ -61,6 +108,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pdf_default_sort: "title",
   pdf_default_zoom: 50,
   shortcuts: { ...DEFAULT_SHORTCUTS },
+  canvas_presets: [],
+  canvas_minimap_position: "bottom-right",
+  canvas_background: "dots",
+  canvas_grid_size: 22,
+  canvas_snap_to_grid: false,
   md_h1_dark: "#e58080",
   md_h2_dark: "#7fc87f",
   md_h3_dark: "#85b6ee",
@@ -101,6 +153,7 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   home_recents_count: { kind: "number", range: { min: 5, max: 30, step: 1 } },
   restore_note_tabs: { kind: "boolean" },
   attachments_dir: { kind: "string" },
+  canvas_dir: { kind: "string" },
   autosave_delay: { kind: "number", range: { min: 300, max: 3000, step: 100 } },
   default_view: { kind: "enum", options: ["read", "edit"] },
   indent_width: { kind: "number", range: { min: 2, max: 8, step: 2 } },
@@ -114,6 +167,14 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   pdf_default_sort: { kind: "enum", options: ["title", "added", "modified", "pages"] },
   pdf_default_zoom: { kind: "number", range: { min: 10, max: 200, step: 10 } },
   shortcuts: { kind: "json" },
+  canvas_presets: { kind: "json" },
+  canvas_minimap_position: {
+    kind: "enum",
+    options: ["off", "top-left", "top-right", "bottom-left", "bottom-right"],
+  },
+  canvas_background: { kind: "enum", options: ["dots", "lines", "cross", "none"] },
+  canvas_grid_size: { kind: "number", range: { min: 10, max: 60, step: 2 } },
+  canvas_snap_to_grid: { kind: "boolean" },
   md_h1_dark: { kind: "color" },
   md_h2_dark: { kind: "color" },
   md_h3_dark: { kind: "color" },
@@ -139,6 +200,43 @@ function clampNumber(key: SettingKey, value: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function clampPresetNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export function normalizeCanvasPresets(value: unknown): CanvasPreset[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const presets: CanvasPreset[] = [];
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    let id = typeof raw.id === "string" && raw.id ? raw.id : `p_${index}`;
+    while (seen.has(id)) id = `${id}_`;
+    seen.add(id);
+    presets.push({
+      id,
+      name: typeof raw.name === "string" ? raw.name.trim().slice(0, 32) : "",
+      color: typeof raw.color === "string" ? raw.color : "",
+      fontSize: clampPresetNumber(raw.fontSize, DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE),
+      bold: Boolean(raw.bold),
+      align: TEXT_ALIGNS.includes(raw.align as CanvasTextAlign) ? raw.align as CanvasTextAlign : "left",
+      valign: TEXT_VALIGNS.includes(raw.valign as CanvasVerticalAlign) ? raw.valign as CanvasVerticalAlign : "top",
+      width: clampPresetNumber(raw.width, NODE_WIDTH, MIN_NODE_WIDTH, MAX_NODE_WIDTH),
+      height: clampPresetNumber(raw.height, NODE_HEIGHT, MIN_NODE_HEIGHT, MAX_NODE_HEIGHT),
+    });
+    if (presets.length >= MAX_CANVAS_PRESETS) break;
+  }
+  return presets;
+}
+
+const JSON_NORMALIZERS: Partial<Record<SettingKey, (value: unknown) => unknown>> = {
+  shortcuts: normalizeShortcuts,
+  canvas_presets: normalizeCanvasPresets,
+};
+
 // Parse a stored string into a valid value, falling back to the default.
 export function decodeSetting<K extends SettingKey>(key: K, raw: string | null): AppSettings[K] {
   const fallback = DEFAULT_SETTINGS[key];
@@ -157,7 +255,7 @@ export function decodeSetting<K extends SettingKey>(key: K, raw: string | null):
       return (isHexColor(raw) ? raw : fallback) as AppSettings[K];
     case "json": {
       try {
-        return normalizeShortcuts(JSON.parse(raw)) as AppSettings[K];
+        return (JSON_NORMALIZERS[key] ?? ((value: unknown) => value))(JSON.parse(raw)) as AppSettings[K];
       } catch {
         return fallback;
       }
@@ -182,7 +280,7 @@ export function normalizeSetting<K extends SettingKey>(key: K, value: unknown): 
       return (isHexColor(color) ? color : DEFAULT_SETTINGS[key]) as AppSettings[K];
     }
     case "json":
-      return normalizeShortcuts(value) as AppSettings[K];
+      return (JSON_NORMALIZERS[key] ?? ((input: unknown) => input))(value) as AppSettings[K];
     default:
       return String(value ?? "") as AppSettings[K];
   }

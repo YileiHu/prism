@@ -4,6 +4,7 @@ import {
   Columns3,
   Copy,
   FileText,
+  Frame,
   Globe,
   House,
   Library,
@@ -120,7 +121,7 @@ export default function App() {
         void window.prism.setVaultPath(added.path).catch(() => {});
       }
       setVaults(parsed);
-      const notePath = state.library.kind === "note" ? state.library.vaultPath : "";
+      const notePath = state.library.kind === "pdf" ? "" : state.library.vaultPath;
       if (notePath && !parsed.some((vault) => normalizePath(vault.path) === normalizePath(notePath))) {
         if (parsed.length > 0) workspace.setLibrary({ kind: "note", vaultPath: parsed[0].path });
         else if (pdf.repoPath) workspace.setLibrary({ kind: "pdf", repoPath: pdf.repoPath });
@@ -204,7 +205,11 @@ export default function App() {
   const tabItems = state.tabs.map((tab) => ({
     id: tab.id,
     title: tab.title,
-    icon: tab.kind === "note" ? <FileText size={12} /> : <BookOpen size={12} />,
+    icon: tab.kind === "note"
+      ? <FileText size={12} />
+      : tab.kind === "canvas"
+        ? <Frame size={12} />
+        : <BookOpen size={12} />,
   }));
 
   const handleTabContextMenu = (id: string, event: React.MouseEvent) => {

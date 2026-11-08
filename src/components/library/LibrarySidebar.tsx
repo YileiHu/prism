@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Layers, Palette, Pencil, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Layers, Frame, Palette, Pencil, Trash2 } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -21,7 +21,8 @@ import { normalizePath } from "../../lib/workspace/types";
 import type { PdfCollectionData } from "../pdf/types";
 import type { usePdfCollections } from "../pdf/usePdfCollections";
 import type { CollectionData } from "../collectionTypes";
-import type { NoteLibrary } from "./useNoteLibrary";
+import { useLibraryData } from "./LibraryDataProvider";
+import { CANVAS_VIEW_ID, type NoteLibrary } from "./useNoteLibrary";
 
 const SECTION_KEY = "prism_library_sections";
 
@@ -274,6 +275,7 @@ export default function LibrarySidebar({
   const [collectionsOpen, setCollectionsOpen] = useState(() => readSection("collections"));
   const [iconTarget, setIconTarget] = useState<VaultEntry | null>(null);
   const pdfMode = library.kind === "pdf";
+  const { canvas } = useLibraryData();
 
   const applyVaultIcon = async (vaultPath: string, icon: string) => {
     const updated = vaults.map((vault) =>
@@ -321,9 +323,18 @@ export default function LibrarySidebar({
               key={vault.path}
               icon={<VaultIcon name={vault.icon} size={14} />}
               label={vault.name}
-              active={library.kind === "note" && normalizePath(library.vaultPath) === normalizePath(vault.path)}
-              onClick={() => {
-                onSelectLibrary({ kind: "note", vaultPath: vault.path });
+              active={(library.kind === "note" || library.kind === "canvas")
+                && normalizePath(library.vaultPath) === normalizePath(vault.path)}
+              onClick={async () => {
+                // Restore the vault's last view: whiteboards or a collection.
+                let kind: "note" | "canvas" = "note";
+                try {
+                  const lastView = await window.prism.getSetting(`last_coll_${vault.path}`);
+                  if (lastView === CANVAS_VIEW_ID) kind = "canvas";
+                } catch {
+                  // Default to the note view.
+                }
+                onSelectLibrary({ kind, vaultPath: vault.path });
                 onOpenCollections?.();
               }}
               onContextMenu={(event) => onContextMenu(event, [
@@ -354,18 +365,36 @@ export default function LibrarySidebar({
           key={pdfMode
             ? `pdf:${library.kind === "pdf" ? library.repoPath : ""}`
             : `note:${note.shownVaultPath || note.vaultPath}`}
-          className="flex-1 min-h-0 overflow-y-auto pr-0.5 anim-fade-in"
+          className="flex-shrink min-h-0 overflow-y-auto pr-0.5 anim-fade-in"
         >
           {!pdfMode && (
             <>
               <NavItem
-                onClick={() => { note.selectCollection(null); onOpenCollections?.(); }}
-                active={note.selectedCollectionId === null}
+                onClick={() => {
+                  onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
+                  note.selectCollection(null);
+                  onOpenCollections?.();
+                }}
+                active={library.kind === "note" && note.selectedCollectionId === null}
                 className="mb-1 font-medium"
                 leading={<Layers size={14} />}
                 label={t["collections.allNotes"]}
                 trailing={note.sortedNotes.length}
               />
+              {note.vaultPath && (
+                <NavItem
+                  onClick={() => {
+                    note.selectCanvasView();
+                    onSelectLibrary({ kind: "canvas", vaultPath: note.vaultPath });
+                    onOpenCollections?.();
+                  }}
+                  active={library.kind === "canvas"}
+                  className="mb-1 font-medium"
+                  leading={<Frame size={14} />}
+                  label={t["canvas.section"]}
+                  trailing={canvas.files.length}
+                />
+              )}
               {note.collections.length === 0 ? (
                 <EmptyState size="card" text={t["collections.emptyHint"]} />
               ) : (
@@ -375,9 +404,10 @@ export default function LibrarySidebar({
                       <NoteCollectionRow
                         key={collection.id}
                         collection={collection}
-                        selected={note.selectedCollectionId === collection.id}
+                        selected={library.kind === "note" && note.selectedCollectionId === collection.id}
                         index={index}
                         onSelect={() => {
+                          onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
                           note.selectCollection(collection.id);
                           note.setSearchQuery("");
                           onOpenCollections?.();
