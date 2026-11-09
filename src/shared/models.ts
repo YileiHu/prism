@@ -106,6 +106,45 @@ export type CanvasSaveResult =
   | { modifiedAt: number }
   | { conflict: true; modifiedAt: number };
 
+export interface NoteGroupData {
+  id: string;
+  name: string;
+  notePaths: string[];
+  color?: string;
+}
+
+export interface NoteCollectionData {
+  id: string;
+  name: string;
+  notePaths: string[];
+  groups?: NoteGroupData[];
+  color?: string;
+}
+
+export interface NoteCollectionsFile {
+  version?: number;
+  collections: NoteCollectionData[];
+}
+
+/** One IPC round-trip for the startup path: notes, collections, canvases. */
+export interface VaultLibrarySummary {
+  notes: NoteBrief[];
+  collections: NoteCollectionsFile | null;
+  canvases: CanvasFile[];
+}
+
+/** Incremental note-list patch pushed by the vault watcher scan. */
+export interface NoteListChanges {
+  upserted: NoteBrief[];
+  deleted: string[];
+}
+
+/** Incremental PDF-list patch pushed by the repo watcher scan. */
+export interface PdfListChanges {
+  upserted: PdfDocument[];
+  deleted: string[];
+}
+
 export interface CanvasGroup {
   id: string;
   name: string;
@@ -117,4 +156,21 @@ export interface CanvasGroupsFile {
   version: number;
   groups: CanvasGroup[];
   paths: string[];
+}
+
+export interface VaultPrivacyStatus {
+  path: string;
+  private: boolean;
+  locked: boolean;
+}
+
+export interface VaultMigrationProgress {
+  vaultPath: string;
+  done: number;
+  total: number;
+}
+
+export interface VaultMigrationResult {
+  vaultPath: string;
+  files: number;
 }

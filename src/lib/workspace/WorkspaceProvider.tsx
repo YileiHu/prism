@@ -159,29 +159,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ]);
       const restore = rawRestore === null ? true : rawRestore !== "false" && rawRestore !== "0";
 
+      // Private vaults start locked: never scan them or restore tabs whose
+      // titles (and files) they contain. Persisted title text is dropped by the
+      // next workspace save.
+      const statuses = await window.prism.getVaultPrivacyStatuses().catch(() => []);
+      const privateKeys = new Set(
+        statuses.filter((status) => status.private).map((status) => normalizePath(status.path)),
+      );
+
       const noteMaps = new Map<string, Map<string, string>>();
       const canvasMaps = new Map<string, Map<string, string>>();
-      for (const vault of vaults) {
+      await Promise.all(vaults.map(async (vault) => {
+        const key = normalizePath(vault.path);
+        if (privateKeys.has(key)) {
+          noteMaps.set(key, new Map());
+          canvasMaps.set(key, new Map());
+          return;
+        }
         try {
-          await window.prism.setVaultPath(vault.path);
-          const notes = await window.prism.getNoteList(vault.path);
+          const summary = await window.prism.getVaultLibrarySummary(vault.path);
           noteMaps.set(
-            normalizePath(vault.path),
-            new Map((notes as { path: string; title: string }[]).map((note) => [normalizePath(note.path), note.title])),
+            key,
+            new Map(summary.notes.map((note) => [normalizePath(note.path), note.title])),
           );
-        } catch {
-          noteMaps.set(normalizePath(vault.path), new Map());
-        }
-        try {
-          const canvases = await window.prism.listCanvases(vault.path);
           canvasMaps.set(
-            normalizePath(vault.path),
-            new Map(canvases.map((canvas) => [normalizePath(canvas.path), canvas.title])),
+            key,
+            new Map(summary.canvases.map((canvas) => [normalizePath(canvas.path), canvas.title])),
           );
         } catch {
-          canvasMaps.set(normalizePath(vault.path), new Map());
+          noteMaps.set(key, new Map());
+          canvasMaps.set(key, new Map());
         }
-      }
+      }));
 
       let pdfRepoPath = "";
       let pdfTitles = new Map<string, string>();

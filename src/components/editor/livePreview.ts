@@ -1,4 +1,4 @@
-import { EditorState, Range, StateField } from "@codemirror/state";
+import { EditorState, Range, StateField, type Transaction } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
@@ -208,6 +208,248 @@ function isInCode(state: EditorState, pos: number): boolean {
   return false;
 }
 
+// ---- Incremental rebuild windowing ----
+
+interface BuildWindow {
+  fromLine: number;
+  toLine: number;
+}
+
+interface MathBlock {
+  fromLine: number;
+  toLine: number;
+}
+
+// Inline constructs reveal/hide as a whole when the selection enters them.
+// Expanding a partial rebuild to cover these keeps it equivalent to a full one.
+const EXPAND_INLINE_NODES = new Set([
+  "Emphasis", "StrongEmphasis", "Strikethrough", "InlineCode", "Link", "Image",
+  "ATXHeading1", "ATXHeading2", "ATXHeading3", "ATXHeading4", "ATXHeading5", "ATXHeading6",
+  "SetextHeading1", "SetextHeading2",
+]);
+
+// Nearest enclosing block that can gain or lose decorations when its
+// delimiter changes (paragraph reflow, table rows, heading markers).
+const BLOCK_BOUNDARY_NODES = new Set([
+  "Paragraph", "ListItem", "Table", "TableRow", "TableHeader", "TableCell",
+  "ATXHeading1", "ATXHeading2", "ATXHeading3", "ATXHeading4", "ATXHeading5", "ATXHeading6",
+  "SetextHeading1", "SetextHeading2",
+]);
+
+// Edits inside code never change surrounding decorations; keep them local.
+const CODE_BLOCK_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock"]);
+
+function findMathBlocks(state: EditorState): MathBlock[] {
+  const blocks: MathBlock[] = [];
+  let open = -1;
+  let lineNo = 1;
+  for (const text of state.doc.iterLines()) {
+    if (text.trim() === "$$") {
+      // A "$$" inside fenced/indented code is not a delimiter, but once a
+      // block is open the first closing "$$" wins (mirrors the old scan).
+      if (open >= 0) {
+        blocks.push({ fromLine: open, toLine: lineNo });
+        open = -1;
+      } else if (!isInCode(state, state.doc.line(lineNo).from)) {
+        open = lineNo;
+      }
+    }
+    lineNo += 1;
+  }
+  return blocks;
+}
+
+function findFrontmatter(state: EditorState): BuildWindow | null {
+  if (state.doc.line(1).text.trim() !== "---") return null;
+  for (let n = 2; n <= state.doc.lines; n++) {
+    if (state.doc.line(n).text.trim() === "---") return { fromLine: 1, toLine: n };
+  }
+  return null;
+}
+
+function lineWindowForRange(state: EditorState, from: number, to: number): BuildWindow {
+  const length = state.doc.length;
+  const start = Math.max(0, Math.min(from, length));
+  const end = Math.max(start, Math.min(to, length));
+  return {
+    fromLine: state.doc.lineAt(start).number,
+    toLine: state.doc.lineAt(end > start ? end - 1 : end).number,
+  };
+}
+
+function expandInlineAt(
+  state: EditorState,
+  pos: number,
+  include: (from: number, to: number) => void,
+): void {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(Math.min(pos, state.doc.length), 1);
+  while (node) {
+    if (EXPAND_INLINE_NODES.has(node.name)) include(node.from, node.to);
+    if (node.name === "Document") break;
+    node = node.parent;
+  }
+}
+
+function expandBlockAt(
+  state: EditorState,
+  pos: number,
+  include: (from: number, to: number) => void,
+): void {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(Math.min(pos, state.doc.length), 1);
+  while (node) {
+    if (CODE_BLOCK_NODES.has(node.name)) return;
+    if (BLOCK_BOUNDARY_NODES.has(node.name)) {
+      include(node.from, node.to);
+      return;
+    }
+    if (node.name === "Document") return;
+    node = node.parent;
+  }
+}
+
+// A full rebuild is required when an edit can change decorations far beyond
+// its own range: fenced code may swallow or release the rest of the document,
+// frontmatter/$$ blocks re-pair, or the edit is simply too large to window.
+function needsFullRebuild(startState: EditorState, tr: Transaction): boolean {
+  if (Math.abs(tr.newDoc.length - startState.doc.length) > 2000) return true;
+  let structural = false;
+  let edits = 0;
+  tr.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+    edits += 1;
+    if (edits > 50) {
+      structural = true;
+      return;
+    }
+    const oldWindow = lineWindowForRange(startState, fromA, toA);
+    const newWindow = lineWindowForRange(tr.state, fromB, toB);
+    const isStructural = (text: string): boolean => {
+      const trimmed = text.trim();
+      return trimmed.startsWith("```") || trimmed.startsWith("~~~")
+        || trimmed === "$$" || trimmed === "---";
+    };
+    if (
+      isStructural(startState.doc.line(oldWindow.fromLine).text)
+      || isStructural(startState.doc.line(oldWindow.toLine).text)
+      || isStructural(tr.state.doc.line(newWindow.fromLine).text)
+      || isStructural(tr.state.doc.line(newWindow.toLine).text)
+    ) {
+      structural = true;
+    }
+  });
+  return structural;
+}
+
+function computeWindow(
+  state: EditorState,
+  tr: Transaction,
+  mapped: DecorationSet,
+): BuildWindow | null {
+  const mathBlocks = findMathBlocks(state);
+  const frontmatter = findFrontmatter(state);
+
+  let fromLine = Number.POSITIVE_INFINITY;
+  let toLine = Number.NEGATIVE_INFINITY;
+  const grow = (from: number, to: number) => {
+    if (from < fromLine) fromLine = from;
+    if (to > toLine) toLine = to;
+  };
+  const include = (from: number, to: number) => {
+    const window = lineWindowForRange(state, from, to);
+    grow(window.fromLine, window.toLine);
+  };
+
+  const selectionPositions: number[] = [];
+  for (const range of tr.newSelection.ranges) {
+    const window = lineWindowForRange(state, range.from, range.to);
+    grow(window.fromLine, window.toLine);
+    selectionPositions.push(range.from, range.to);
+  }
+  // On a pure selection change the document is unchanged, so old cursor
+  // positions still identify constructs that must hide again.
+  if (!tr.docChanged) {
+    for (const range of tr.startState.selection.ranges) {
+      const window = lineWindowForRange(state, range.from, range.to);
+      grow(window.fromLine, window.toLine);
+      selectionPositions.push(range.from, range.to);
+    }
+  }
+
+  const changedPositions: number[] = [];
+  if (tr.docChanged) {
+    tr.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+      const window = lineWindowForRange(state, fromB, toB);
+      grow(window.fromLine, window.toLine);
+      changedPositions.push(fromB, toB);
+    });
+  }
+
+  if (fromLine === Number.POSITIVE_INFINITY) return null;
+
+  for (let pass = 0; pass < 6; pass++) {
+    const previousFrom = fromLine;
+    const previousTo = toLine;
+
+    for (const pos of selectionPositions) expandInlineAt(state, pos, include);
+    for (const pos of changedPositions) expandBlockAt(state, pos, include);
+
+    for (const block of mathBlocks) {
+      if (block.fromLine <= toLine && block.toLine >= fromLine) {
+        grow(block.fromLine, block.toLine);
+      }
+    }
+    if (frontmatter && frontmatter.fromLine <= toLine && frontmatter.toLine >= fromLine) {
+      grow(frontmatter.fromLine, frontmatter.toLine);
+    }
+
+    const fromPos = state.doc.line(fromLine).from;
+    const toPos = state.doc.line(toLine).to;
+    expandInlineAt(state, fromPos, include);
+    expandInlineAt(state, toPos, include);
+    mapped.between(fromPos, toPos, (from, to) => include(from, to));
+
+    if (fromLine === previousFrom && toLine === previousTo) break;
+  }
+
+  return {
+    fromLine: Math.max(1, Math.min(fromLine, state.doc.lines)),
+    toLine: Math.max(1, Math.min(toLine, state.doc.lines)),
+  };
+}
+
+function forEachDecoration(
+  set: DecorationSet,
+  visit: (from: number, to: number, value: Decoration) => void,
+): void {
+  for (let iter = set.iter(); iter.value; iter.next()) {
+    visit(iter.from, iter.to, iter.value);
+  }
+}
+
+function mergeDecorations(
+  previous: DecorationSet,
+  next: DecorationSet,
+  state: EditorState,
+  window: BuildWindow,
+): DecorationSet {
+  const from = state.doc.line(window.fromLine).from;
+  const to = state.doc.line(window.toLine).to;
+  const ranges: Range<Decoration>[] = [];
+  if (from > 0) {
+    previous.between(0, from, (rangeFrom, rangeTo, value) => {
+      if (rangeTo < from) ranges.push(value.range(rangeFrom, rangeTo));
+    });
+  }
+  if (to < state.doc.length) {
+    previous.between(to, state.doc.length, (rangeFrom, rangeTo, value) => {
+      if (rangeFrom > to) ranges.push(value.range(rangeFrom, rangeTo));
+    });
+  }
+  forEachDecoration(next, (rangeFrom, rangeTo, value) => {
+    ranges.push(value.range(rangeFrom, rangeTo));
+  });
+  return Decoration.set(ranges, true);
+}
+
 // Replaces must not overlap each other — first come wins
 class DecorationsBuilder {
   private replaceRanges: Array<[number, number]> = [];
@@ -333,12 +575,22 @@ function collectRegexDecorations(
 
 // ---- Decoration computation ----
 
-// Whole-document build. Block decorations ($$ math blocks) may NOT come from
-// a ViewPlugin's dynamic decorations — CM6 throws "Block decorations may not
-// be specified via plugins" — so this lives in a StateField provided through
-// EditorView.decorations.from. Notes are small enough that whole-doc
-// decoration per transaction is fine, and it removes any viewport tracking.
-function buildDecorations(state: EditorState, hooks: LivePreviewHooks): DecorationSet {
+// Block decorations ($$ math blocks) may NOT come from a ViewPlugin's dynamic
+// decorations — CM6 throws "Block decorations may not be specified via
+// plugins" — so this lives in a StateField provided through
+// EditorView.decorations.from. An optional line window restricts the build to
+// the region that can actually change; the untouched remainder is carried over
+// from the previous decoration set.
+function buildDecorations(
+  state: EditorState,
+  hooks: LivePreviewHooks,
+  window?: BuildWindow,
+): DecorationSet {
+  const windowFromLine = window?.fromLine ?? 1;
+  const windowToLine = window?.toLine ?? state.doc.lines;
+  const windowFrom = state.doc.line(windowFromLine).from;
+  const windowTo = state.doc.line(windowToLine).to;
+
   const activeLines = new Set<number>();
   for (const range of state.selection.ranges) {
     const from = state.doc.lineAt(range.from).number;
@@ -351,8 +603,10 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
 
   // 1) Grammar-driven decorations
   syntaxTree(state).iterate({
+    ...(window ? { from: windowFrom, to: windowTo } : {}),
     enter: (node) => {
       if (node.name === "ListMark") {
+        if (node.from < windowFrom || node.to > windowTo) return false;
         if (isActiveLine(activeLines, state, node.from)) return false;
         const text = state.doc.sliceString(node.from, node.to);
         if (!/^\d/.test(text.trim())) {
@@ -367,6 +621,7 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
       }
 
       if (node.name === "TaskMarker") {
+        if (node.from < windowFrom || node.to > windowTo) return false;
         if (isActiveLine(activeLines, state, node.from)) return false;
         const ch = state.doc.sliceString(node.from + 1, node.from + 2);
         builder.markReplace(ranges, node.from, node.to, {
@@ -379,6 +634,7 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
       // Inline links "[text](url)": hide "[" and "](url)", keep the text
       // as a styled, Ctrl+clickable link (Obsidian live preview behavior)
       if (node.name === "Link") {
+        if (node.from < windowFrom || node.to > windowTo) return false;
         if (selectionIntersects(state, node.from, node.to)) return true;
         const text = state.doc.sliceString(node.from, node.to);
         const m = /^\[([^\]]*)\]\(((?:<[^>]*>|[^\s"']|\([^)]*\))+)/.exec(text);
@@ -399,6 +655,7 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
 
       // Bare URLs / autolinks: keep the text, make it Ctrl+clickable
       if (node.name === "URL") {
+        if (node.from < windowFrom || node.to > windowTo) return true;
         const parentName = node.node.parent?.name;
         if (parentName === "Link" || parentName === "Image") return true;
         const url = state.doc.sliceString(node.from, node.to).replace(/^<|>$/g, "");
@@ -412,7 +669,7 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
       if (node.name === "Blockquote") {
         const lineFrom = state.doc.lineAt(node.from).number;
         const lineTo = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
-        for (let n = lineFrom; n <= lineTo; n++) {
+        for (let n = Math.max(lineFrom, windowFromLine); n <= Math.min(lineTo, windowToLine); n++) {
           if (!activeLines.has(n)) {
             ranges.push(Decoration.line({ class: "cm-md-blockquote" }).range(state.doc.line(n).from));
           }
@@ -425,13 +682,14 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
       if (node.name === "FencedCode" || node.name === "CodeBlock") {
         const firstLine = state.doc.lineAt(node.from).number;
         const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
-        for (let n = firstLine; n <= lastLine; n++) {
+        for (let n = Math.max(firstLine, windowFromLine); n <= Math.min(lastLine, windowToLine); n++) {
           ranges.push(Decoration.line({ class: "cm-md-codeblock" }).range(state.doc.line(n).from));
         }
         return false;
       }
 
       if (HIDDEN_MARK_NODES.has(node.name)) {
+        if (node.from < windowFrom || node.to > windowTo) return false;
         const parent = node.node.parent;
         // Image syntax (![alt](url)) always stays raw and editable — a
         // non-editable preview renders below the line instead
@@ -466,48 +724,32 @@ function buildDecorations(state: EditorState, hooks: LivePreviewHooks): Decorati
 
   // 2) Multi-line $$ math blocks — replace the whole block with display
   // KaTeX unless the selection is inside it
-  {
-    const lines: { from: number; to: number; text: string }[] = [];
-    for (let n = 1; n <= state.doc.lines; n++) {
-      const line = state.doc.line(n);
-      lines.push({ from: line.from, to: line.to, text: line.text });
-    }
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].text.trim() !== "$$") continue;
-      if (isInCode(state, lines[i].from)) continue;
-      for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j].text.trim() === "$$") {
-          const blockFrom = lines[i].from;
-          const blockTo = lines[j].to;
-          if (!selectionIntersects(state, blockFrom, blockTo)) {
-            const tex = lines.slice(i + 1, j).map((l) => l.text).join("\n").trim();
-            builder.markReplace(ranges, blockFrom, blockTo, {
-              widget: new MathWidget(tex, true),
-              block: true,
-            });
-          }
-          i = j;
-          break;
-        }
-      }
+  for (const block of findMathBlocks(state)) {
+    if (block.fromLine < windowFromLine || block.toLine > windowToLine) continue;
+    const openLine = state.doc.line(block.fromLine);
+    if (isInCode(state, openLine.from)) continue;
+    const closeLine = state.doc.line(block.toLine);
+    if (!selectionIntersects(state, openLine.from, closeLine.to)) {
+      const tex = state.doc.sliceString(openLine.to, closeLine.from).trim();
+      builder.markReplace(ranges, openLine.from, closeLine.to, {
+        widget: new MathWidget(tex, true),
+        block: true,
+      });
     }
   }
 
   // 3) Frontmatter: de-emphasize the whole "--- ... ---" block at doc start
-  if (state.doc.line(1).text.trim() === "---") {
-    for (let n = 2; n <= state.doc.lines; n++) {
-      if (state.doc.line(n).text.trim() !== "---") continue;
-      for (let k = 1; k <= n; k++) {
-        ranges.push(Decoration.line({ class: "cm-md-frontmatter" }).range(state.doc.line(k).from));
-      }
-      break;
+  const frontmatter = findFrontmatter(state);
+  if (frontmatter && frontmatter.fromLine >= windowFromLine && frontmatter.toLine <= windowToLine) {
+    for (let k = frontmatter.fromLine; k <= frontmatter.toLine; k++) {
+      ranges.push(Decoration.line({ class: "cm-md-frontmatter" }).range(state.doc.line(k).from));
     }
   }
 
   // 4) Regex-driven decorations, line by line; lines that hold embed syntax
   // also get an embed card widget directly below them
   const labels = hooks.embedLabels ?? (() => DEFAULT_EMBED_LABELS);
-  for (let n = 1; n <= state.doc.lines; n++) {
+  for (let n = windowFromLine; n <= windowToLine; n++) {
     const line = state.doc.line(n);
     const embeds: PreviewEmbed[] = [];
     collectRegexDecorations(state, line, ranges, builder, embeds);
@@ -529,7 +771,19 @@ export function livePreview(hooks: LivePreviewHooks) {
     create: (state) => buildDecorations(state, hooks),
     update: (deco, tr) => {
       if (!tr.docChanged && !tr.selection) return deco;
-      return buildDecorations(tr.state, hooks);
+
+      const state = tr.state;
+      if (tr.docChanged && needsFullRebuild(tr.startState, tr)) {
+        return buildDecorations(state, hooks);
+      }
+
+      const previous = tr.docChanged ? deco.map(tr.changes) : deco;
+      const window = computeWindow(state, tr, previous);
+      if (!window) return previous;
+      if (window.fromLine <= 1 && window.toLine >= state.doc.lines) {
+        return buildDecorations(state, hooks);
+      }
+      return mergeDecorations(previous, buildDecorations(state, hooks, window), state, window);
     },
     provide: (field) => EditorView.decorations.from(field),
   });

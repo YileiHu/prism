@@ -8,13 +8,12 @@ import ItemRow from "../ItemRow";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import ConfirmDialog from "../ConfirmDialog";
-import RenameModal from "../RenameModal";
 import Modal from "../Modal";
 import { Textarea } from "../Input";
 import { arrayMove } from "@dnd-kit/sortable";
 import SortableList from "../SortableList";
 import DueDateChip from "./DueDateChip";
-import GtdDueDateModal from "./GtdDueDateModal";
+import { useGtdItemActions } from "./useGtdItemActions";
 import type { GtdAction, GtdItem } from "./types";
 
 interface Props {
@@ -30,9 +29,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
   const [actions, setActions] = useState<GtdAction[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
-  const [renaming, setRenaming] = useState<GtdAction | null>(null);
-  const [deleting, setDeleting] = useState<GtdAction | null>(null);
-  const [dueEditing, setDueEditing] = useState<GtdAction | null>(null);
+  const actionActions = useGtdItemActions({ kind: "action", onChanged });
   const [descOpen, setDescOpen] = useState(false);
   const [descDraft, setDescDraft] = useState("");
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -168,18 +165,6 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
       showToast(t["common.saveFailed"], "error");
       return;
     }
-    onChanged();
-  };
-
-  const handleDelete = async () => {
-    if (!deleting) return;
-    try {
-      await window.prism.deleteGtdAction(deleting.id);
-    } catch {
-      showToast(t["common.deleteFailed"], "error");
-      return;
-    }
-    showToast(t["common.deleted"]);
     onChanged();
   };
 
@@ -330,10 +315,10 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
                   : [{
                       label: action.dueDate ? t["gtd.dueDate.change"] : t["gtd.dueDate.set"],
                       icon: <CalendarDays size={14} />,
-                      onClick: () => setDueEditing(action),
+                      onClick: () => actionActions.requestDue(action),
                     }]),
-                { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(action) },
-                { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(action) },
+                { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => actionActions.requestRename(action) },
+                { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => actionActions.requestDelete(action) },
               ]}
               leading={
                 <button
@@ -354,7 +339,7 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
               }
               meta={
                 !action.isDone && action.dueDate ? (
-                  <DueDateChip dueDate={action.dueDate} onClick={() => setDueEditing(action)} />
+                  <DueDateChip dueDate={action.dueDate} onClick={() => actionActions.requestDue(action)} />
                 ) : undefined
               }
               hoverActions={
@@ -406,52 +391,13 @@ export default function GtdProjectDetail({ project, version, onChanged, focusAct
         />
       </Modal>
 
-      <RenameModal
-        open={renaming !== null}
-        initialValue={renaming?.title ?? ""}
-        multiline
-        onClose={() => setRenaming(null)}
-        onSubmit={async (title) => {
-          try {
-            if (renaming) await window.prism.renameGtdAction(renaming.id, title);
-          } catch {
-            showToast(t["common.saveFailed"], "error");
-            return;
-          }
-          onChanged();
-        }}
-      />
-
-      <ConfirmDialog
-        open={deleting !== null}
-        message={t["gtd.deleteActionConfirm"]}
-        onConfirm={handleDelete}
-        onClose={() => setDeleting(null)}
-      />
+      {actionActions.modals}
 
       <ConfirmDialog
         open={confirmDeleteProject}
         message={t["gtd.deleteProjectConfirm"]}
         onConfirm={deleteProject}
         onClose={() => setConfirmDeleteProject(false)}
-      />
-
-      <GtdDueDateModal
-        open={dueEditing !== null}
-        title={dueEditing?.title ?? ""}
-        value={dueEditing?.dueDate ?? null}
-        onClose={() => setDueEditing(null)}
-        onSave={async (date) => {
-          if (!dueEditing) return;
-          try {
-            await window.prism.setGtdActionDueDate(dueEditing.id, date);
-          } catch {
-            showToast(t["common.saveFailed"], "error");
-            return;
-          }
-          setDueEditing(null);
-          onChanged();
-        }}
       />
     </>
   );

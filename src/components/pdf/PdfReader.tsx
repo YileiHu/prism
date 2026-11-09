@@ -13,6 +13,7 @@ import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import Button from "../Button";
+import EmptyState from "../EmptyState";
 import Spinner from "../Spinner";
 import OutlineCard from "../editor/OutlineCard";
 import { loadPdf } from "./pdfjs";
@@ -389,10 +390,12 @@ export default function PdfReader({
           <span className="text-caption">{t["pdf.reader.loading"]}</span>
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center">
-          <TriangleAlert size={28} className="text-warning" />
-          <p className="text-body text-secondary max-w-md">{error}</p>
-          <div className="flex items-center gap-2">
+        <EmptyState
+          size="module"
+          fill
+          icon={<TriangleAlert size={28} className="text-warning" />}
+          description={error}
+          actions={<>
             <Button variant="secondary" size="sm" onClick={onShowInFolder}>
               <FolderOpen size={14} />
               {t["pdf.showInFolder"]}
@@ -400,8 +403,8 @@ export default function PdfReader({
             <Button variant="ghost" size="sm" onClick={onBackToLibrary}>
               {t["workspace.backToLibrary"]}
             </Button>
-          </div>
-        </div>
+          </>}
+        />
       ) : (
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-4 py-6">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { Plus, Trash2, Edit3, ExternalLink, Layers, Link2, Pencil } from "lucide-react";
 import { useT } from "../i18n";
 import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
@@ -112,23 +112,16 @@ function ResourceRowView({
   );
 }
 
-function ResourceList({
-  items,
-  flat,
-  onReorder,
-  onOpenTag,
-  onStartEdit,
-  onDelete,
-  colorForTag,
-}: {
-  items: Resource[];
-  flat?: boolean;
+interface ResourceListHandlers {
   onReorder: (next: Resource[]) => void;
   onOpenTag: (tag: string) => void;
   onStartEdit: (r: Resource) => void;
   onDelete: (r: Resource) => void;
   colorForTag: (name: string) => PaletteColor;
-}) {
+}
+
+function ResourceList({ items, flat, handlers }: { items: Resource[]; flat?: boolean; handlers: ResourceListHandlers }) {
+  const { onReorder, onOpenTag, onStartEdit, onDelete, colorForTag } = handlers;
   return (
     <SortableList
       items={items}
@@ -151,6 +144,125 @@ function ResourceList({
         </div>
       )}
     />
+  );
+}
+
+function ResourceSection({
+  title,
+  count,
+  tintColor,
+  collapsed,
+  onToggle,
+  headerActions,
+  items,
+  handlers,
+  className,
+}: {
+  title: ReactNode;
+  count: number;
+  tintColor?: PaletteColor;
+  collapsed: boolean;
+  onToggle: () => void;
+  headerActions?: ReactNode;
+  items: Resource[];
+  handlers: ResourceListHandlers;
+  className?: string;
+}) {
+  return (
+    <SectionCard
+      className={className}
+      title={title}
+      count={count}
+      tintColor={tintColor}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      headerActions={headerActions}
+    >
+      <ResourceList items={items} handlers={handlers} />
+    </SectionCard>
+  );
+}
+
+interface ResourceFormValues {
+  url: string;
+  title: string;
+  notes: string;
+  tags: string[];
+}
+
+function ResourceFields({
+  values,
+  onChange,
+  error,
+  suggestions,
+  colorForTag,
+  autoFocusField,
+  enterField,
+  onEnter,
+}: {
+  values: ResourceFormValues;
+  onChange: (next: ResourceFormValues) => void;
+  error: string;
+  suggestions: TagInfo[];
+  colorForTag: (name: string) => PaletteColor;
+  autoFocusField?: "url" | "title";
+  enterField?: "url" | "title";
+  onEnter?: () => void;
+}) {
+  const { t } = useT();
+  const enterProps = (field: "url" | "title") =>
+    enterField === field && onEnter
+      ? { onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter") onEnter(); } }
+      : {};
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="field-label">{t["resources.urlLabel"]}</label>
+        <Input
+          type="text"
+          value={values.url}
+          onChange={(e) => onChange({ ...values, url: e.target.value })}
+          placeholder={t["resources.addUrl"]}
+          autoFocus={autoFocusField === "url"}
+          className="w-full"
+          {...enterProps("url")}
+        />
+      </div>
+      <div>
+        <label className="field-label">{t["resources.titleLabel"]}</label>
+        <Input
+          type="text"
+          value={values.title}
+          onChange={(e) => onChange({ ...values, title: e.target.value })}
+          placeholder={t["resources.title"]}
+          autoFocus={autoFocusField === "title"}
+          className="w-full"
+          {...enterProps("title")}
+        />
+      </div>
+      <div>
+        <label className="field-label">{t["resources.notes"]}</label>
+        <Textarea
+          value={values.notes}
+          onChange={(e) => onChange({ ...values, notes: e.target.value })}
+          placeholder={t["resources.notesPlaceholder"]}
+          rows={4}
+          className="w-full resize-none"
+        />
+      </div>
+      <div>
+        <label className="field-label">{t["resources.tagsLabel"]}</label>
+        <TagInput
+          tags={values.tags}
+          onChange={(tags) => onChange({ ...values, tags })}
+          suggestions={suggestions}
+          placeholder={t["resources.tags"]}
+          colorForTag={colorForTag}
+        />
+      </div>
+      {error && <p className="text-caption text-danger">{error}</p>}
+    </div>
   );
 }
 
@@ -421,6 +533,14 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
     }
   };
 
+  const listHandlers: ResourceListHandlers = {
+    onReorder: handleReorder,
+    onOpenTag: setActiveTag,
+    onStartEdit: openEditModal,
+    onDelete: setDeleting,
+    colorForTag,
+  };
+
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <span className="min-w-0 text-body font-medium text-primary truncate">
@@ -528,7 +648,7 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
           {resourcesLoaded && !activeTag && resources.length > 0 && (
             <div className="p-3">
               {tagGroups.groups.map(({ tag, resources: items, color }) => (
-                <SectionCard
+                <ResourceSection
                   key={tag}
                   className="mb-3"
                   title={tag}
@@ -548,50 +668,26 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
                       <ExternalLink size={12} />
                     </Button>
                   }
-                >
-                  <ResourceList
-                    items={items}
-                    onReorder={handleReorder}
-                    onOpenTag={setActiveTag}
-                    onStartEdit={openEditModal}
-                    onDelete={setDeleting}
-                    colorForTag={colorForTag}
-                  />
-                </SectionCard>
+                  items={items}
+                  handlers={listHandlers}
+                />
               ))}
               {tagGroups.untagged.length > 0 && (
-                <SectionCard
+                <ResourceSection
                   className="mb-3"
                   title={<span className="uppercase tracking-wide text-secondary">{t["collections.ungrouped"]}</span>}
                   count={tagGroups.untagged.length}
                   collapsed={collapsedTags.has("__untagged__")}
                   onToggle={() => toggleCollapse("__untagged__")}
-                >
-                  <ResourceList
-                    items={tagGroups.untagged}
-                    onReorder={handleReorder}
-                    onOpenTag={setActiveTag}
-                    onStartEdit={openEditModal}
-                    onDelete={setDeleting}
-                    colorForTag={colorForTag}
-                  />
-                </SectionCard>
+                  items={tagGroups.untagged}
+                  handlers={listHandlers}
+                />
               )}
             </div>
           )}
 
           {/* Flat list (tag filtered) */}
-          {resourcesLoaded && activeTag && (
-            <ResourceList
-              items={resources}
-              flat
-              onReorder={handleReorder}
-              onOpenTag={setActiveTag}
-              onStartEdit={openEditModal}
-              onDelete={setDeleting}
-              colorForTag={colorForTag}
-            />
-          )}
+          {resourcesLoaded && activeTag && <ResourceList items={resources} flat handlers={listHandlers} />}
         </div>
       </div>
 
@@ -608,55 +704,21 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
           </>
         }
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.urlLabel"]}</label>
-            <Input
-              type="text"
-              value={modalUrl}
-              onChange={(e) => setModalUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveNew();
-              }}
-              placeholder={t["resources.addUrl"]}
-              autoFocus
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.titleLabel"]}</label>
-            <Input
-              type="text"
-              value={modalTitle}
-              onChange={(e) => setModalTitle(e.target.value)}
-              placeholder={t["resources.title"]}
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.notes"]}</label>
-            <Textarea
-              value={modalNotes}
-              onChange={(e) => setModalNotes(e.target.value)}
-              placeholder={t["resources.notesPlaceholder"]}
-              rows={4}
-              className="w-full resize-none"
-            />
-          </div>
-
-          {/* Tags */}
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.tagsLabel"]}</label>
-            <TagInput
-              tags={modalTags}
-              onChange={setModalTags}
-              suggestions={allTags}
-              placeholder={t["resources.tags"]}
-              colorForTag={colorForTag}
-            />
-          </div>
-          {modalError && <p className="text-caption text-danger">{modalError}</p>}
-        </div>
+        <ResourceFields
+          values={{ url: modalUrl, title: modalTitle, notes: modalNotes, tags: modalTags }}
+          onChange={(next) => {
+            setModalUrl(next.url);
+            setModalTitle(next.title);
+            setModalNotes(next.notes);
+            setModalTags(next.tags);
+          }}
+          error={modalError}
+          suggestions={allTags}
+          colorForTag={colorForTag}
+          autoFocusField="url"
+          enterField="url"
+          onEnter={handleSaveNew}
+        />
       </Modal>
 
       {/* Edit resource modal */}
@@ -672,55 +734,21 @@ export default function WebResources({ active, onReady }: { active: boolean; onR
           </>
         }
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.urlLabel"]}</label>
-            <Input
-              type="text"
-              value={editUrl}
-              onChange={(e) => setEditUrl(e.target.value)}
-              placeholder={t["resources.addUrl"]}
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.titleLabel"]}</label>
-            <Input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveEdit();
-              }}
-              placeholder={t["resources.title"]}
-              autoFocus
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.notes"]}</label>
-            <Textarea
-              value={editNotes}
-              onChange={(e) => setEditNotes(e.target.value)}
-              placeholder={t["resources.notesPlaceholder"]}
-              rows={4}
-              className="w-full resize-none"
-            />
-          </div>
-
-          {/* Tags */}
-          <div>
-            <label className="block text-caption text-muted mb-1">{t["resources.tagsLabel"]}</label>
-            <TagInput
-              tags={editTags}
-              onChange={setEditTags}
-              suggestions={allTags}
-              placeholder={t["resources.tags"]}
-              colorForTag={colorForTag}
-            />
-          </div>
-          {editError && <p className="text-caption text-danger">{editError}</p>}
-        </div>
+        <ResourceFields
+          values={{ url: editUrl, title: editTitle, notes: editNotes, tags: editTags }}
+          onChange={(next) => {
+            setEditUrl(next.url);
+            setEditTitle(next.title);
+            setEditNotes(next.notes);
+            setEditTags(next.tags);
+          }}
+          error={editError}
+          suggestions={allTags}
+          colorForTag={colorForTag}
+          autoFocusField="title"
+          enterField="title"
+          onEnter={handleSaveEdit}
+        />
       </Modal>
 
       {/* Delete confirm */}

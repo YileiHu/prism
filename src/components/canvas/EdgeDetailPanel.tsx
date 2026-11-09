@@ -57,7 +57,7 @@ export default function EdgeDetailPanel({
   };
 
   return (
-    <div className="absolute right-3 top-3 bottom-6 z-20 w-64 flex flex-col rounded-control border border-line/50 bg-surface shadow-popover overflow-hidden">
+    <div className="panel-floating">
       <div className="flex items-center gap-1.5 px-2.5 h-8 border-b border-line/50 flex-shrink-0">
         <Spline size={13} className="text-muted flex-shrink-0" />
         <span className="text-caption font-medium text-secondary flex-1 truncate">
@@ -70,7 +70,7 @@ export default function EdgeDetailPanel({
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.edgeLabel"]}</label>
+          <label className="field-label">{t["canvas.edgeLabel"]}</label>
           <Input
             value={label}
             spellCheck={false}
@@ -88,7 +88,7 @@ export default function EdgeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.color"]}</label>
+          <label className="field-label">{t["canvas.color"]}</label>
           <ColorSwatchPicker
             name={autoSource}
             value={edge.color ?? ""}
@@ -98,7 +98,7 @@ export default function EdgeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.strokeWidth"]}</label>
+          <label className="field-label">{t["canvas.strokeWidth"]}</label>
           <div className="flex items-center gap-1">
             {EDGE_WIDTHS.map((width) => (
               <Button
@@ -116,7 +116,7 @@ export default function EdgeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.lineStyle"]}</label>
+          <label className="field-label">{t["canvas.lineStyle"]}</label>
           <div className="flex items-center gap-1">
             {LINE_STYLES.map((style) => (
               <Button

@@ -7,15 +7,24 @@ import { useLibraryData } from "../library/LibraryDataProvider";
 import { usePdfDocuments } from "../pdf/PdfDocumentsProvider";
 import { relKey } from "../pdf/types";
 import { toRelativePath } from "../useCollections";
-import PdfReader from "../pdf/PdfReader";
-import NoteEditor from "../editor/NoteEditor";
 import { resolveNoteTarget } from "../editor/linkResolver";
 import type { EmbedOpenTarget } from "../embeds/model";
 import Button from "../Button";
 import Spinner from "../Spinner";
 
-// React Flow only lives in the canvas chunk; notes and PDFs never pay for it.
+// Heavy document stacks load with the first tab of their kind: CodeMirror +
+// Markdown/KaTeX for notes, pdf.js for PDFs, React Flow for canvases.
 const CanvasEditor = lazy(() => import("../canvas/CanvasEditor"));
+const NoteEditor = lazy(() => import("../editor/NoteEditor"));
+const PdfReader = lazy(() => import("../pdf/PdfReader"));
+
+function PaneFallback() {
+  return (
+    <div className="h-full flex items-center justify-center text-muted">
+      <Spinner size={20} />
+    </div>
+  );
+}
 
 interface Props {
   tab: DocTab;
@@ -123,22 +132,24 @@ export default function DocumentPane({
     };
     return (
       <div className="h-full min-w-0 flex flex-col" onMouseDown={onFocus}>
-        <NoteEditor
-          key={tab.id}
-          vaultPath={tab.vaultPath}
-          notePath={tab.path}
-          title={tab.title}
-          focused={focused}
-          toolbarScope={toolbarScope}
-          splitOpen={splitOpen}
-          onToggleSplit={toggleSplit}
-          onBackToLibrary={backToLibrary}
-          onClose={close}
-          onNoteGone={close}
-          onNoteRenamed={handleNoteRenamed}
-          onOpenWikilink={(target) => { void openWikilink(tab.vaultPath, target); }}
-          onOpenEmbed={openEmbed}
-        />
+        <Suspense fallback={<PaneFallback />}>
+          <NoteEditor
+            key={tab.id}
+            vaultPath={tab.vaultPath}
+            notePath={tab.path}
+            title={tab.title}
+            focused={focused}
+            toolbarScope={toolbarScope}
+            splitOpen={splitOpen}
+            onToggleSplit={toggleSplit}
+            onBackToLibrary={backToLibrary}
+            onClose={close}
+            onNoteGone={close}
+            onNoteRenamed={handleNoteRenamed}
+            onOpenWikilink={(target) => { void openWikilink(tab.vaultPath, target); }}
+            onOpenEmbed={openEmbed}
+          />
+        </Suspense>
       </div>
     );
   }
@@ -220,18 +231,20 @@ export default function DocumentPane({
 
   return (
     <div className="h-full min-w-0" onMouseDown={onFocus}>
-      <PdfReader
-        key={tab.id}
-        doc={doc}
-        active={visible}
-        focused={focused}
-        toolbarScope={toolbarScope}
-        splitOpen={splitOpen}
-        onToggleSplit={toggleSplit}
-        onBackToLibrary={backToLibrary}
-        onClose={close}
-        onShowInFolder={() => { void window.prism.showPdfInFolder(doc.id); }}
-      />
+      <Suspense fallback={<PaneFallback />}>
+        <PdfReader
+          key={tab.id}
+          doc={doc}
+          active={visible}
+          focused={focused}
+          toolbarScope={toolbarScope}
+          splitOpen={splitOpen}
+          onToggleSplit={toggleSplit}
+          onBackToLibrary={backToLibrary}
+          onClose={close}
+          onShowInFolder={() => { void window.prism.showPdfInFolder(doc.id); }}
+        />
+      </Suspense>
     </div>
   );
 }

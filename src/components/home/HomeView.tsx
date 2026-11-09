@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { FolderOpen, History, Star } from "lucide-react";
+import { History, Star } from "lucide-react";
 import { type MenuItem } from "../ContextMenu";
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
@@ -10,6 +10,9 @@ import ToolbarClock from "./ToolbarClock";
 import { useNoteCollectionIndex } from "./useNoteCollectionIndex";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { tagColor } from "../../lib/colors";
+import { noteBaseMenuItems } from "../../lib/noteMenu";
+import { useVaultLock } from "../../lib/vaultLock";
+import { normalizePath } from "../../lib/workspace/types";
 import type { FavoriteNote, RecentNote } from "./types";
 import type { GtdFocusRequest } from "../gtd/types";
 import type { VaultEntry } from "../../types";
@@ -23,6 +26,7 @@ interface Props {
 export default function HomeView({ active, vaults, onNavigateToGtd }: Props) {
   const { t } = useT();
   const { values } = useSettings();
+  const vaultLock = useVaultLock();
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const [favorites, setFavorites] = useState<FavoriteNote[]>([]);
@@ -65,22 +69,40 @@ export default function HomeView({ active, vaults, onNavigateToGtd }: Props) {
 
   const favoritePaths = useMemo(() => new Set(favorites.map((n) => n.path)), [favorites]);
 
-  const noteMenu = (row: NoteRow): MenuItem[] => [
-    {
-      label: favoritePaths.has(row.path) ? t["menu.unfavorite"] : t["menu.favorite"],
-      icon: <Star size={14} />,
-      onClick: () => {
-        window.prism.toggleFavoriteNote(row.path, row.title).then(() => {
-          window.dispatchEvent(new Event("favorites-changed"));
-        });
-      },
-    },
-    {
-      label: t["menu.showInExplorer"],
-      icon: <FolderOpen size={14} />,
-      onClick: () => window.prism.showItemInFolder(row.path),
-    },
-  ];
+  const noteMenu = (row: NoteRow): MenuItem[] | undefined => {
+    const isFavorite = favoritePaths.has(row.path);
+    // The backing file is gone, so "show in explorer" is useless. Keep the
+    // unfavorite action so stale entries can still be cleaned up.
+    if (row.missing) {
+      return isFavorite
+        ? noteBaseMenuItems(row, true, { favorite: t["menu.favorite"], unfavorite: t["menu.unfavorite"] })
+        : undefined;
+    }
+    return noteBaseMenuItems(row, isFavorite, {
+      favorite: t["menu.favorite"],
+      unfavorite: t["menu.unfavorite"],
+      showInExplorer: t["menu.showInExplorer"],
+    });
+  };
+
+  const vaultFor = useCallback((notePath: string): VaultEntry | undefined => {
+    const target = normalizePath(notePath);
+    let best: VaultEntry | undefined;
+    let bestLength = -1;
+    for (const vault of vaults) {
+      const vaultPath = normalizePath(vault.path);
+      if ((target === vaultPath || target.startsWith(`${vaultPath}/`)) && vaultPath.length > bestLength) {
+        best = vault;
+        bestLength = vaultPath.length;
+      }
+    }
+    return best;
+  }, [vaults]);
+
+  const isLockedPath = (notePath: string): boolean => {
+    const vault = vaultFor(notePath);
+    return vault ? vaultLock.isLocked(vault.path) : false;
+  };
 
   const attachOwner = (row: NoteRow): NoteRow => {
     const owners = ownersFor(row.path);
@@ -105,6 +127,7 @@ export default function HomeView({ active, vaults, onNavigateToGtd }: Props) {
       path: n.path,
       title: n.title,
       missing: n.missing,
+      locked: !n.missing && isLockedPath(n.path),
     }),
   );
 

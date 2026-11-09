@@ -34,6 +34,8 @@
   --c-strong: 55 65 81;
 
   --window-ring: rgba(255, 255, 255, 0.08);
+  --ring-subtle: rgba(0, 0, 0, 0.2);
+  --md-mark-bg: rgba(250, 204, 21, 0.28);
 
   /* Shared chrome tokens (overridden in light mode) */
   --scrollbar-thumb: rgba(255, 255, 255, 0.1);
@@ -98,6 +100,8 @@
   --info: 37 99 235;
 
   --window-ring: rgb(var(--c-overlay) / 0.1);
+  --ring-subtle: rgb(var(--c-overlay) / 0.16);
+  --md-mark-bg: rgba(250, 204, 21, 0.35);
   /* Light chrome ladder: header is paper-white; the toolbar stays a touch
      brighter than the page but carries a stronger accent wash, so it reads as
      its own band against the neutral main canvas. */
@@ -265,11 +269,32 @@ body {
   background-color: var(--raised-bg);
   box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
 }
-/* Selected chips in the tinted sidebar: the accent wash carries the contrast,
-   since elevated and chrome sit at nearly the same tone in light mode. */
-.surface-raised-accent {
-  background-color: var(--accent-muted);
-  box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
+@layer components {
+  /* Floating detail panel used by the canvas inspectors. */
+  .panel-floating {
+    position: absolute;
+    right: 0.75rem;
+    top: 0.75rem;
+    bottom: 1.5rem;
+    z-index: 20;
+    width: 16rem;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgb(var(--c-line) / 0.5);
+    border-radius: 8px;
+    background-color: rgb(var(--c-surface));
+    box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.45);
+    overflow: hidden;
+  }
+
+  /* Small label above a control inside a panel or form. */
+  .field-label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgb(var(--c-muted));
+  }
 }
 /* Raised depth for colored fills (danger buttons, checked boxes) where the
    background is owned by a utility and only the sheen/shadow is needed. */
@@ -619,7 +644,7 @@ body {
 
 /* ==highlight== (markdown-it-mark) */
 .markdown-preview mark {
-  background: rgba(250, 204, 21, 0.28);
+  background: var(--md-mark-bg);
   color: inherit;
   padding: 0 3px;
   border-radius: 3px;
@@ -892,7 +917,7 @@ body {
 }
 .cm-md-link:hover { text-decoration-color: var(--accent-text); }
 .cm-md-highlight {
-  background: rgba(250, 204, 21, 0.28);
+  background: var(--md-mark-bg);
   border-radius: 3px;
 }
 .cm-md-tag {
@@ -1164,12 +1189,6 @@ input[type="range"]:disabled {
 [data-mode="light"] .callout-title {
   color: color-mix(in srgb, rgb(var(--callout-rgb)) 72%, black);
 }
-[data-mode="light"] .markdown-preview mark,
-[data-mode="light"] .cm-md-highlight {
-  background: rgba(250, 204, 21, 0.35);
-}
-
-
 /* --- Whiteboard canvas (React Flow) ---------------------------------------
    React Flow ships its own palette and control chrome. Everything is scoped to
    .prism-canvas so no other surface picks up these defaults, and colors come

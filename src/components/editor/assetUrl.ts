@@ -10,8 +10,16 @@ export interface AssetContext {
 
 export const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
 
+// Bumped whenever a private vault locks/unlocks. Chromium may still hold
+// decrypted images from before the lock, so every rebuild gets a fresh URL.
+let assetEpoch = 0;
+
+export function bumpAssetEpoch(): void {
+  assetEpoch += 1;
+}
+
 export function prismFileUrl(vaultPath: string, ref: string, noteDir: string): string {
-  return `prism-file:///asset?vault=${encodeURIComponent(vaultPath)}&ref=${encodeURIComponent(ref)}&dir=${encodeURIComponent(noteDir)}`;
+  return `prism-file:///asset?vault=${encodeURIComponent(vaultPath)}&ref=${encodeURIComponent(ref)}&dir=${encodeURIComponent(noteDir)}&pv=${assetEpoch}`;
 }
 
 // Remote and inline assets load as-is; everything else is vault-local.

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSettings } from "../../lib/settings";
-import { useDebouncedValue } from "../../lib/useDebouncedValue";
-import type { PdfDocument, PdfSort, PdfSortDir } from "./types";
+import { normalizePath } from "../../lib/paths";
+import type { PdfDocument, PdfListChanges } from "../../shared/models";
+import type { PdfSort, PdfSortDir } from "./types";
 
 // Natural order per field: titles read A→Z, dates and page counts read
 // newest/largest first.
@@ -90,7 +91,25 @@ export function usePdfLibrary(active: boolean) {
     void load();
   }, [active, load]);
 
-  useEffect(() => window.prism.onPdfUpdated(() => { void load(); }), [load]);
+  // Watcher pushes carry a patch; anything else (repo switch, manual rescan)
+  // still gets the full list.
+  const applyChanges = useCallback((repo: string, changes: PdfListChanges) => {
+    if (normalizePath(repo) !== normalizePath(repoPath)) return;
+    setDocuments((prev) => {
+      const byPath = new Map(prev.map((doc) => [doc.path, doc]));
+      for (const deleted of changes.deleted) byPath.delete(deleted);
+      for (const doc of changes.upserted) byPath.set(doc.path, doc);
+      return [...byPath.values()];
+    });
+  }, [repoPath]);
+
+  useEffect(
+    () => window.prism.onPdfUpdated((repo, changes) => {
+      if (changes) applyChanges(repo, changes);
+      else void load();
+    }),
+    [applyChanges, load],
+  );
 
   const chooseRepo = useCallback(async () => {
     const dir = await window.prism.choosePdfRepo();

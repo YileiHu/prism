@@ -426,6 +426,22 @@ export function getNoteList(vaultPath: string): NoteBrief[] {
   return rows.map(toNoteBrief);
 }
 
+// Fresh rows for the files a watcher scan just touched, so the renderer can
+// patch its list instead of reloading the whole vault.
+export function getNoteBriefsByPaths(vaultPath: string, paths: string[]): NoteBrief[] {
+  if (paths.length === 0) return [];
+  const out: NoteBrief[] = [];
+  for (let i = 0; i < paths.length; i += SYNC_CHUNK) {
+    const chunk = paths.slice(i, i + SYNC_CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = db.prepare(
+      `SELECT id, path, title, tags, modified_at FROM notes WHERE vault_path = ? AND path IN (${placeholders})`,
+    ).all(vaultPath, ...chunk) as NoteBriefRow[];
+    out.push(...rows.map(toNoteBrief));
+  }
+  return out;
+}
+
 export function searchNotes(vaultPath: string, query: string, limit = 200): NoteBrief[] {
   const terms = query.split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
@@ -515,6 +531,18 @@ export function deleteNotesByPaths(paths: string[]): void {
       db.prepare(`DELETE FROM notes WHERE path IN (${placeholders})`).run(...chunk);
       db.prepare(`DELETE FROM favorite_notes WHERE path IN (${placeholders})`).run(...chunk);
       db.prepare(`DELETE FROM recent_notes WHERE path IN (${placeholders})`).run(...chunk);
+    }
+  })();
+}
+
+// Forget everything indexed for a vault that just became private: note rows,
+// plus any favorite/recent entries that point inside its folder.
+export function purgeVaultNotes(vaultPath: string): void {
+  const prefix = vaultPath.replace(/[\\/]+$/, "") + path.sep;
+  db.transaction(() => {
+    db.prepare("DELETE FROM notes WHERE vault_path = ?").run(vaultPath);
+    for (const table of ["favorite_notes", "recent_notes"]) {
+      db.prepare(`DELETE FROM ${table} WHERE instr(lower(path), lower(?)) = 1`).run(prefix);
     }
   })();
 }
@@ -610,6 +638,20 @@ export function syncPdfDocuments(repoPath: string, upsert: PdfUpsertRow[], delet
 export function listPdfDocuments(repoPath: string): PdfDocument[] {
   const rows = db.prepare("SELECT * FROM pdf_documents WHERE repo_path = ? ORDER BY title COLLATE NOCASE ASC").all(repoPath) as PdfDocumentRow[];
   return rows.map(toPdfDocument);
+}
+
+export function getPdfDocumentsByPaths(repoPath: string, paths: string[]): PdfDocument[] {
+  if (paths.length === 0) return [];
+  const out: PdfDocument[] = [];
+  for (let i = 0; i < paths.length; i += SYNC_CHUNK) {
+    const chunk = paths.slice(i, i + SYNC_CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = db.prepare(
+      `SELECT * FROM pdf_documents WHERE repo_path = ? AND path IN (${placeholders})`,
+    ).all(repoPath, ...chunk) as PdfDocumentRow[];
+    out.push(...rows.map(toPdfDocument));
+  }
+  return out;
 }
 
 export function getPdfDocument(id: number): PdfDocument | null {
@@ -824,9 +866,13 @@ function assertDateKey(value: string | null): void {
 }
 
 const GTD_ITEM_SELECT = `
-  SELECT i.*, (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = i.id) AS action_count,
-    (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = i.id AND a.is_done = 1) AS done_action_count
+  SELECT i.*, COALESCE(a.total, 0) AS action_count, COALESCE(a.done_count, 0) AS done_action_count
   FROM gtd_items i
+  LEFT JOIN (
+    SELECT project_id, COUNT(*) AS total, SUM(is_done) AS done_count
+    FROM gtd_actions
+    GROUP BY project_id
+  ) a ON a.project_id = i.id
 `;
 
 export function addGtdItem(title: string): GtdItem {
@@ -996,8 +1042,7 @@ export function getGtdNextList(): GtdNextList {
   const waitingRows = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = 'waiting' AND i.is_next = 1 ORDER BY i.created_at DESC`).all() as GtdItemRow[];
   const rows = db.prepare(`
     SELECT p.*,
-      (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id) AS action_count,
-      (SELECT COUNT(*) FROM gtd_actions a WHERE a.project_id = p.id AND a.is_done = 1) AS done_action_count,
+      COALESCE(c.total, 0) AS action_count, COALESCE(c.done_count, 0) AS done_action_count,
       a.id AS action_id, a.title AS action_title, a.is_done AS action_is_done, a.is_next AS action_is_next,
       a.sort_order AS action_sort_order, a.due_date AS action_due_date,
       a.created_at AS action_created_at, a.done_at AS action_done_at
@@ -1009,6 +1054,11 @@ export function getGtdNextList(): GtdNextList {
       FROM gtd_actions
       WHERE is_done = 0
     ) a ON a.project_id = p.id AND a.rn = 1
+    LEFT JOIN (
+      SELECT project_id, COUNT(*) AS total, SUM(is_done) AS done_count
+      FROM gtd_actions
+      GROUP BY project_id
+    ) c ON c.project_id = p.id
     WHERE p.status = 'project'
     ORDER BY p.created_at DESC
   `).all() as GtdNextProjectRow[];
@@ -1082,7 +1132,7 @@ export function recordRecentOpen(notePath: string): void {
   const title = row?.title ?? path.basename(notePath, path.extname(notePath));
   db.transaction(() => {
     db.prepare("INSERT OR REPLACE INTO recent_notes (path, title, opened_at) VALUES (?, ?, datetime('now', 'localtime'))").run(notePath, title);
-    db.prepare("DELETE FROM recent_notes WHERE path NOT IN (SELECT path FROM recent_notes ORDER BY opened_at DESC LIMIT ?)").run(RECENT_KEEP);
+    db.prepare("DELETE FROM recent_notes WHERE rowid IN (SELECT rowid FROM recent_notes ORDER BY opened_at DESC LIMIT -1 OFFSET ?)").run(RECENT_KEEP);
   })();
 }
 

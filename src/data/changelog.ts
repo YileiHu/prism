@@ -1,11 +1,93 @@
+import type { LucideIcon } from "lucide-react";
+import { Frame, Lock, Network, Zap } from "lucide-react";
+import type { TagColorKey } from "../lib/colors";
+
+export interface ChangelogHighlight {
+  icon: LucideIcon;
+  palette: TagColorKey;
+  title: string;
+  description: string;
+  items: string[];
+}
+
 export interface ChangelogEntry {
   version: string;
   date: string;
   summary: string;
-  changes: string[];
+  /** Flat detail list used by releases without highlight cards. */
+  changes?: string[];
+  /** Grouped headline features — the changelog renders these as cards. */
+  highlights?: ChangelogHighlight[];
+  test?: boolean;
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "0.5.0",
+    date: "2026-11-09",
+    test: true,
+    summary:
+      "一次加入三大能力：白板库、统一嵌入与私密仓库；同时完成启动、列表刷新与编辑预览的性能优化，并换上新的度假风图标。",
+    highlights: [
+      {
+        icon: Network,
+        palette: "blue",
+        title: "白板与思维导图",
+        description: "每个笔记库都有自己的白板库，卡片、容器、连线与预设一应俱全。",
+        items: [
+          "白板库：资料库侧栏新增「白板」，文件保存在笔记库的 canvases 目录；支持新建、重命名、移入回收站与在文件夹中显示",
+          "分组整理：白板可拖入自定义分组，未分组自动归并；分组可折叠、重命名、删除，删除后成员回到未分组",
+          "画布编辑：卡片、容器与箭头连线，支持拖动、缩放、框选、复制与适配视图；容器可锁定，并可选择拖动时是否带动内部卡片",
+          "卡片详情：颜色、字号、加粗与 Markdown 备注，可关联笔记、PDF、白板或外链，一键打开关联目标",
+          "预设卡片：常用卡片可存为预设，拖到画布直接创建；预设槽满时会提示先删除",
+          "嵌入预览：笔记里嵌白板时显示懒加载缩略图，点击打开；空白白板有明确占位",
+          "冲突保护：白板文件被外部修改时提示重新加载或覆盖保存",
+        ],
+      },
+      {
+        icon: Frame,
+        palette: "violet",
+        title: "统一笔记嵌入",
+        description: "一条 ![[目标|说明|宽x高]] 语法嵌入图片、白板、笔记、PDF 与外链，阅读与编辑模式表现一致。",
+        items: [
+          "统一语法：![[目标]]、![[目标|说明]]、![[目标|宽x高]] 覆盖图片、白板、笔记、PDF 与链接",
+          "插入面板：编辑器新增统一「插入内容」弹窗，可搜索笔记 / 白板 / PDF、选择图片或填写外链，并设置显示名称",
+          "尺寸调节：嵌入卡片悬停出现大小滑杆，实时调整预览宽高；未指定尺寸时保持默认比例",
+          "双模式一致：阅读视图与编辑实时预览共用同一套渲染、懒加载与错误占位",
+          "打开与容错：卡片可一键打开目标；目标缺失、文件损坏、图片加载失败与空白白板都有清晰提示",
+          "旧写法迁移：附带迁移脚本，把旧的图片写法批量转换为标准嵌入语法",
+        ],
+      },
+      {
+        icon: Lock,
+        palette: "brick",
+        title: "私密仓库",
+        description: "给任意笔记库设置密码，笔记、附件与白板在磁盘上以 AES-256-GCM 加密保存。",
+        items: [
+          "一键加密：在仓库设置中把笔记库设为私密，整库加密并显示进度；转换前会提示先备份，密码丢失无法恢复",
+          "解锁使用：锁定状态下不扫描、不索引、不加载内容；打开锁定笔记或在主页点击收藏时会弹出解锁框",
+          "空闲自动锁定：可设置 1–120 分钟无操作自动上锁，也可随时「立即锁定」",
+          "搜索隔离：私密仓库不参与全局搜索，锁定库不会出现在扫描结果中",
+          "密码管理：支持修改密码；解除私密会把全部文件解密回明文，操作前有确认提示",
+          "状态标识：侧栏与仓库列表显示「私密」徽标与锁定状态，未解锁时提供「解锁并打开」",
+        ],
+      },
+      {
+        icon: Zap,
+        palette: "teal",
+        title: "更快更顺",
+        description: "启动、切换与编辑响应全面提速，同时换上新的度假风应用图标。",
+        items: [
+          "启动加速：笔记、收藏集与白板一次水合；编辑器、PDF 阅读器、画布与数学渲染按需加载",
+          "切换更快：切换仓库时保留旧内容淡入新数据，不再闪烁或误标「已失效」",
+          "列表增量更新：笔记与 PDF 的外部变化由后台推送增量补丁，列表与收藏集就地合并",
+          "编辑更流畅：实时预览只重算受影响的窗口，大文档移动光标不再卡顿",
+          "主页更及时：收藏、事务、仓库变化与窗口重新聚焦时自动刷新",
+          "新图标：透明底的「沙岛 + 棕榈」新拟物图标，全尺寸重新生成",
+        ],
+      },
+    ],
+  },
   {
     version: "0.4.2",
     date: "2026-11-04",

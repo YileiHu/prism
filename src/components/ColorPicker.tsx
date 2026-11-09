@@ -80,7 +80,7 @@ export function ColorSwatchPicker({ name, value, autoBar, onChange }: ColorSwatc
                 backgroundColor: option.bar,
                 boxShadow: selected
                   ? "0 0 0 2px var(--accent)"
-                  : "inset 0 0 0 1px light-dark(rgba(15,23,42,0.2), rgba(255,255,255,0.12))",
+                  : "inset 0 0 0 1px var(--ring-subtle)",
               }}
             />
             {index === 0 && <span className="text-caption text-muted">{autoLabel}</span>}

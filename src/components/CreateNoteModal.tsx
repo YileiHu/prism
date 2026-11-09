@@ -55,7 +55,7 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
     >
       <div className="space-y-4 mt-4">
         <div>
-          <label className="block text-caption text-muted mb-1.5">{t["vault.newNoteCollection"]}</label>
+          <label className="field-label mb-1.5">{t["vault.newNoteCollection"]}</label>
           <SelectButton
             value={collectionId}
             onChange={handleCollectionChange}
@@ -69,7 +69,7 @@ export default function CreateNoteModal({ vaultPath, collections, onCreated, onC
 
         {collectionId && groups.length > 0 && (
           <div>
-            <label className="block text-caption text-muted mb-1.5">{t["vault.newNoteGroup"]}</label>
+            <label className="field-label mb-1.5">{t["vault.newNoteGroup"]}</label>
             <SelectButton
               value={groupId}
               onChange={setGroupId}

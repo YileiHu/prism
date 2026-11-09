@@ -1,8 +1,11 @@
+import { useT } from "../i18n";
+
 interface Props {
   fadeOut: boolean;
 }
 
 export default function SplashScreen({ fadeOut }: Props) {
+  const { t } = useT();
   return (
     <div
       className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-base transition-opacity duration-500 ${
@@ -17,7 +20,7 @@ export default function SplashScreen({ fadeOut }: Props) {
         >
           PRISM
         </h1>
-        <p className="text-body text-muted tracking-[0.3em]">个人知识管理</p>
+        <p className="text-body text-muted tracking-[0.3em]">{t["splash.tagline"]}</p>
         <div className="flex gap-2 mt-6">
           <span
             className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce"

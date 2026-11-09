@@ -1,7 +1,9 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Tag } from "lucide-react";
 import Badge from "./Badge";
 import Input from "./Input";
+import { useT } from "../i18n";
 
 interface TagSuggestion {
   name: string;
@@ -17,8 +19,11 @@ interface Props {
 }
 
 export default function TagInput({ tags, onChange, suggestions, placeholder, colorForTag }: Props) {
+  const { t } = useT();
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const filtered = useMemo(() => {
     const available = suggestions.filter((s) => !tags.includes(s.name));
@@ -26,6 +31,25 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
     if (!q) return available.slice(0, 8);
     return available.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 6);
   }, [suggestions, input, tags]);
+
+  // The dropdown portals to <body> so a scrolling modal can't clip it; keep
+  // it pinned to the input while the surrounding surface scrolls or resizes.
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setAnchor({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   const addTag = (name: string, e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -59,9 +83,11 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
     }
   };
 
+  const showDropdown = open && filtered.length > 0 && anchor !== null;
+
   return (
     <div>
-      <div className="relative">
+      <div ref={anchorRef} className="relative">
         <Input
           type="text"
           value={input}
@@ -72,11 +98,18 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           placeholder={placeholder}
           className="w-full"
         />
-        {open && filtered.length > 0 && (
-          <div className="absolute top-full mt-1 left-0 z-30 bg-elevated border border-strong rounded-control shadow-popover p-1 w-full">
+        {showDropdown && createPortal(
+          <div
+            role="listbox"
+            className="fixed z-menu bg-elevated border border-strong rounded-control shadow-popover p-1"
+            style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
+          >
             {filtered.map((s) => (
               <button
                 key={s.name}
+                type="button"
+                role="option"
+                aria-selected={false}
                 onMouseDown={(e) => addTag(s.name, e)}
                 className="w-full text-left px-3 py-2 text-body text-secondary hover:bg-hover flex items-center justify-between rounded-chip"
               >
@@ -87,7 +120,8 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
                 <span className="text-caption text-muted">{s.count}</span>
               </button>
             ))}
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
       {tags.length > 0 && (
@@ -98,7 +132,12 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
               <Badge key={tag} palette={c} className="gap-1">
                 <Tag size={10} />
                 {tag}
-                <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="hover:text-danger">
+                <button
+                  type="button"
+                  onClick={() => onChange(tags.filter((t) => t !== tag))}
+                  aria-label={`${t["common.remove"]} ${tag}`}
+                  className="hover:text-danger"
+                >
                   <X size={12} />
                 </button>
               </Badge>

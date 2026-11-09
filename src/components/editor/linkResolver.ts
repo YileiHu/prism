@@ -1,6 +1,5 @@
 import type { NoteRef } from "../../shared/models";
-
-const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+import { normalizePath } from "../../lib/paths";
 
 export type LinkNoteBrief = NoteRef;
 
@@ -18,11 +17,11 @@ export function resolveNoteTarget(target: string, vaultPath: string, notes: Link
   const withMd = /\.md$/i.test(cleaned) ? cleaned : `${cleaned}.md`;
   for (const raw of [cleaned, withMd]) {
     const joined = raw.replace(/^\//, "");
-    candidates.push(norm(`${vaultPath}/${joined}`));
+    candidates.push(normalizePath(`${vaultPath}/${joined}`));
   }
 
   for (const note of notes) {
-    if (candidates.includes(norm(note.path))) return note;
+    if (candidates.includes(normalizePath(note.path))) return note;
   }
 
   const titleLower = cleaned.replace(/\.md$/i, "").toLowerCase();

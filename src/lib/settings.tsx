@@ -82,10 +82,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--content-font-size", `${values.content_font_size}px`);
     root.style.setProperty("--content-line-height", String(values.content_line_height));
     root.style.setProperty("--content-width", `${values.content_width}px`);
+  }, [values.content_font_size, values.content_line_height, values.content_width]);
+
+  useEffect(() => {
+    const root = document.documentElement;
     for (const key of MD_COLOR_KEYS) {
       root.style.setProperty(`--${key.replace(/_/g, "-")}`, values[key]);
     }
-  }, [values]);
+  }, [
+    values.md_h1_dark, values.md_h2_dark, values.md_h3_dark, values.md_h4_dark,
+    values.md_h5_dark, values.md_h6_dark, values.md_bold_dark,
+    values.md_h1_light, values.md_h2_light, values.md_h3_light, values.md_h4_light,
+    values.md_h5_light, values.md_h6_light, values.md_bold_light,
+  ]);
 
   const value = useMemo(
     () => ({ values, ready, get, set, reset }),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
@@ -7,6 +7,7 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useSettings } from "../../lib/settings";
+import { useAutosaveTimer } from "../../lib/useAutosave";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { type MenuItem } from "../ContextMenu";
@@ -19,11 +20,15 @@ import { type EmbedLabels } from "./livePreview";
 import type { EmbedOpenTarget } from "../embeds/model";
 import { imagePathFor } from "./imagePath";
 import InsertModal from "./InsertModal";
-import MarkdownPreview from "./MarkdownPreview";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
-import { toggleTaskInSource } from "./markdown";
+import { toggleTaskInSource } from "./taskToggle";
+import { normalizePath } from "../../lib/paths";
 import { resolveRelativeLink } from "./linkResolver";
 import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
+
+// Reading view pulls in markdown-it, KaTeX and highlight.js — load it the
+// first time the user switches to read mode.
+const MarkdownPreview = lazy(() => import("./MarkdownPreview"));
 
 type EditorMode = "edit" | "read";
 
@@ -43,7 +48,7 @@ interface Props {
   onOpenEmbed: (target: EmbedOpenTarget) => void;
 }
 
-const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+const norm = normalizePath;
 
 const PREVIEW_HEADING_SEL = ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6";
 
@@ -292,7 +297,7 @@ export default function NoteEditor({
   const viewRef = useRef<EditorView | null>(null);
   const crlfRef = useRef(false);
   const dirtyRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { schedule: scheduleSaveTimer, cancel: cancelSaveTimer } = useAutosaveTimer();
   const saveNowRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const notePathRef = useRef(notePath);
   notePathRef.current = notePath;
@@ -405,10 +410,7 @@ export default function NoteEditor({
   }, []);
 
   const doSave = useCallback((): Promise<void> => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    cancelSaveTimer();
     const view = viewRef.current;
     if (!view || !dirtyRef.current) return Promise.resolve();
     const savedPath = notePathRef.current;
@@ -420,25 +422,27 @@ export default function NoteEditor({
     setDirty(false);
     return window.prism.saveNote(savedPath, content)
       .then(() => setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })))
-      .catch(() => {
+      .catch((error: unknown) => {
+        // A locked private vault is not a deleted note — keep the tab, warn.
+        if (String(error).includes("VAULT_LOCKED")) {
+          showToast(t["private.vaultLockedError"], "error");
+          return;
+        }
         showToast(t["editor.noteDeleted"], "error");
         onNoteGone(savedPath);
       });
-  }, [onNoteGone, showToast, t]);
+  }, [cancelSaveTimer, onNoteGone, showToast, t]);
 
   useEffect(() => {
     saveNowRef.current = doSave;
   }, [doSave]);
 
+  // The delay is read per edit so a settings change never rebuilds the editor.
   const scheduleSave = useCallback(() => {
     dirtyRef.current = true;
     setDirty(true);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      saveNowRef.current();
-    }, getSetting("autosave_delay"));
-  }, [getSetting]);
+    scheduleSaveTimer(() => { void saveNowRef.current(); }, getSetting("autosave_delay"));
+  }, [getSetting, scheduleSaveTimer]);
 
   // ---- Editor lifecycle ----
 
@@ -539,12 +543,9 @@ export default function NoteEditor({
       void saveNowRef.current();
       viewRef.current?.destroy();
       viewRef.current = null;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      cancelSaveTimer();
     };
-  }, [notePath, scheduleSave]);
+  }, [cancelSaveTimer, notePath, scheduleSave]);
 
   // Editor scheme/indent/wrap follow the live settings without a rebuild
   useEffect(() => {
@@ -950,18 +951,24 @@ export default function NoteEditor({
           <OutlineCard items={editOutline} onJump={jumpToEditHeading} activeId={editActiveId} />
         )}
         {mode === "read" && ready && (
-          <MarkdownPreview
-            content={docText}
-            assetContext={assetContext}
-            foldScope={notePath}
-            scrollRef={previewScrollRef}
-            initialSection={scrollAnchorRef.current.section}
-            onToggleTask={handleToggleTask}
-            onOpenWikilink={onOpenWikilink}
-            onResolveRelativeLink={(href) => onOpenWikilink(resolveRelativeLink(href, notePath))}
-            onOpenEmbed={onOpenEmbed}
-            embedLabels={embedLabels}
-          />
+          <Suspense fallback={(
+            <div className="h-full flex items-center justify-center">
+              <Spinner size={20} className="text-muted" />
+            </div>
+          )}>
+            <MarkdownPreview
+              content={docText}
+              assetContext={assetContext}
+              foldScope={notePath}
+              scrollRef={previewScrollRef}
+              initialSection={scrollAnchorRef.current.section}
+              onToggleTask={handleToggleTask}
+              onOpenWikilink={onOpenWikilink}
+              onResolveRelativeLink={(href) => onOpenWikilink(resolveRelativeLink(href, notePath))}
+              onOpenEmbed={onOpenEmbed}
+              embedLabels={embedLabels}
+            />
+          </Suspense>
         )}
       </div>
       {insertOpen && (

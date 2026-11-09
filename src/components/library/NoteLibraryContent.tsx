@@ -11,7 +11,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Star,
   Trash2,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -21,8 +20,9 @@ import { useContextMenu } from "../../lib/useContextMenu";
 import { useSetToggle } from "../../lib/useToggleSet";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
 import { resolveTagColor } from "../../lib/colors";
+import { noteBaseMenuItems } from "../../lib/noteMenu";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
-import { makeNoteDoc, noteDocId } from "../../lib/workspace/types";
+import { makeNoteDoc, noteDocId, noteKey } from "../../lib/workspace/types";
 import { buildColorMenuItem } from "../ColorPicker";
 import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
@@ -115,6 +115,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
   const {
     vaultPath,
     notes,
+    privateVault,
     settings,
     scanning,
     switching,
@@ -128,7 +129,6 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     changeSearchScope,
     selectCollection,
     favorites,
-    toggleFavorite,
     reload,
     collectionColorByName,
     collections,
@@ -264,18 +264,11 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         }))
       : [{ label: t["collections.none"], onClick: () => {} }];
 
-    const items: MenuItem[] = [
-      {
-        label: favorites.has(note.path) ? t["menu.unfavorite"] : t["menu.favorite"],
-        icon: <Star size={14} />,
-        onClick: () => { void toggleFavorite(note); },
-      },
-      {
-        label: t["menu.showInExplorer"],
-        icon: <FolderOpen size={14} />,
-        onClick: () => window.prism.showItemInFolder(note.path),
-      },
-    ];
+    const items: MenuItem[] = noteBaseMenuItems(note, favorites.has(note.path), {
+      favorite: t["menu.favorite"],
+      unfavorite: t["menu.unfavorite"],
+      showInExplorer: t["menu.showInExplorer"],
+    });
 
     if (collectionContext) {
       const otherCollections = collections.filter((collection) => collection.id !== collectionContext.collectionId);
@@ -417,8 +410,9 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       </>
     ),
     // Searching inside a collection has no defined semantics (search replaces
-    // the note list the collection resolves against), so hide the controls.
-    controls: selectedCollection ? undefined : (
+    // the note list the collection resolves against), and private vaults are
+    // not indexed — hide the controls in both cases.
+    controls: selectedCollection || privateVault ? undefined : (
       <>
         <SearchInput
           ref={searchInputRef}
@@ -496,7 +490,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       </>
     ),
   }), [
-    allExpanded, changeSearchScope, count, handleToggleAll, searchQuery,
+    allExpanded, changeSearchScope, count, handleToggleAll, privateVault, searchQuery,
     searchScope, selectMode, selectedCollection, t, title, titleColor,
   ]);
 
@@ -641,7 +635,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                       meta={!selectMode ? (
                         <>
                           {(() => {
-                            const noteColls = noteCollections.get(relPath.replace(/\//g, "\\").toLowerCase()) ?? [];
+                            const noteColls = noteCollections.get(noteKey(relPath)) ?? [];
                             if (noteColls.length === 0) return <Badge variant="warning">{t["vault.uncategorized"]}</Badge>;
                             return (
                               <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">

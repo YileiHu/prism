@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
-import { Inbox, ListChecks, Pencil, Trash2 } from "lucide-react";
+import { Inbox } from "lucide-react";
 import { useT } from "../../i18n";
-import { useToast } from "../../lib/toast";
-import ItemRow from "../ItemRow";
 import SectionCard from "../SectionCard";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
-import ConfirmDialog from "../ConfirmDialog";
-import RenameModal from "../RenameModal";
 import InboxCapture from "../gtd/InboxCapture";
 import GtdProcessDialog from "../gtd/GtdProcessDialog";
-import { formatGtdDate, type GtdItem } from "../gtd/types";
+import GtdInboxList from "../gtd/GtdInboxList";
+import { useGtdItemActions } from "../gtd/useGtdItemActions";
+import { type GtdItem } from "../gtd/types";
 import { tagColor } from "../../lib/colors";
 
 interface Props {
@@ -19,12 +17,12 @@ interface Props {
 
 export default function HomeInboxCard({ version }: Props) {
   const { t } = useT();
-  const showToast = useToast();
   const [items, setItems] = useState<GtdItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [processing, setProcessing] = useState<GtdItem | null>(null);
-  const [renaming, setRenaming] = useState<GtdItem | null>(null);
-  const [deleting, setDeleting] = useState<GtdItem | null>(null);
+
+  const notifyChange = () => window.dispatchEvent(new Event("gtd-changed"));
+  const actions = useGtdItemActions({ kind: "item", onChanged: notifyChange });
 
   useEffect(() => {
     window.prism
@@ -33,20 +31,6 @@ export default function HomeInboxCard({ version }: Props) {
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [version]);
-
-  const notifyChange = () => window.dispatchEvent(new Event("gtd-changed"));
-
-  const handleDelete = async () => {
-    if (!deleting) return;
-    try {
-      await window.prism.deleteGtdItem(deleting.id);
-    } catch {
-      showToast(t["common.deleteFailed"], "error");
-      return;
-    }
-    showToast(t["common.deleted"]);
-    notifyChange();
-  };
 
   return (
     <>
@@ -67,24 +51,13 @@ export default function HomeInboxCard({ version }: Props) {
           {loaded && items.length === 0 && (
             <EmptyState size="card" text={t["home.inbox.emptyHint"]} />
           )}
-          {items.map((item) => (
-            <ItemRow
-              key={item.id}
-              variant="dense"
-              onPrimaryClick={() => setProcessing(item)}
-              menuItems={[
-                { label: t["gtd.process"], icon: <ListChecks size={14} />, onClick: () => setProcessing(item) },
-                { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(item) },
-                { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setDeleting(item) },
-              ]}
-              title={item.title}
-              meta={
-                <span className="flex-shrink-0 text-caption text-faint">
-                  {formatGtdDate(item.createdAt)}
-                </span>
-              }
-            />
-          ))}
+          <GtdInboxList
+            items={items}
+            variant="dense"
+            onProcess={setProcessing}
+            onRename={actions.requestRename}
+            onDelete={actions.requestDelete}
+          />
         </div>
       </SectionCard>
 
@@ -94,29 +67,7 @@ export default function HomeInboxCard({ version }: Props) {
         onDecided={notifyChange}
       />
 
-      <RenameModal
-        open={renaming !== null}
-        initialValue={renaming?.title ?? ""}
-        multiline
-        onClose={() => setRenaming(null)}
-        onSubmit={async (title) => {
-          if (!renaming) return;
-          try {
-            await window.prism.renameGtdItem(renaming.id, title);
-          } catch {
-            showToast(t["common.saveFailed"], "error");
-            return;
-          }
-          notifyChange();
-        }}
-      />
-
-      <ConfirmDialog
-        open={deleting !== null}
-        message={t["gtd.deleteItemConfirm"]}
-        onConfirm={handleDelete}
-        onClose={() => setDeleting(null)}
-      />
+      {actions.modals}
     </>
   );
 }

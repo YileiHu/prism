@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { themes, type ThemeColors } from "./themes";
 import { DEFAULT_SETTINGS, decodeSetting, type ColorMode } from "../shared/settings";
 
@@ -115,12 +115,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const theme = themes.find((t) => t.id === themeId) || themes[0];
-
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme, themeId, mode, resolvedMode, setMode }}>
-      {children}
-    </ThemeContext.Provider>
+  const value = useMemo(
+    () => ({ theme, setTheme, themeId, mode, resolvedMode, setMode }),
+    [theme, setTheme, themeId, mode, resolvedMode, setMode],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

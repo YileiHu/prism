@@ -70,7 +70,7 @@ export default function NodeDetailPanel({
   };
 
   return (
-    <div className="absolute right-3 top-3 bottom-6 z-20 w-64 flex flex-col rounded-control border border-line/50 bg-surface shadow-popover overflow-hidden">
+    <div className="panel-floating">
       <div className="flex items-center gap-1.5 px-2.5 h-8 border-b border-line/50 flex-shrink-0">
         <StickyNote size={13} className="text-muted flex-shrink-0" />
         <span className="text-caption font-medium text-secondary flex-1 truncate">
@@ -83,7 +83,7 @@ export default function NodeDetailPanel({
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.text"]}</label>
+          <label className="field-label">{t["canvas.text"]}</label>
           <Textarea
             value={text}
             rows={2}
@@ -102,7 +102,7 @@ export default function NodeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.textStyle"]}</label>
+          <label className="field-label">{t["canvas.textStyle"]}</label>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -187,7 +187,7 @@ export default function NodeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.target"]}</label>
+          <label className="field-label">{t["canvas.target"]}</label>
           {node.target ? (
             <div className="space-y-1.5">
               <p className="text-caption text-secondary break-all">{targetTitle(node.target)}</p>
@@ -216,7 +216,7 @@ export default function NodeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.color"]}</label>
+          <label className="field-label">{t["canvas.color"]}</label>
           <ColorSwatchPicker
             name={node.text || node.id}
             value={node.color}
@@ -226,7 +226,7 @@ export default function NodeDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.notes"]}</label>
+          <label className="field-label">{t["canvas.notes"]}</label>
           <Textarea
             value={notes}
             rows={4}

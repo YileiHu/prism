@@ -3,17 +3,35 @@ import { useSettings } from "../../lib/settings";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { toRelativePath, useCollections } from "../useCollections";
 import { resolveTagColor, type PaletteColor } from "../../lib/colors";
-import type { CollectionData } from "../collectionTypes";
-import type { NoteBrief } from "../../shared/models";
-
-const norm = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+import { useVaultLock } from "../../lib/vaultLock";
+import type { NoteBrief, NoteListChanges } from "../../shared/models";
+import { noteKey, normalizePath } from "../../lib/workspace/types";
 
 // Sentinel stored in the per-vault `last_coll_*` setting. The whiteboard view is
 // selectable exactly like a collection, so it shares the same memory slot.
 export const CANVAS_VIEW_ID = "__canvas__";
 
+// Patch the in-memory list instead of re-reading the vault: keep unchanged
+// rows (and their object identity), drop deletions, replace/append upserts.
+function mergeNoteChanges(prev: NoteBrief[], changes: NoteListChanges): NoteBrief[] {
+  const deleted = new Set(changes.deleted.map(normalizePath));
+  const byPath = new Map<string, NoteBrief>();
+  for (const note of prev) {
+    const key = normalizePath(note.path);
+    if (!deleted.has(key)) byPath.set(key, note);
+  }
+  for (const note of changes.upserted) byPath.set(normalizePath(note.path), note);
+  return [...byPath.values()].sort((a, b) =>
+    a.modifiedAt < b.modifiedAt ? 1 : a.modifiedAt > b.modifiedAt ? -1 : 0,
+  );
+}
+
 export function useNoteLibrary(vaultPath: string) {
   const { values: settings } = useSettings();
+  const vaultLock = useVaultLock();
+  const privateVault = vaultLock.isPrivate(vaultPath);
+  const locked = vaultLock.isLocked(vaultPath);
+  const lockEpoch = vaultLock.epoch;
   const [notes, setNotes] = useState<NoteBrief[]>([]);
   const [scanning, setScanning] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -48,7 +66,8 @@ export function useNoteLibrary(vaultPath: string) {
   }, [vaultPath]);
 
   const loadNotes = useCallback(async () => {
-    if (!vaultPath) {
+    // A locked private vault has no readable notes and no index to query.
+    if (!vaultPath || locked) {
       setNotes([]);
       return;
     }
@@ -64,7 +83,7 @@ export function useNoteLibrary(vaultPath: string) {
     } finally {
       setNotesLoading(false);
     }
-  }, [debouncedQuery, vaultPath]);
+  }, [debouncedQuery, locked, vaultPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +120,11 @@ export function useNoteLibrary(vaultPath: string) {
         setShownVaultPath("");
       }
     }
-    if (!vaultPath) {
+    if (!vaultPath || locked) {
+      setNotes([]);
+      setCollections([]);
+      setSelectedCollectionId(null);
+      setFavorites(new Set());
       setScanning(false);
       setInitialLoading(false);
       setSwitching(false);
@@ -110,18 +133,16 @@ export function useNoteLibrary(vaultPath: string) {
         switchHintTimer.current = null;
       }
       setShownVaultPath("");
+      setDataVaultPath("");
       dataVaultRef.current = "";
       return;
     }
     void (async () => {
       try {
-        await window.prism.setVaultPath(vaultPath);
-        const [cachedNotes, collData] = await Promise.all([
-          window.prism.getNoteList(vaultPath),
-          window.prism.loadNoteCollections(vaultPath) as Promise<{ collections: CollectionData[] } | null>,
-        ]);
+        const summary = await window.prism.getVaultLibrarySummary(vaultPath);
         if (cancelled) return;
-        const colls = collData?.collections ?? [];
+        const cachedNotes = summary.notes;
+        const colls = summary.collections?.collections ?? [];
         const lastCollId = await window.prism.getSetting(`last_coll_${vaultPath}`);
         if (cancelled) return;
         // Notes, collections and their owning vault must commit together.
@@ -165,7 +186,7 @@ export function useNoteLibrary(vaultPath: string) {
     };
     // setCollections/setSelectedCollectionId come from useCollections below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaultPath, reloadKey]);
+  }, [vaultPath, reloadKey, locked, lockEpoch]);
 
   useEffect(() => {
     if (scanning || initialLoading || !vaultPath) return;
@@ -204,22 +225,16 @@ export function useNoteLibrary(vaultPath: string) {
   }, [refreshFavorites]);
 
   useEffect(() => {
-    return window.prism.onVaultUpdated((changedPath) => {
-      if (norm(changedPath) !== norm(vaultPath) || scanning) return;
+    return window.prism.onVaultUpdated((changedPath, changes) => {
+      if (normalizePath(changedPath) !== normalizePath(vaultPath) || scanning || locked) return;
+      // A search result is a filtered projection; patch only the plain list.
+      if (changes && !debouncedQuery.trim()) {
+        setNotes((prev) => mergeNoteChanges(prev, changes));
+        return;
+      }
       void loadNotes();
     });
-  }, [vaultPath, loadNotes, scanning]);
-
-  const toggleFavorite = useCallback(async (note: { path: string; title: string }) => {
-    const nowFavorite = await window.prism.toggleFavoriteNote(note.path, note.title);
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (nowFavorite) next.add(note.path);
-      else next.delete(note.path);
-      return next;
-    });
-    window.dispatchEvent(new Event("favorites-changed"));
-  }, []);
+  }, [vaultPath, loadNotes, locked, scanning, debouncedQuery]);
 
   const changeSearchScope = useCallback((scope: "title" | "content") => {
     setSearchScope(scope);
@@ -244,11 +259,11 @@ export function useNoteLibrary(vaultPath: string) {
 
   // Collection (root list or group) that contains an absolute note path
   const findCollectionForNote = useCallback((absPath: string): string | null => {
-    const rel = toRelativePath(absPath, viewVaultPath).replace(/\\/g, "/").toLowerCase();
+    const rel = noteKey(toRelativePath(absPath, viewVaultPath));
     const owner = collectionsApi.collections.find((c) =>
-      c.notePaths.some((p) => p.replace(/\\/g, "/").toLowerCase() === rel) ||
+      c.notePaths.some((p) => noteKey(p) === rel) ||
       (c.groups ?? []).some((g) =>
-        g.notePaths.some((p) => p.replace(/\\/g, "/").toLowerCase() === rel),
+        g.notePaths.some((p) => noteKey(p) === rel),
       ),
     );
     return owner?.id ?? null;
@@ -266,6 +281,8 @@ export function useNoteLibrary(vaultPath: string) {
   return {
     vaultPath: viewVaultPath,
     notes,
+    privateVault,
+    locked,
     settings,
     scanning,
     switching,
@@ -282,7 +299,6 @@ export function useNoteLibrary(vaultPath: string) {
     selectCanvasView,
     findCollectionForNote,
     favorites,
-    toggleFavorite,
     loadNotes,
     reload: () => setReloadKey((key) => key + 1),
     collectionColorByName,

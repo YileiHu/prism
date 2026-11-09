@@ -38,9 +38,13 @@ export default function ItemRow({
   multiline = false,
   className = "",
   onContextMenu: propsOnContextMenu,
+  role,
+  tabIndex,
+  onKeyDown,
   ...rest
 }: Props) {
   const { onContextMenu: openMenu } = useContextMenu();
+  const interactive = !!onPrimaryClick;
   const hasHoverActions = !!hoverActions?.length;
   // Overlaying an always-visible action would collide with meta, so only swap
   // when every action is hover-only.
@@ -63,9 +67,19 @@ export default function ItemRow({
       title={tooltip}
       onClick={onPrimaryClick}
       onContextMenu={menuItems ? (e) => openMenu(e, menuItems) : propsOnContextMenu}
+      role={role ?? (interactive ? "button" : undefined)}
+      tabIndex={tabIndex ?? (interactive ? 0 : undefined)}
+      onKeyDown={(e) => {
+        onKeyDown?.(e);
+        if (!interactive || e.defaultPrevented || e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPrimaryClick();
+        }
+      }}
       className={`group flex gap-2 transition-colors ${multiline ? "items-start" : "items-center"} ${variant === "dense" ? "px-2 py-1.5 rounded-control" : "px-3 py-1.5"} ${
         selected ? "bg-[var(--accent-muted)] active-bar" : "hover:bg-elevated/50"
-      } ${onPrimaryClick ? "cursor-pointer" : ""} ${className}`}
+      } ${interactive ? "cursor-pointer" : ""} ${className}`}
     >
       {leading}
       <span className={`flex-1 min-w-0 text-body ${multiline ? "whitespace-pre-wrap break-words" : "truncate"} ${selected ? "text-[var(--accent-text)]" : "text-primary"}`}>

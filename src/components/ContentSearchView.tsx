@@ -7,6 +7,7 @@ import { useSettings } from "../lib/settings";
 import { resolveTagColor, type PaletteColor } from "../lib/colors";
 import { type CollectionData } from "./collectionTypes";
 import { toRelativePath } from "./useCollections";
+import { noteKey } from "../lib/workspace/types";
 import EmptyState from "./EmptyState";
 import { SkeletonRows } from "./Skeleton";
 import Badge from "./Badge";
@@ -54,7 +55,7 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
   const membershipsByPath = useMemo(() => {
     const map = new Map<string, Membership[]>();
     const add = (relPath: string, membership: Membership) => {
-      const key = relPath.replace(/\//g, "\\").toLowerCase();
+      const key = noteKey(relPath);
       const list = map.get(key);
       if (list) list.push(membership);
       else map.set(key, [membership]);
@@ -140,7 +141,7 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const hit = results[virtualRow.index];
-              const relKey = toRelativePath(hit.path, vaultPath).replace(/\//g, "\\").toLowerCase();
+              const relKey = noteKey(toRelativePath(hit.path, vaultPath));
               const memberships = membershipsByPath.get(relKey) ?? [];
               return (
                 <div

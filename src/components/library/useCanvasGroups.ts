@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasFile, CanvasGroup, CanvasGroupsFile } from "../../shared/models";
+import { useDebouncedPersist } from "../../lib/useDebouncedJsonPersist";
+import { deleteById, insertAt, moveItem, renameById } from "../../lib/collectionOps";
 import { relativePathInsideVault } from "../useCollections";
-
-const SAVE_DELAY = 300;
 
 interface GroupsState {
   groups: CanvasGroup[];
@@ -15,10 +15,6 @@ function makeId(): string {
 
 function normalizeRel(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\/+/, "").trim();
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 // Group paths win; anything left in `paths` (or untouched on disk) is
@@ -88,7 +84,6 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const loadedRef = useRef(false);
   const dirtyRef = useRef(false);
   const vaultRef = useRef(vaultPath);
   vaultRef.current = vaultPath;
@@ -96,30 +91,30 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
   // even if the user switches vaults during the debounce window.
   const saveVaultRef = useRef("");
 
-  const flush = useCallback(() => {
-    if (!loadedRef.current || !dirtyRef.current || !saveVaultRef.current) return;
-    dirtyRef.current = false;
+  const { schedule: schedulePersist, flush: flushPending } = useDebouncedPersist({
+    onError: () => { dirtyRef.current = true; },
+  });
+
+  const persist = useCallback(() => {
     const target = saveVaultRef.current;
-    void window.prism.saveCanvasGroups(target, {
+    if (!target || !dirtyRef.current) return Promise.resolve();
+    dirtyRef.current = false;
+    return window.prism.saveCanvasGroups(target, {
       version: 1,
       groups: stateRef.current.groups,
       paths: stateRef.current.paths,
-    }).catch(() => {
-      dirtyRef.current = true;
     });
   }, []);
 
   useEffect(() => {
-    flush();
+    flushPending();
     let cancelled = false;
     setLoaded(false);
-    loadedRef.current = false;
     dirtyRef.current = false;
     saveVaultRef.current = "";
     if (!vaultPath) {
       setState({ groups: [], paths: [] });
       setLoaded(true);
-      loadedRef.current = true;
       return;
     }
     void (async () => {
@@ -134,26 +129,16 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
       stateRef.current = next;
       saveVaultRef.current = vaultPath;
       setLoaded(true);
-      loadedRef.current = true;
     })();
     return () => {
       cancelled = true;
     };
-  }, [vaultPath, flush]);
+  }, [vaultPath, flushPending]);
 
   useEffect(() => {
-    if (!loaded) return;
-    const timer = window.setTimeout(flush, SAVE_DELAY);
-    return () => window.clearTimeout(timer);
-  }, [state, loaded, flush]);
-
-  useEffect(() => {
-    window.addEventListener("beforeunload", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      flush();
-    };
-  }, [flush]);
+    if (!loaded || !dirtyRef.current) return;
+    schedulePersist(persist);
+  }, [state, loaded, schedulePersist, persist]);
 
   const apply = useCallback((next: GroupsState) => {
     saveVaultRef.current = vaultRef.current;
@@ -193,12 +178,7 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
     const trimmed = name.trim();
     if (!trimmed) return;
     const current = stateRef.current;
-    apply({
-      ...current,
-      groups: current.groups.map((group) => (
-        group.id === id ? { ...group, name: trimmed } : group
-      )),
-    });
+    apply({ ...current, groups: renameById(current.groups, id, trimmed) });
   }, [apply]);
 
   const setGroupColor = useCallback((id: string, color: string) => {
@@ -213,18 +193,13 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
 
   const deleteGroup = useCallback((id: string) => {
     const current = stateRef.current;
-    apply({ ...current, groups: current.groups.filter((group) => group.id !== id) });
+    apply({ ...current, groups: deleteById(current.groups, id) });
   }, [apply]);
 
   const reorderGroups = useCallback((from: number, to: number) => {
     const current = stateRef.current;
-    if (from === to || from < 0 || to < 0 || from >= current.groups.length || to >= current.groups.length) {
-      return;
-    }
-    const groups = [...current.groups];
-    const [moved] = groups.splice(from, 1);
-    groups.splice(to, 0, moved);
-    apply({ ...current, groups });
+    const groups = moveItem(current.groups, from, to);
+    if (groups !== current.groups) apply({ ...current, groups });
   }, [apply]);
 
   const movePath = useCallback((
@@ -239,14 +214,11 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
     let paths = current.paths.filter((entry) => entry.toLowerCase() !== key);
     if (toGroupId === null) {
       const list = collectUngrouped(groups, paths, fileByRel);
-      list.splice(toIndex === undefined ? list.length : clamp(toIndex, 0, list.length), 0, rel);
-      paths = list;
+      paths = insertAt(list, toIndex ?? list.length, rel);
     } else {
       groups = groups.map((group) => {
         if (group.id !== toGroupId) return group;
-        const next = [...group.paths];
-        next.splice(toIndex === undefined ? next.length : clamp(toIndex, 0, next.length), 0, rel);
-        return { ...group, paths: next };
+        return { ...group, paths: insertAt(group.paths, toIndex ?? group.paths.length, rel) };
       });
     }
     apply({ groups, paths });
@@ -262,20 +234,14 @@ export function useCanvasGroups(vaultPath: string, files: CanvasFile[]) {
     const current = stateRef.current;
     if (from === to) return;
     if (groupId === null) {
-      const list = [...ungroupedRef.current];
-      if (from < 0 || to < 0 || from >= list.length || to >= list.length) return;
-      const [moved] = list.splice(from, 1);
-      list.splice(to, 0, moved);
-      apply({ ...current, paths: list });
+      const list = moveItem(ungroupedRef.current, from, to);
+      if (list !== ungroupedRef.current) apply({ ...current, paths: list });
       return;
     }
     const groups = current.groups.map((group) => {
       if (group.id !== groupId) return group;
-      const paths = [...group.paths];
-      if (from < 0 || to < 0 || from >= paths.length || to >= paths.length) return group;
-      const [moved] = paths.splice(from, 1);
-      paths.splice(to, 0, moved);
-      return { ...group, paths };
+      const paths = moveItem(group.paths, from, to);
+      return paths === group.paths ? group : { ...group, paths };
     });
     apply({ ...current, groups });
   }, [apply]);

@@ -1,4 +1,5 @@
-import { renderMarkdown, toggleTaskInSource, stripFrontmatter } from "../out/md-test.mjs";
+import { renderMarkdown, stripFrontmatter } from "../out/md-test.mjs";
+import { toggleTaskInSource } from "../out/task-toggle.mjs";
 
 const sample = `---
 title: Test Note

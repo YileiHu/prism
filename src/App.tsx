@@ -33,6 +33,7 @@ import TabStrip from "./components/TabStrip";
 import ThemeQuickMenu from "./components/ThemeQuickMenu";
 import { useContextMenu } from "./lib/useContextMenu";
 import { useGlobalShortcuts } from "./lib/useShortcuts";
+import { useVaultLock } from "./lib/vaultLock";
 import { ToastProvider } from "./lib/toast";
 import { useT } from "./i18n";
 import type { Translation } from "./i18n/zh";
@@ -52,11 +53,19 @@ const MODULES: { id: ModuleId; icon: typeof House; labelKey: keyof Translation }
   { id: "resources", icon: Globe, labelKey: "nav.resources" },
 ];
 
+// `private` is a hint derived from marker files, not part of the stored list.
+function vaultsSignature(list: VaultEntry[]): string {
+  return JSON.stringify(
+    list.map((vault) => [normalizePath(vault.path), vault.name, vault.icon ?? ""]),
+  );
+}
+
 export default function App() {
   const { t } = useT();
   const workspace = useWorkspace();
-  const { state, hydrate, showModule, activateDoc, openDoc, closeDoc, closeOthers, closeAll, openInSplit, closeSplit, closeVaultDocs, closePdfDocsExcept } = workspace;
+  const { state, hydrate, showModule, activateDoc, openDoc, closeDoc, closeOthers, closeAll, openInSplit, closeSplit, closeVaultDocs, closePdfDocsExcept, setLibrary } = workspace;
   const pdf = usePdfDocuments();
+  const vaultLock = useVaultLock();
   const { onContextMenu } = useContextMenu();
   const sidebarCollapsed = useSidebarCollapsed();
 
@@ -69,6 +78,8 @@ export default function App() {
   const splashHidden = useRef(false);
   const vaultsRef = useRef(vaults);
   vaultsRef.current = vaults;
+  const libraryRef = useRef(state.library);
+  libraryRef.current = state.library;
   const pendingNotesRef = useRef<{ path: string; title?: string }[]>([]);
 
   const dismissSplash = useCallback(() => {
@@ -83,6 +94,16 @@ export default function App() {
     return window.prism.onMaximizeChange(setMaximized);
   }, []);
 
+  // A vault lock closes its document tabs — the files are unreadable again.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const vaultPath = (event as CustomEvent<{ path?: string }>).detail?.path;
+      if (vaultPath) closeVaultDocs(vaultPath);
+    };
+    window.addEventListener("prism:vault-locked", handler);
+    return () => window.removeEventListener("prism:vault-locked", handler);
+  }, [closeVaultDocs]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -91,6 +112,14 @@ export default function App() {
       if (raw) {
         try { parsed = JSON.parse(raw) as VaultEntry[]; } catch { parsed = []; }
       }
+      // The marker file is authoritative; the stored flag is only a hint.
+      const statuses = await window.prism.getVaultPrivacyStatuses().catch(() => []);
+      const privatePaths = new Set(
+        statuses.filter((status) => status.private).map((status) => normalizePath(status.path)),
+      );
+      parsed = parsed.map((vault) => privatePaths.has(normalizePath(vault.path))
+        ? { ...vault, private: true }
+        : { ...vault, private: undefined });
       if (cancelled) return;
       setVaults(parsed);
       try {
@@ -104,36 +133,42 @@ export default function App() {
 
   // Keep the vault list in sync with Settings, stop watchers for removed
   // vaults and drop their document tabs.
+  const syncVaults = useCallback(async () => {
+    const raw = await window.prism.getSetting("vault_paths");
+    let parsed: VaultEntry[] = [];
+    if (raw) {
+      try { parsed = JSON.parse(raw) as VaultEntry[]; } catch { return; }
+    }
+    // Focus fires on every window activation; skip state updates (and the
+    // full-panel re-render they cause) when nothing actually changed.
+    if (vaultsSignature(parsed) === vaultsSignature(vaultsRef.current)) return;
+
+    for (const removed of vaultsRef.current) {
+      if (parsed.some((vault) => normalizePath(vault.path) === normalizePath(removed.path))) continue;
+      void window.prism.unwatchVault(removed.path);
+      closeVaultDocs(removed.path);
+    }
+    for (const added of parsed) {
+      if (vaultsRef.current.some((vault) => normalizePath(vault.path) === normalizePath(added.path))) continue;
+      void window.prism.setVaultPath(added.path).catch(() => {});
+    }
+    setVaults(parsed);
+    const library = libraryRef.current;
+    const notePath = library.kind === "pdf" ? "" : library.vaultPath;
+    if (notePath && !parsed.some((vault) => normalizePath(vault.path) === normalizePath(notePath))) {
+      if (parsed.length > 0) setLibrary({ kind: "note", vaultPath: parsed[0].path });
+      else if (pdf.repoPath) setLibrary({ kind: "pdf", repoPath: pdf.repoPath });
+    }
+  }, [closeVaultDocs, pdf.repoPath, setLibrary]);
+
   useEffect(() => {
-    const syncVaults = async () => {
-      const raw = await window.prism.getSetting("vault_paths");
-      let parsed: VaultEntry[] = [];
-      if (raw) {
-        try { parsed = JSON.parse(raw) as VaultEntry[]; } catch { return; }
-      }
-      for (const removed of vaultsRef.current) {
-        if (parsed.some((vault) => normalizePath(vault.path) === normalizePath(removed.path))) continue;
-        void window.prism.unwatchVault(removed.path);
-        closeVaultDocs(removed.path);
-      }
-      for (const added of parsed) {
-        if (vaultsRef.current.some((vault) => normalizePath(vault.path) === normalizePath(added.path))) continue;
-        void window.prism.setVaultPath(added.path).catch(() => {});
-      }
-      setVaults(parsed);
-      const notePath = state.library.kind === "pdf" ? "" : state.library.vaultPath;
-      if (notePath && !parsed.some((vault) => normalizePath(vault.path) === normalizePath(notePath))) {
-        if (parsed.length > 0) workspace.setLibrary({ kind: "note", vaultPath: parsed[0].path });
-        else if (pdf.repoPath) workspace.setLibrary({ kind: "pdf", repoPath: pdf.repoPath });
-      }
-    };
     window.addEventListener("focus", syncVaults);
     window.addEventListener("vaults-changed", syncVaults);
     return () => {
       window.removeEventListener("focus", syncVaults);
       window.removeEventListener("vaults-changed", syncVaults);
     };
-  }, [closeVaultDocs, pdf.repoPath, state.library, workspace]);
+  }, [syncVaults]);
 
   // A repository switch invalidates every PDF tab from the previous library.
   useEffect(() => {
@@ -167,9 +202,14 @@ export default function App() {
     });
     if (!target) return false;
     const fallbackTitle = detail.path.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ?? detail.path;
-    openDoc(makeNoteDoc(target.path, detail.path, detail.title || fallbackTitle));
+    const doc = makeNoteDoc(target.path, detail.path, detail.title || fallbackTitle);
+    if (vaultLock.isLocked(target.path)) {
+      vaultLock.requestUnlock(target.path, () => openDoc(doc));
+    } else {
+      openDoc(doc);
+    }
     return true;
-  }, [openDoc]);
+  }, [openDoc, vaultLock]);
 
   // Deep links land before or after hydration; WorkspaceProvider merges both.
   // A link that arrives before the vault list is known waits for it.
@@ -202,17 +242,20 @@ export default function App() {
       ? { height: "100%" }
       : { position: "absolute", inset: 0, height: "100%", visibility: "hidden", overflow: "hidden" };
 
-  const tabItems = state.tabs.map((tab) => ({
-    id: tab.id,
-    title: tab.title,
-    icon: tab.kind === "note"
-      ? <FileText size={12} />
-      : tab.kind === "canvas"
-        ? <Frame size={12} />
-        : <BookOpen size={12} />,
-  }));
+  const tabItems = useMemo(
+    () => state.tabs.map((tab) => ({
+      id: tab.id,
+      title: tab.title,
+      icon: tab.kind === "note"
+        ? <FileText size={12} />
+        : tab.kind === "canvas"
+          ? <Frame size={12} />
+          : <BookOpen size={12} />,
+    })),
+    [state.tabs],
+  );
 
-  const handleTabContextMenu = (id: string, event: React.MouseEvent) => {
+  const handleTabContextMenu = useCallback((id: string, event: React.MouseEvent) => {
     const items: MenuItem[] = [
       { label: t["workspace.closeTab"], icon: <X size={14} />, onClick: () => closeDoc(id) },
       { label: t["workspace.closeOthers"], onClick: () => closeOthers(id) },
@@ -223,7 +266,7 @@ export default function App() {
       items.push({ label: t["workspace.closeSplit"], onClick: closeSplit });
     }
     onContextMenu(event, items);
-  };
+  }, [t, closeDoc, closeOthers, closeAll, openInSplit, state.split, closeSplit, onContextMenu]);
 
   const toolbarScope = workspaceActive
     ? state.split ? `doc:${state.split.focused}` : "doc:single"
@@ -305,6 +348,8 @@ export default function App() {
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => window.prism.minimizeWindow()}
+                      title={t["window.minimize"]}
+                      aria-label={t["window.minimize"]}
                     >
                       <Minus size={14} strokeWidth={1.5} />
                     </Button>
@@ -312,11 +357,15 @@ export default function App() {
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => window.prism.maximizeWindow()}
+                      title={maximized ? t["window.restore"] : t["window.maximize"]}
+                      aria-label={maximized ? t["window.restore"] : t["window.maximize"]}
                     >
                       {maximized ? <Copy size={13} strokeWidth={1.5} /> : <Square size={13} strokeWidth={1.5} />}
                     </Button>
                     <button
                       onClick={() => window.prism.closeWindow()}
+                      title={t["window.close"]}
+                      aria-label={t["window.close"]}
                       className="w-8 h-8 flex items-center justify-center rounded-control text-muted hover:text-on-accent hover:bg-danger/70 transition-colors"
                     >
                       <X size={15} strokeWidth={1.5} />

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Layers, Frame, Palette, Pencil, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Layers, Frame, Lock, LockOpen, Palette, Pencil, Trash2 } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -7,6 +7,7 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
+import { useVaultLock } from "../../lib/vaultLock";
 import { resolveTagColor } from "../../lib/colors";
 import { VAULT_ICON_PRESETS, VaultIcon } from "../../lib/vaultIcons";
 import { buildColorMenuItem } from "../ColorPicker";
@@ -101,15 +102,85 @@ function LibraryRow({
   );
 }
 
-function NoteCollectionRow({
-  collection,
+function CollectionNavRow({
+  name,
+  color,
+  sortableId,
+  dragData,
+  dropKind,
   selected,
   index,
+  trailing,
   onSelect,
   onRename,
   onDelete,
   onSetColor,
 }: {
+  name: string;
+  color?: string;
+  sortableId: string;
+  dragData: { kind: string; id: string };
+  dropKind: string;
+  selected: boolean;
+  index: number;
+  trailing: number;
+  onSelect: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onSetColor: (color: string) => void;
+}) {
+  const { t } = useT();
+  const { onContextMenu } = useContextMenu();
+  const { active, over } = useDndContext();
+  const isDropTarget = active?.data.current?.kind === dropKind && over?.id === sortableId;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sortableId,
+    data: dragData,
+  });
+  const clickGuard = useDragClickGuard(isDragging);
+  const menuItems: MenuItem[] = [
+    buildColorMenuItem(t, {
+      label: t["collections.color"],
+      autoLabel: t["collections.colorAuto"],
+      autoSource: name,
+      current: color,
+      onSelect: onSetColor,
+    }),
+    { label: t["collections.rename"], icon: <Pencil size={14} />, onClick: onRename },
+    { label: t["collections.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
+  ];
+
+  return (
+    <NavItem
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        "--i": Math.min(index, 10),
+      } as React.CSSProperties}
+      {...attributes}
+      {...listeners}
+      {...clickGuard}
+      active={selected}
+      className={`group cursor-pointer stagger-fade ${
+        isDropTarget ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
+      }`}
+      onClick={onSelect}
+      onContextMenu={(event) => onContextMenu(event, menuItems)}
+      leading={(
+        <span
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: resolveTagColor(name, color).bar }}
+        />
+      )}
+      label={name}
+      trailing={trailing}
+    />
+  );
+}
+
+function NoteCollectionRow(props: {
   collection: CollectionData;
   selected: boolean;
   index: number;
@@ -118,69 +189,27 @@ function NoteCollectionRow({
   onDelete: () => void;
   onSetColor: (color: string) => void;
 }) {
-  const { t } = useT();
-  const { onContextMenu } = useContextMenu();
-  const { active, over } = useDndContext();
-  const id = `coll-${collection.id}`;
-  const isDropTarget = active?.data.current?.kind === "note" && over?.id === id;
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    data: { kind: "collection", id: collection.id },
-  });
-  const clickGuard = useDragClickGuard(isDragging);
-  const total = collection.notePaths.length
-    + (collection.groups?.reduce((sum, group) => sum + group.notePaths.length, 0) ?? 0);
-  const menuItems: MenuItem[] = [
-    buildColorMenuItem(t, {
-      label: t["collections.color"],
-      autoLabel: t["collections.colorAuto"],
-      autoSource: collection.name,
-      current: collection.color,
-      onSelect: onSetColor,
-    }),
-    { label: t["collections.rename"], icon: <Pencil size={14} />, onClick: onRename },
-    { label: t["collections.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
-  ];
-
+  const { collection } = props;
   return (
-    <NavItem
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-        "--i": Math.min(index, 10),
-      } as React.CSSProperties}
-      {...attributes}
-      {...listeners}
-      {...clickGuard}
-      active={selected}
-      className={`group cursor-pointer stagger-fade ${
-        isDropTarget ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
-      }`}
-      onClick={onSelect}
-      onContextMenu={(event) => onContextMenu(event, menuItems)}
-      leading={(
-        <span
-          className="w-2 h-2 rounded-full"
-          style={{ backgroundColor: resolveTagColor(collection.name, collection.color).bar }}
-        />
-      )}
-      label={collection.name}
-      trailing={total}
+    <CollectionNavRow
+      name={collection.name}
+      color={collection.color}
+      sortableId={`coll-${collection.id}`}
+      dragData={{ kind: "collection", id: collection.id }}
+      dropKind="note"
+      selected={props.selected}
+      index={props.index}
+      trailing={collection.notePaths.length
+        + (collection.groups?.reduce((sum, group) => sum + group.notePaths.length, 0) ?? 0)}
+      onSelect={props.onSelect}
+      onRename={props.onRename}
+      onDelete={props.onDelete}
+      onSetColor={props.onSetColor}
     />
   );
 }
 
-function PdfCollectionRow({
-  collection,
-  selected,
-  index,
-  onSelect,
-  onRename,
-  onDelete,
-  onSetColor,
-}: {
+function PdfCollectionRow(props: {
   collection: PdfCollectionData;
   selected: boolean;
   index: number;
@@ -189,55 +218,41 @@ function PdfCollectionRow({
   onDelete: () => void;
   onSetColor: (color: string) => void;
 }) {
-  const { t } = useT();
-  const { onContextMenu } = useContextMenu();
-  const { active, over } = useDndContext();
-  const id = `pdfcoll-${collection.id}`;
-  const isDropTarget = active?.data.current?.kind === "pdf-doc" && over?.id === id;
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    data: { kind: "pdf-collection", id: collection.id },
-  });
-  const clickGuard = useDragClickGuard(isDragging);
-  const menuItems: MenuItem[] = [
-    buildColorMenuItem(t, {
-      label: t["collections.color"],
-      autoLabel: t["collections.colorAuto"],
-      autoSource: collection.name,
-      current: collection.color,
-      onSelect: onSetColor,
-    }),
-    { label: t["collections.rename"], icon: <Pencil size={14} />, onClick: onRename },
-    { label: t["collections.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
-  ];
-
+  const { collection } = props;
   return (
-    <NavItem
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-        "--i": Math.min(index, 10),
-      } as React.CSSProperties}
-      {...attributes}
-      {...listeners}
-      {...clickGuard}
-      active={selected}
-      className={`group cursor-pointer stagger-fade ${
-        isDropTarget ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
-      }`}
-      onClick={onSelect}
-      onContextMenu={(event) => onContextMenu(event, menuItems)}
-      leading={(
-        <span
-          className="w-2 h-2 rounded-full"
-          style={{ backgroundColor: resolveTagColor(collection.name, collection.color).bar }}
-        />
-      )}
-      label={collection.name}
+    <CollectionNavRow
+      name={collection.name}
+      color={collection.color}
+      sortableId={`pdfcoll-${collection.id}`}
+      dragData={{ kind: "pdf-collection", id: collection.id }}
+      dropKind="pdf-doc"
+      selected={props.selected}
+      index={props.index}
       trailing={collection.pdfPaths.length}
+      onSelect={props.onSelect}
+      onRename={props.onRename}
+      onDelete={props.onDelete}
+      onSetColor={props.onSetColor}
     />
+  );
+}
+
+function CollectionSection({
+  ids,
+  emptyText,
+  children,
+}: {
+  ids: string[];
+  emptyText: string;
+  children: React.ReactNode;
+}) {
+  if (ids.length === 0) return <EmptyState size="card" text={emptyText} />;
+  return (
+    <div className="sidebar-group">
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        {children}
+      </SortableContext>
+    </div>
   );
 }
 
@@ -271,6 +286,7 @@ export default function LibrarySidebar({
   const { t } = useT();
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
+  const vaultLock = useVaultLock();
   const [librariesOpen, setLibrariesOpen] = useState(() => readSection("libraries"));
   const [collectionsOpen, setCollectionsOpen] = useState(() => readSection("collections"));
   const [iconTarget, setIconTarget] = useState<VaultEntry | null>(null);
@@ -299,6 +315,19 @@ export default function LibrarySidebar({
     [pdfCols.collections],
   );
 
+  // Restore the vault's last view: whiteboards or a collection.
+  const openVault = async (vault: VaultEntry) => {
+    let kind: "note" | "canvas" = "note";
+    try {
+      const lastView = await window.prism.getSetting(`last_coll_${vault.path}`);
+      if (lastView === CANVAS_VIEW_ID) kind = "canvas";
+    } catch {
+      // Default to the note view.
+    }
+    onSelectLibrary({ kind, vaultPath: vault.path });
+    onOpenCollections?.();
+  };
+
   const toggleLibraries = () => {
     setLibrariesOpen((open) => {
       saveSection("libraries", !open);
@@ -318,44 +347,61 @@ export default function LibrarySidebar({
       {librariesOpen && (
         <div className="flex-shrink-0 max-h-[17rem] overflow-y-auto pr-0.5">
           {vaults.length === 0 && <EmptyState size="card" text={t["library.emptyVaults"]} />}
-          {vaults.map((vault) => (
+          <div className="sidebar-group">
+            {vaults.map((vault) => {
+              const privateVault = vaultLock.isPrivate(vault.path);
+              const locked = vaultLock.isLocked(vault.path);
+              const menuItems: MenuItem[] = [];
+              if (privateVault) {
+                menuItems.push(locked
+                  ? {
+                      label: t["private.unlock"],
+                      icon: <LockOpen size={14} />,
+                      onClick: () => { void openVault(vault); },
+                    }
+                  : {
+                      label: t["private.lockNow"],
+                      icon: <Lock size={14} />,
+                      onClick: () => { void vaultLock.lock(vault.path); },
+                    });
+              }
+              menuItems.push({
+                label: t["library.vaultIcon"],
+                icon: <Palette size={14} />,
+                onClick: () => setIconTarget(vault),
+              });
+              return (
+                <LibraryRow
+                  key={vault.path}
+                  icon={<VaultIcon name={vault.icon} size={14} />}
+                  label={vault.name}
+                  active={(library.kind === "note" || library.kind === "canvas")
+                    && normalizePath(library.vaultPath) === normalizePath(vault.path)}
+                  trailing={privateVault
+                    ? (
+                      <span title={locked ? t["private.lockedBadge"] : t["private.unlock"]}>
+                        {locked ? <Lock size={11} /> : <LockOpen size={11} />}
+                      </span>
+                    )
+                    : undefined}
+                  // Locked vaults still open here — the content pane renders
+                  // the unlock card.
+                  onClick={() => { void openVault(vault); }}
+                  onContextMenu={(event) => onContextMenu(event, menuItems)}
+                />
+              );
+            })}
             <LibraryRow
-              key={vault.path}
-              icon={<VaultIcon name={vault.icon} size={14} />}
-              label={vault.name}
-              active={(library.kind === "note" || library.kind === "canvas")
-                && normalizePath(library.vaultPath) === normalizePath(vault.path)}
-              onClick={async () => {
-                // Restore the vault's last view: whiteboards or a collection.
-                let kind: "note" | "canvas" = "note";
-                try {
-                  const lastView = await window.prism.getSetting(`last_coll_${vault.path}`);
-                  if (lastView === CANVAS_VIEW_ID) kind = "canvas";
-                } catch {
-                  // Default to the note view.
-                }
-                onSelectLibrary({ kind, vaultPath: vault.path });
+              icon={<BookOpen size={14} />}
+              label={t["library.pdfLibrary"]}
+              active={library.kind === "pdf"}
+              trailing={pdfAllCount}
+              onClick={() => {
+                onSelectLibrary({ kind: "pdf", repoPath: "" });
                 onOpenCollections?.();
               }}
-              onContextMenu={(event) => onContextMenu(event, [
-                {
-                  label: t["library.vaultIcon"],
-                  icon: <Palette size={14} />,
-                  onClick: () => setIconTarget(vault),
-                },
-              ])}
             />
-          ))}
-          <LibraryRow
-            icon={<BookOpen size={14} />}
-            label={t["library.pdfLibrary"]}
-            active={library.kind === "pdf"}
-            trailing={pdfAllCount}
-            onClick={() => {
-              onSelectLibrary({ kind: "pdf", repoPath: "" });
-              onOpenCollections?.();
-            }}
-          />
+          </div>
         </div>
       )}
 
@@ -395,31 +441,25 @@ export default function LibrarySidebar({
                   trailing={canvas.files.length}
                 />
               )}
-              {note.collections.length === 0 ? (
-                <EmptyState size="card" text={t["collections.emptyHint"]} />
-              ) : (
-                <div className="sidebar-group">
-                  <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-                    {note.collections.map((collection, index) => (
-                      <NoteCollectionRow
-                        key={collection.id}
-                        collection={collection}
-                        selected={library.kind === "note" && note.selectedCollectionId === collection.id}
-                        index={index}
-                        onSelect={() => {
-                          onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
-                          note.selectCollection(collection.id);
-                          note.setSearchQuery("");
-                          onOpenCollections?.();
-                        }}
-                        onRename={() => onRenameNoteCollection(collection)}
-                        onDelete={() => onDeleteNoteCollection(collection)}
-                        onSetColor={(color) => note.handleSetCollectionColor(collection.id, color)}
-                      />
-                    ))}
-                  </SortableContext>
-                </div>
-              )}
+              <CollectionSection ids={noteIds} emptyText={t["collections.emptyHint"]}>
+                {note.collections.map((collection, index) => (
+                  <NoteCollectionRow
+                    key={collection.id}
+                    collection={collection}
+                    selected={library.kind === "note" && note.selectedCollectionId === collection.id}
+                    index={index}
+                    onSelect={() => {
+                      onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
+                      note.selectCollection(collection.id);
+                      note.setSearchQuery("");
+                      onOpenCollections?.();
+                    }}
+                    onRename={() => onRenameNoteCollection(collection)}
+                    onDelete={() => onDeleteNoteCollection(collection)}
+                    onSetColor={(color) => note.handleSetCollectionColor(collection.id, color)}
+                  />
+                ))}
+              </CollectionSection>
             </>
           )}
 
@@ -433,26 +473,20 @@ export default function LibrarySidebar({
                 label={t["pdf.all"]}
                 trailing={pdfAllCount}
               />
-              {pdfCols.collections.length === 0 ? (
-                <EmptyState size="card" text={t["collections.emptyHint"]} />
-              ) : (
-                <div className="sidebar-group">
-                  <SortableContext items={pdfIds} strategy={verticalListSortingStrategy}>
-                    {pdfCols.collections.map((collection, index) => (
-                      <PdfCollectionRow
-                        key={collection.id}
-                        collection={collection}
-                        selected={pdfCols.selectedId === collection.id}
-                        index={index}
-                        onSelect={() => { pdfCols.selectCollection(collection.id); onOpenCollections?.(); }}
-                        onRename={() => onRenamePdfCollection(collection)}
-                        onDelete={() => onDeletePdfCollection(collection)}
-                        onSetColor={(color) => pdfCols.setCollectionColor(collection.id, color)}
-                      />
-                    ))}
-                  </SortableContext>
-                </div>
-              )}
+              <CollectionSection ids={pdfIds} emptyText={t["collections.emptyHint"]}>
+                {pdfCols.collections.map((collection, index) => (
+                  <PdfCollectionRow
+                    key={collection.id}
+                    collection={collection}
+                    selected={pdfCols.selectedId === collection.id}
+                    index={index}
+                    onSelect={() => { pdfCols.selectCollection(collection.id); onOpenCollections?.(); }}
+                    onRename={() => onRenamePdfCollection(collection)}
+                    onDelete={() => onDeletePdfCollection(collection)}
+                    onSetColor={(color) => pdfCols.setCollectionColor(collection.id, color)}
+                  />
+                ))}
+              </CollectionSection>
             </>
           )}
         </div>

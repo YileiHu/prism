@@ -31,16 +31,19 @@ import type { Connection } from "@xyflow/react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useSettings } from "../../lib/settings";
+import { useAutosaveTimer } from "../../lib/useAutosave";
 import { MAX_CANVAS_PRESETS, type CanvasPreset } from "../../shared/settings";
 import { presetFromNode } from "../../lib/canvas/presets";
 import { notifyCanvasSaved } from "../../lib/canvas/events";
 import PresetBar from "./PresetBar";
 import RenameModal from "../RenameModal";
+import ConfirmDialog from "../ConfirmDialog";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import { AUTO_SWATCH_COLOR, buildColorMenuItem } from "../ColorPicker";
 import type { MenuItem } from "../ContextMenu";
 import Button from "../Button";
+import EmptyState from "../EmptyState";
 import Modal from "../Modal";
 import Spinner from "../Spinner";
 import {
@@ -160,6 +163,7 @@ export default function CanvasEditor({
   const [targetPickerOpen, setTargetPickerOpen] = useState(false);
   const [presetForSave, setPresetForSave] = useState<CanvasNode | null>(null);
   const [presetForRename, setPresetForRename] = useState<CanvasPreset | null>(null);
+  const [presetForDelete, setPresetForDelete] = useState<CanvasPreset | null>(null);
   const [drawGroupMode, setDrawGroupMode] = useState(false);
   const [groupForRename, setGroupForRename] = useState<CanvasGroup | null>(null);
   const [fitSignal, setFitSignal] = useState(0);
@@ -170,6 +174,7 @@ export default function CanvasEditor({
   const rootRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<CanvasDoc | null>(null);
   const dirtyRef = useRef(false);
+  const { schedule: scheduleAutosave, cancel: cancelAutosave } = useAutosaveTimer();
   const statusRef = useRef<Status>("loading");
   const historyRef = useRef<CanvasHistory>(emptyHistory());
   const modifiedAtRef = useRef<number | null>(null);
@@ -274,10 +279,9 @@ export default function CanvasEditor({
 
   useEffect(() => {
     if (status !== "ready" || !doc || !dirty) return;
-    const delay = values.autosave_delay;
-    const timer = window.setTimeout(() => { void doSave(false); }, delay);
-    return () => window.clearTimeout(timer);
-  }, [doc, dirty, doSave, status, values.autosave_delay]);
+    scheduleAutosave(() => { void doSave(false); }, values.autosave_delay);
+    return cancelAutosave;
+  }, [cancelAutosave, doc, dirty, doSave, scheduleAutosave, status, values.autosave_delay]);
 
   // Closing a tab must not drop edits still sitting in the debounce window.
   useEffect(() => () => {
@@ -438,13 +442,10 @@ export default function CanvasEditor({
         label: t["canvas.deletePreset"],
         icon: <Trash2 size={14} />,
         danger: true,
-        onClick: () => setSetting(
-          "canvas_presets",
-          values.canvas_presets.filter((item) => item.id !== preset.id),
-        ),
+        onClick: () => setPresetForDelete(preset),
       },
     ]);
-  }, [openContextMenu, setSetting, t, values.canvas_presets]);
+  }, [openContextMenu, t]);
 
   const commitText = useCallback((id: string, text: string) => {
     setEditingId(null);
@@ -1134,20 +1135,20 @@ export default function CanvasEditor({
       )}
 
       {(status === "missing" || status === "error") && (
-        <div className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
-          <TriangleAlert size={26} className="text-warning" />
-          <p className="text-body text-secondary max-w-md">
-            {status === "missing" ? t["canvas.missing"] : t["canvas.loadFailed"]}
-          </p>
-          <div className="flex items-center gap-2">
+        <EmptyState
+          size="module"
+          fill
+          icon={<TriangleAlert size={26} className="text-warning" />}
+          description={status === "missing" ? t["canvas.missing"] : t["canvas.loadFailed"]}
+          actions={<>
             <Button variant="secondary" size="sm" onClick={onBackToLibrary}>
               {t["workspace.backToLibrary"]}
             </Button>
             <Button variant="ghost" size="sm" onClick={onClose}>
               {t["editor.closeTab"]}
             </Button>
-          </div>
-        </div>
+          </>}
+        />
       )}
 
       {status === "ready" && doc && (
@@ -1314,6 +1315,20 @@ export default function CanvasEditor({
           if (presetForRename) renamePreset(presetForRename, name);
         }}
         onClose={() => setPresetForRename(null)}
+      />
+
+      <ConfirmDialog
+        open={presetForDelete !== null}
+        title={t["canvas.deletePreset"]}
+        message={t["canvas.deletePresetConfirm"].replace("{name}", presetForDelete?.name ?? "")}
+        onConfirm={() => {
+          if (!presetForDelete) return;
+          setSetting(
+            "canvas_presets",
+            values.canvas_presets.filter((item) => item.id !== presetForDelete.id),
+          );
+        }}
+        onClose={() => setPresetForDelete(null)}
       />
 
       <RenameModal

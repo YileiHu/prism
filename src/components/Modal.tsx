@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X, type LucideIcon } from "lucide-react";
 import Button from "./Button";
 import { useAnimatedMount } from "../lib/useAnimatedMount";
+import { useT } from "../i18n";
 
 type ModalSize = "sm" | "md" | "lg";
 
@@ -44,6 +45,7 @@ export default function Modal({
   children,
   footer,
 }: ModalProps) {
+  const { t } = useT();
   const { mounted, exiting } = useAnimatedMount(open, 100);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -142,7 +144,13 @@ export default function Modal({
               {Icon && <Icon size={18} className="text-[var(--accent-text)]" />}
               <h2 id={titleId} className="text-section font-semibold text-primary">{title}</h2>
             </div>
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              title={t["common.close"]}
+              aria-label={t["common.close"]}
+            >
               <X size={18} />
             </Button>
           </div>

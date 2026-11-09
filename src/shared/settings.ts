@@ -51,6 +51,7 @@ export interface AppSettings {
   clock_format: "24" | "12";
   home_recents_count: number;
   restore_note_tabs: boolean;
+  private_lock_minutes: number;
   attachments_dir: string;
   canvas_dir: string;
   autosave_delay: number;
@@ -93,6 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   clock_format: "24",
   home_recents_count: 10,
   restore_note_tabs: true,
+  private_lock_minutes: 10,
   attachments_dir: "attachments",
   canvas_dir: "canvases",
   autosave_delay: 1000,
@@ -152,6 +154,7 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   clock_format: { kind: "enum", options: ["24", "12"] },
   home_recents_count: { kind: "number", range: { min: 5, max: 30, step: 1 } },
   restore_note_tabs: { kind: "boolean" },
+  private_lock_minutes: { kind: "number", range: { min: 1, max: 120, step: 1 } },
   attachments_dir: { kind: "string" },
   canvas_dir: { kind: "string" },
   autosave_delay: { kind: "number", range: { min: 300, max: 3000, step: 100 } },

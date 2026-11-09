@@ -7,11 +7,12 @@ import { useDragClickGuard } from "../../lib/useDragClickGuard";
 import { resolveTagColor } from "../../lib/colors";
 import type { MenuItem } from "../ContextMenu";
 import PdfCover from "./PdfCover";
-import { formatFileSize, relKey, type PdfCollectionData, type PdfDocument } from "./types";
+import { formatFileSize, type PdfCollectionData, type PdfDocument } from "./types";
 
 interface Props {
   doc: PdfDocument;
   collections: PdfCollectionData[];
+  memberCollections: PdfCollectionData[];
   activeCollection: PdfCollectionData | null;
   onOpen: () => void;
   onAddToCollection: (collectionId: string) => void;
@@ -24,6 +25,7 @@ interface Props {
 export default function PdfCard({
   doc,
   collections,
+  memberCollections,
   activeCollection,
   onOpen,
   onAddToCollection,
@@ -41,10 +43,6 @@ export default function PdfCard({
     data: { kind: "pdf-doc", id: doc.id, relPath: doc.relPath },
   });
   const clickGuard = useDragClickGuard(isDragging);
-
-  const memberCollections = collections.filter((c) =>
-    c.pdfPaths.some((p) => relKey(p) === relKey(doc.relPath)),
-  );
 
   const handleChooseCover = async () => {
     try {
@@ -86,7 +84,7 @@ export default function PdfCard({
         children: collections.length > 0
           ? collections.map((c) => ({
               label: c.name,
-              checked: c.pdfPaths.some((p) => relKey(p) === relKey(doc.relPath)),
+              checked: memberCollections.some((m) => m.id === c.id),
               onClick: () => onAddToCollection(c.id),
             }))
           : [{ label: t["collections.none"] }],
@@ -139,7 +137,7 @@ export default function PdfCard({
             {memberCollections.slice(0, 3).map((c) => (
               <span
                 key={c.id}
-                className="w-2 h-2 rounded-full ring-1 ring-black/20"
+                className="w-2 h-2 rounded-full ring-1 ring-[color:var(--ring-subtle)]"
                 style={{ backgroundColor: resolveTagColor(c.name, c.color).bar }}
               />
             ))}

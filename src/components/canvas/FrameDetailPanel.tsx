@@ -25,7 +25,7 @@ export default function FrameDetailPanel({
   const { t } = useT();
 
   return (
-    <div className="absolute right-3 top-3 bottom-6 z-20 w-64 flex flex-col rounded-control border border-line/50 bg-surface shadow-popover overflow-hidden">
+    <div className="panel-floating">
       <div className="flex items-center gap-1.5 px-2.5 h-8 border-b border-line/50 flex-shrink-0">
         <Frame size={13} className="text-muted flex-shrink-0" />
         <span className="text-caption font-medium text-secondary flex-1 truncate">
@@ -38,7 +38,7 @@ export default function FrameDetailPanel({
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.frameName"]}</label>
+          <label className="field-label">{t["canvas.frameName"]}</label>
           <TextField
             value={frame.name}
             onCommit={onChangeName}
@@ -47,7 +47,7 @@ export default function FrameDetailPanel({
         </div>
 
         <div>
-          <label className="block text-caption text-muted mb-1">{t["canvas.color"]}</label>
+          <label className="field-label">{t["canvas.color"]}</label>
           <ColorSwatchPicker
             name={frame.name || frame.id}
             value={frame.color}

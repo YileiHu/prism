@@ -38,6 +38,16 @@ export default function SectionCard({
         className={`flex items-center gap-2 px-3 h-8 flex-shrink-0 ${onToggle ? "cursor-pointer" : ""} ${accent ? "bg-[var(--accent-muted)]" : tintColor ? "" : "bg-tint/[0.06]"}`}
         style={tintColor ? { backgroundColor: tintColor.tint } : undefined}
         onClick={onToggle}
+        role={onToggle ? "button" : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        aria-expanded={onToggle ? !collapsed : undefined}
+        onKeyDown={onToggle ? (e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        } : undefined}
       >
         {onToggle && (
           <span className="text-muted">{collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, FolderOpen } from "lucide-react";
+import { KeyRound, Lock, LockOpen, Plus, ShieldCheck, ShieldOff, Trash2, FolderOpen } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useSettings } from "../../lib/settings";
+import { useVaultLock } from "../../lib/vaultLock";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import Input from "../Input";
@@ -10,7 +11,8 @@ import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import { type VaultEntry } from "../../types";
 import { VaultIcon } from "../../lib/vaultIcons";
-import { Select, SettingBlock, TextField } from "./controls";
+import VaultPrivacyModal, { type VaultPrivacyMode } from "../vault/VaultPrivacyModal";
+import { Select, SettingBlock, Slider, TextField } from "./controls";
 
 interface Props {
   onSaved: () => void;
@@ -20,12 +22,14 @@ export default function VaultsSection({ onSaved }: Props) {
   const { t } = useT();
   const showToast = useToast();
   const { values, set } = useSettings();
+  const vaultLock = useVaultLock();
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
   const [addError, setAddError] = useState("");
   const [removingIndex, setRemovingIndex] = useState<number | null>(null);
+  const [privacyTarget, setPrivacyTarget] = useState<{ vault: VaultEntry; mode: VaultPrivacyMode } | null>(null);
   const [defaultNotesDir, setDefaultNotesDir] = useState("");
   const [imagePathStyle, setImagePathStyle] = useState("note");
 
@@ -87,6 +91,7 @@ export default function VaultsSection({ onSaved }: Props) {
     try {
       await saveVaults(vaults.filter((_, i) => i !== index));
       if (removed) {
+        if (vaultLock.isPrivate(removed.path)) void vaultLock.lock(removed.path);
         const last = await window.prism.getSetting("last_vault_path");
         if (last === removed.path) await window.prism.setSetting("last_vault_path", "");
       }
@@ -100,6 +105,24 @@ export default function VaultsSection({ onSaved }: Props) {
     if (dir) setNewPath(dir);
   };
 
+  const startPrivacy = (vault: VaultEntry, mode: VaultPrivacyMode) => {
+    // Decrypting or rekeying needs the DEK, which only exists while unlocked.
+    if (mode !== "makePrivate" && vaultLock.isLocked(vault.path)) {
+      vaultLock.requestUnlock(vault.path, () => setPrivacyTarget({ vault, mode }));
+    } else {
+      setPrivacyTarget({ vault, mode });
+    }
+  };
+
+  const handlePrivacyDone = () => {
+    const mode = privacyTarget?.mode;
+    if (mode === "makePrivate") showToast(t["private.makePrivateDone"]);
+    else if (mode === "makePublic") showToast(t["private.makePublicDone"]);
+    else if (mode === "changePassword") showToast(t["private.changePasswordDone"]);
+    onSaved();
+    window.dispatchEvent(new CustomEvent("vaults-changed"));
+  };
+
   const saveRaw = async (key: string, value: string) => {
     await window.prism.setSetting(key, value);
     onSaved();
@@ -110,18 +133,63 @@ export default function VaultsSection({ onSaved }: Props) {
       <div className="space-y-2 mb-4">
         {!loaded && <SkeletonRows count={2} />}
         {loaded && vaults.length === 0 && <EmptyState size="card" text={t["settings.noVaults"]} />}
-        {vaults.map((v, i) => (
-          <div key={v.path} className="flex items-center gap-3 p-3 bg-surface rounded-control border border-line/50">
-            <VaultIcon name={v.icon} size={16} className="text-warning flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="text-body text-primary font-medium truncate">{v.name}</div>
-              <div className="text-caption text-muted truncate">{v.path}</div>
+        {vaults.map((v, i) => {
+          const isPrivate = vaultLock.isPrivate(v.path);
+          const locked = isPrivate && vaultLock.isLocked(v.path);
+          return (
+            <div key={v.path} className="flex items-center gap-3 p-3 bg-surface rounded-control border border-line/50">
+              <VaultIcon name={v.icon} size={16} className="text-warning flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 text-body text-primary font-medium">
+                  <span className="truncate">{v.name}</span>
+                  {isPrivate && (
+                    <span
+                      title={locked ? t["private.lockedBadge"] : t["private.unlock"]}
+                      className="text-muted flex-shrink-0"
+                    >
+                      {locked ? <Lock size={12} /> : <LockOpen size={12} />}
+                    </span>
+                  )}
+                </div>
+                <div className="text-caption text-muted truncate">{v.path}</div>
+              </div>
+              {isPrivate ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title={t["private.changePassword"]}
+                    onClick={() => startPrivacy(v, "changePassword")}
+                  >
+                    <KeyRound size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title={t["private.makePublic"]}
+                    onClick={() => startPrivacy(v, "makePublic")}
+                    className="hover:text-danger"
+                  >
+                    <ShieldOff size={14} />
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title={t["private.makePrivate"]}
+                  onClick={() => startPrivacy(v, "makePrivate")}
+                  className="hover:text-warning"
+                >
+                  <ShieldCheck size={14} />
+                </Button>
+              )}
+              <Button variant="ghost" size="icon-sm" onClick={() => setRemovingIndex(i)} className="hover:text-danger">
+                <Trash2 size={14} />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon-sm" onClick={() => setRemovingIndex(i)} className="hover:text-danger">
-              <Trash2 size={14} />
-            </Button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="p-4 bg-surface rounded-control border border-line/50 mb-4 space-y-3">
@@ -153,6 +221,17 @@ export default function VaultsSection({ onSaved }: Props) {
       </div>
 
       <div className="space-y-3">
+        <SettingBlock label={t["private.lockAfter"]} description={t["private.lockAfterDesc"]}>
+          <Slider
+            value={values.private_lock_minutes}
+            min={1}
+            max={120}
+            step={1}
+            format={(v) => t["private.minutes"].replace("{count}", String(v))}
+            onChange={(v) => set("private_lock_minutes", v)}
+          />
+        </SettingBlock>
+
         <SettingBlock label={t["settings.defaultNotesDir"]} description={t["settings.defaultNotesDirDesc"]}>
           <TextField
             value={defaultNotesDir}
@@ -192,6 +271,15 @@ export default function VaultsSection({ onSaved }: Props) {
           />
         </SettingBlock>
       </div>
+
+      <VaultPrivacyModal
+        open={privacyTarget !== null}
+        mode={privacyTarget?.mode ?? "makePrivate"}
+        vaultName={privacyTarget?.vault.name ?? ""}
+        vaultPath={privacyTarget?.vault.path ?? ""}
+        onClose={() => setPrivacyTarget(null)}
+        onDone={handlePrivacyDone}
+      />
 
       <ConfirmDialog
         open={removingIndex !== null}

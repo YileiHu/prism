@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
+import { useDebouncedPersist } from "../../lib/useDebouncedJsonPersist";
+import { deleteById, insertAt, moveItem, renameById } from "../../lib/collectionOps";
+import { normalizePath } from "../../lib/paths";
 import { relKey, type PdfCollectionData } from "./types";
 
 function makeId(): string {
@@ -30,59 +33,27 @@ export function usePdfCollections(repoPath: string) {
   const [collections, setCollections] = useState<PdfCollectionData[]>([]);
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRef = useRef<PdfCollectionData[] | null>(null);
-  const saveFailedRef = useRef(false);
 
-  const repoKey = repoPath.toLowerCase().replace(/\\/g, "/");
+  const repoKey = normalizePath(repoPath);
   const selectionKey = `last_pdf_coll_${repoKey}`;
 
+  const { schedule: schedulePersist, flush: flushPersist } = useDebouncedPersist({
+    onError: () => showToast(t["pdf.saveFailed"], "error"),
+  });
+
   const persist = useCallback((colls: PdfCollectionData[]) => {
-    return window.prism
-      .savePdfCollections(repoPath, { version: 1, collections: colls })
-      .then(() => { saveFailedRef.current = false; })
-      .catch(() => {
-        if (saveFailedRef.current) return;
-        saveFailedRef.current = true;
-        showToast(t["pdf.saveFailed"], "error");
-        setTimeout(() => { saveFailedRef.current = false; }, 4000);
-      });
-  }, [repoPath, showToast, t]);
+    return window.prism.savePdfCollections(repoPath, { version: 1, collections: colls });
+  }, [repoPath]);
 
   const saveCollections = useCallback((colls: PdfCollectionData[]) => {
-    pendingRef.current = colls;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      pendingRef.current = null;
-      saveTimer.current = null;
-      void persist(colls);
-    }, 300);
-  }, [persist]);
-
-  // Flush the last edit on unmount. On a repo switch this cleanup runs first,
-  // writing the pending edit back to the repository it belongs to.
-  useEffect(() => {
-    const flush = () => {
-      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      if (pendingRef.current) {
-        void persist(pendingRef.current);
-        pendingRef.current = null;
-      }
-    };
-    window.addEventListener("beforeunload", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      flush();
-    };
-  }, [persist]);
+    schedulePersist(() => persist(colls));
+  }, [schedulePersist, persist]);
 
   useEffect(() => {
     let cancelled = false;
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    pendingRef.current = null;
+    // Write any pending edit back to the repository it belongs to before the
+    // new repo's state replaces it.
+    flushPersist();
     setCollections([]);
     setSelectedIdState(null);
     setLoaded(false);
@@ -109,7 +80,7 @@ export function usePdfCollections(repoPath: string) {
       }
     })();
     return () => { cancelled = true; };
-  }, [repoPath, selectionKey]);
+  }, [repoPath, selectionKey, flushPersist]);
 
   const selectCollection = useCallback((id: string | null) => {
     setSelectedIdState(id);
@@ -136,7 +107,7 @@ export function usePdfCollections(repoPath: string) {
   }, [saveCollections, selectCollection]);
 
   const renameCollection = useCallback((id: string, name: string) => {
-    update((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+    update((prev) => renameById(prev, id, name));
   }, [update]);
 
   const setCollectionColor = useCallback((id: string, color: string) => {
@@ -144,19 +115,13 @@ export function usePdfCollections(repoPath: string) {
   }, [update]);
 
   const reorderCollections = useCallback((from: number, to: number) => {
-    update((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      if (!moved) return prev;
-      next.splice(to, 0, moved);
-      return next;
-    });
+    update((prev) => moveItem(prev, from, to));
   }, [update]);
 
   const deleteCollection = useCallback((id: string) => {
     const target = collections.find((c) => c.id === id);
     const snapshot = collections;
-    const next = collections.filter((c) => c.id !== id);
+    const next = deleteById(collections, id);
     setCollections(next);
     saveCollections(next);
     if (selectedId === id) selectCollection(null);
@@ -178,9 +143,7 @@ export function usePdfCollections(repoPath: string) {
     update((prev) => prev.map((c) => {
       if (c.id !== collId) return c;
       if (c.pdfPaths.some((p) => relKey(p) === relKey(relPath))) return c;
-      const paths = [...c.pdfPaths];
-      paths.splice(Math.max(0, Math.min(index, paths.length)), 0, relPath);
-      return { ...c, pdfPaths: paths };
+      return { ...c, pdfPaths: insertAt(c.pdfPaths, index, relPath) };
     }));
   }, [update]);
 

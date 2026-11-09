@@ -1,42 +1,87 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <!-- Solid color blocks: cyan → violet, white front page -->
-    <linearGradient id="blockCyan" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#22d3ee"/>
-      <stop offset="100%" stop-color="#0ea5b7"/>
+    <!-- Soft-clay island + palm, transparent background -->
+    <linearGradient id="islandTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcedc8"/>
+      <stop offset="1" stop-color="#e7c68a"/>
     </linearGradient>
-    <linearGradient id="blockViolet" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#7c3aed"/>
+    <linearGradient id="islandSide" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e2bb7d"/>
+      <stop offset="1" stop-color="#b0834c"/>
     </linearGradient>
-    <linearGradient id="pageWhite" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#e9eefb"/>
+    <linearGradient id="trunk" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d7ab71"/>
+      <stop offset="1" stop-color="#96683a"/>
+    </linearGradient>
+    <linearGradient id="leafFront" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#93ebc2"/>
+      <stop offset="1" stop-color="#2f9c70"/>
+    </linearGradient>
+    <linearGradient id="leafBack" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6fd6a5"/>
+      <stop offset="1" stop-color="#23865f"/>
+    </linearGradient>
+    <radialGradient id="coconut" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#b07c4c"/>
+      <stop offset="1" stop-color="#7b4e2b"/>
+    </radialGradient>
+    <linearGradient id="rock" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d3c3ae"/>
+      <stop offset="1" stop-color="#96806a"/>
     </linearGradient>
 
-    <filter id="cardShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    <filter id="groundShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <filter id="softBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="palmShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#6b4a25" flood-opacity="0.22"/>
     </filter>
   </defs>
 
-  <!-- Fanned stack of solid color blocks on a transparent background -->
-  <g transform="translate(240 263) scale(1.58) translate(-256 -256)">
-    <g transform="translate(6,-4)">
-      <rect x="146" y="120" width="204" height="248" rx="30"
-            fill="url(#blockCyan)" filter="url(#cardShadow)"
-            transform="rotate(-8 262 288)"/>
-      <rect x="170" y="140" width="204" height="248" rx="30"
-            fill="url(#blockViolet)" filter="url(#cardShadow)"
-            transform="rotate(-3 262 288)"/>
-      <g transform="rotate(3 262 288)">
-        <rect x="194" y="160" width="204" height="248" rx="30"
-              fill="url(#pageWhite)" filter="url(#cardShadow)"/>
+  <!-- Zoomed so the artwork hugs the canvas edges -->
+  <g transform="translate(256 256) scale(1.15) translate(-256 -264)">
+    <!-- Cast shadow under the island -->
+    <ellipse cx="256" cy="462" rx="172" ry="16" fill="#5b3d22" fill-opacity="0.20" filter="url(#groundShadow)"/>
 
-        <!-- Text lines + accent block on the white page -->
-        <rect x="224" y="206" width="116" height="17" rx="8.5" fill="#0f172a" fill-opacity="0.78"/>
-        <rect x="224" y="236" width="80" height="17" rx="8.5" fill="#0f172a" fill-opacity="0.45"/>
-        <rect x="224" y="272" width="42" height="17" rx="8.5" fill="#f472b6"/>
-      </g>
+    <!-- Island -->
+    <path d="M36 358 C 36 430 150 474 256 474 C 362 474 476 430 476 358 Z" fill="url(#islandSide)"/>
+    <ellipse cx="256" cy="358" rx="220" ry="64" fill="url(#islandTop)"/>
+    <ellipse cx="220" cy="342" rx="170" ry="38" fill="#fff7e3" fill-opacity="0.35" filter="url(#softBlur)"/>
+
+    <!-- Rocks for balance -->
+    <g filter="url(#palmShadow)">
+      <ellipse cx="150" cy="352" rx="38" ry="22" fill="url(#rock)"/>
+      <ellipse cx="136" cy="344" rx="19" ry="9" fill="#ffffff" fill-opacity="0.30" filter="url(#softBlur)"/>
+      <ellipse cx="192" cy="359" rx="16" ry="9" fill="url(#rock)"/>
+    </g>
+
+    <!-- Palm shadow on the sand -->
+    <ellipse cx="252" cy="370" rx="52" ry="13" fill="#7a5732" fill-opacity="0.18" filter="url(#softBlur)"/>
+
+    <!-- Trunk -->
+    <g filter="url(#palmShadow)">
+      <path d="M227 362 C 234 300 250 246 297 192 Q 305 184 313 192 C 270 254 254 310 262 364 Q 244 372 227 362 Z" fill="url(#trunk)"/>
+    </g>
+
+    <!-- Palm crown -->
+    <g filter="url(#palmShadow)">
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafBack)" transform="translate(305 190) rotate(-155) scale(0.80)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafFront)" transform="translate(305 190) rotate(-120) scale(0.92)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafBack)" transform="translate(305 190) rotate(-86) scale(1.02)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafFront)" transform="translate(305 190) rotate(-52) scale(1.06)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafBack)" transform="translate(305 190) rotate(-18) scale(1.0)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafFront)" transform="translate(305 190) rotate(18) scale(0.90)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafBack)" transform="translate(305 190) rotate(54) scale(0.78)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafFront)" transform="translate(305 190) rotate(90) scale(0.62)"/>
+      <path d="M0 0 C 36 -34 102 -34 136 8 C 92 22 36 18 0 0 Z" fill="url(#leafBack)" transform="translate(305 190) rotate(190) scale(0.60)"/>
+
+      <!-- Coconuts -->
+      <circle cx="300" cy="200" r="9" fill="url(#coconut)"/>
+      <circle cx="316" cy="206" r="8" fill="url(#coconut)"/>
+      <circle cx="306" cy="217" r="7.5" fill="url(#coconut)"/>
     </g>
   </g>
 </svg>

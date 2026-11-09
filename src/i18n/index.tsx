@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 import zh from "./zh";
 import en from "./en";
 import type { Translation } from "./zh";
@@ -37,11 +37,12 @@ export function LangProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LANG_STORAGE_KEY, next);
   }, []);
 
-  return (
-    <LangContext.Provider value={{ lang, t: translations[lang], setLang }}>
-      {children}
-    </LangContext.Provider>
+  const value = useMemo(
+    () => ({ lang, t: translations[lang], setLang }),
+    [lang, setLang],
   );
+
+  return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
 }
 
 export function useT() {

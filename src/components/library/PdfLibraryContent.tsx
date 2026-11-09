@@ -18,6 +18,7 @@ import { useToolbarContribution, type ToolbarContribution } from "../toolbar/Too
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import { DropdownMenu, DropdownMenuItem } from "../DropdownMenu";
+import EmptyState from "../EmptyState";
 import SearchInput from "../SearchInput";
 import Spinner from "../Spinner";
 import PdfGridView from "../pdf/PdfGridView";
@@ -43,6 +44,7 @@ export default function PdfLibraryContent({
   const [deleteDocTarget, setDeleteDocTarget] = useState<PdfDocument | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const sortAnchorRef = useRef<HTMLButtonElement>(null);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
   const selectedCollection = cols.selected;
 
   // Drop collection membership for paths the last scan no longer returns.
@@ -198,11 +200,13 @@ export default function PdfLibraryContent({
 
   if (!pdf.repoPath) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
-        <BookOpen size={40} strokeWidth={1.2} className="text-faint" />
-        <h2 className="text-section font-semibold text-primary">{t["pdf.noRepoTitle"]}</h2>
-        <p className="text-body text-muted max-w-md">{t["pdf.noRepoDesc"]}</p>
-        <div className="flex items-center gap-2 mt-1">
+      <EmptyState
+        size="module"
+        fill
+        icon={<BookOpen size={40} strokeWidth={1.2} className="text-faint" />}
+        title={t["pdf.noRepoTitle"]}
+        description={t["pdf.noRepoDesc"]}
+        actions={<>
           <Button variant="primary" size="sm" onClick={() => { void pdf.chooseRepo(); }}>
             <FolderOpen size={15} />
             {t["pdf.chooseRepo"]}
@@ -210,20 +214,20 @@ export default function PdfLibraryContent({
           <Button variant="secondary" size="sm" onClick={onOpenSettings}>
             {t["pdf.goSettings"]}
           </Button>
-        </div>
-      </div>
+        </>}
+      />
     );
   }
 
   if (!pdf.repoExists) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
-        <AlertTriangle size={32} className="text-warning" />
-        <h2 className="text-section font-semibold text-primary">{t["pdf.repoMissing"]}</h2>
-        <p className="text-body text-muted max-w-lg">
-          {t["pdf.repoMissingDesc"].replace("{path}", pdf.repoPath)}
-        </p>
-        <div className="flex items-center gap-2 mt-1">
+      <EmptyState
+        size="module"
+        fill
+        icon={<AlertTriangle size={32} className="text-warning" />}
+        title={t["pdf.repoMissing"]}
+        description={t["pdf.repoMissingDesc"].replace("{path}", pdf.repoPath)}
+        actions={<>
           <Button variant="primary" size="sm" onClick={() => { void pdf.rescan(); }}>
             <RefreshCw size={15} />
             {t["pdf.retry"]}
@@ -232,8 +236,8 @@ export default function PdfLibraryContent({
             <FolderOpen size={15} />
             {t["pdf.changeRepo"]}
           </Button>
-        </div>
-      </div>
+        </>}
+      />
     );
   }
 
@@ -244,8 +248,9 @@ export default function PdfLibraryContent({
           {t["pdf.resultLimitHint"].replace("{count}", String(pdf.visible.length))}
         </div>
       )}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={gridScrollRef} className="flex-1 overflow-y-auto p-4">
         <PdfGridView
+          scrollRef={gridScrollRef}
           documents={displayed}
           collections={cols.collections}
           activeCollection={selectedCollection}

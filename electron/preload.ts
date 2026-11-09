@@ -5,8 +5,15 @@ import type {
   CanvasGroupsFile,
   CanvasSaveResult,
   NoteBrief,
+  NoteCollectionsFile,
   NoteContentHit,
+  NoteListChanges,
   PdfDocument,
+  PdfListChanges,
+  VaultLibrarySummary,
+  VaultMigrationProgress,
+  VaultMigrationResult,
+  VaultPrivacyStatus,
 } from "../src/shared/models";
 
 const api = {
@@ -26,6 +33,8 @@ const api = {
   setVaultPath: (vaultPath: string) => ipcRenderer.invoke("vault:set-path", vaultPath),
   unwatchVault: (vaultPath: string) => ipcRenderer.invoke("vault:unwatch-path", vaultPath),
   getNoteList: (vaultPath: string) => ipcRenderer.invoke("vault:list-brief", vaultPath) as Promise<NoteBrief[]>,
+  getVaultLibrarySummary: (vaultPath: string) =>
+    ipcRenderer.invoke("vault:library-summary", vaultPath) as Promise<VaultLibrarySummary>,
   searchNotes: (vaultPath: string, query: string) => ipcRenderer.invoke("vault:search", vaultPath, query) as Promise<NoteBrief[]>,
   searchNoteContents: (vaultPath: string, query: string) =>
     ipcRenderer.invoke("vault:search-content", vaultPath, query) as Promise<NoteContentHit[]>,
@@ -39,10 +48,47 @@ const api = {
   createNote: (vaultPath: string, title: string) => ipcRenderer.invoke("vault:create-note", vaultPath, title),
   renameNote: (vaultPath: string, oldPath: string, newTitle: string) =>
     ipcRenderer.invoke("vault:rename-note", vaultPath, oldPath, newTitle),
-  onVaultUpdated: (callback: (vaultPath: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, vaultPath: string) => callback(vaultPath);
+  onVaultUpdated: (callback: (vaultPath: string, changes?: NoteListChanges) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, vaultPath: string, changes?: NoteListChanges) =>
+      callback(vaultPath, changes);
     ipcRenderer.on("vault:updated", handler);
     return () => { ipcRenderer.removeListener("vault:updated", handler); };
+  },
+
+  // Private vaults
+  getVaultPrivacyStatuses: () =>
+    ipcRenderer.invoke("vault:privacy-statuses") as Promise<VaultPrivacyStatus[]>,
+  unlockVault: (vaultPath: string, password: string) =>
+    ipcRenderer.invoke("vault:unlock", vaultPath, password),
+  lockVault: (vaultPath: string) => ipcRenderer.invoke("vault:lock", vaultPath),
+  touchVaults: () => ipcRenderer.invoke("vault:touch"),
+  updateVaultMeta: (vaultPath: string, patch: { private?: boolean }) =>
+    ipcRenderer.invoke("vaults:update-meta", vaultPath, patch),
+  makeVaultPrivate: (vaultPath: string, password: string) =>
+    ipcRenderer.invoke("vault:make-private", vaultPath, password) as Promise<VaultMigrationResult & { resumed: boolean }>,
+  makeVaultPublic: (vaultPath: string) =>
+    ipcRenderer.invoke("vault:make-public", vaultPath) as Promise<{ files: number }>,
+  changeVaultPassword: (vaultPath: string, currentPassword: string, newPassword: string) =>
+    ipcRenderer.invoke("vault:change-password", vaultPath, currentPassword, newPassword),
+  onVaultLocked: (callback: (vaultPath: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, vaultPath: string) => callback(vaultPath);
+    ipcRenderer.on("vault:locked", handler);
+    return () => { ipcRenderer.removeListener("vault:locked", handler); };
+  },
+  onVaultUnlocked: (callback: (vaultPath: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, vaultPath: string) => callback(vaultPath);
+    ipcRenderer.on("vault:unlocked", handler);
+    return () => { ipcRenderer.removeListener("vault:unlocked", handler); };
+  },
+  onVaultPrivacyChanged: (callback: (status: VaultPrivacyStatus) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: VaultPrivacyStatus) => callback(status);
+    ipcRenderer.on("vault:privacy-changed", handler);
+    return () => { ipcRenderer.removeListener("vault:privacy-changed", handler); };
+  },
+  onVaultMigrationProgress: (callback: (progress: VaultMigrationProgress) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, progress: VaultMigrationProgress) => callback(progress);
+    ipcRenderer.on("vault:migration-progress", handler);
+    return () => { ipcRenderer.removeListener("vault:migration-progress", handler); };
   },
 
   // Mind-map / canvas documents
@@ -100,7 +146,8 @@ const api = {
   selectFile: () => ipcRenderer.invoke("dialog:select-file"),
 
   // Note collections
-  loadNoteCollections: (vaultPath: string) => ipcRenderer.invoke("note-collections:load", vaultPath),
+  loadNoteCollections: (vaultPath: string) =>
+    ipcRenderer.invoke("note-collections:load", vaultPath) as Promise<NoteCollectionsFile | null>,
   saveNoteCollections: (vaultPath: string, data: any) => ipcRenderer.invoke("note-collections:save", vaultPath, data),
 
   // Canvas groups
@@ -128,8 +175,9 @@ const api = {
   showPdfInFolder: (id: number) => ipcRenderer.invoke("pdf:show-in-folder", id),
   loadPdfCollections: () => ipcRenderer.invoke("pdf-collections:load"),
   savePdfCollections: (repoPath: string, data: any) => ipcRenderer.invoke("pdf-collections:save", repoPath, data),
-  onPdfUpdated: (callback: (repoPath: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, repoPath: string) => callback(repoPath);
+  onPdfUpdated: (callback: (repoPath: string, changes?: PdfListChanges) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, repoPath: string, changes?: PdfListChanges) =>
+      callback(repoPath, changes);
     ipcRenderer.on("pdf:updated", handler);
     return () => { ipcRenderer.removeListener("pdf:updated", handler); };
   },

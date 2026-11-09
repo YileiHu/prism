@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { VaultEntry } from "../../types";
 import type { CollectionData } from "../collectionTypes";
+import { noteKey } from "../../lib/workspace/types";
 
 export interface NoteOwner {
   label: string;
@@ -8,11 +9,8 @@ export interface NoteOwner {
   colorBar?: string;
 }
 
-const normalize = (value: string) =>
-  value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-
 function absoluteKey(vaultPath: string, relPath: string): string {
-  return normalize(
+  return noteKey(
     `${vaultPath.replace(/[\\/]+$/, "")}/${relPath.replace(/^[\\/]+/, "")}`,
   );
 }
@@ -86,7 +84,7 @@ export function useNoteCollectionIndex(vaults: VaultEntry[], version: number) {
   }, [vaults, version]);
 
   const ownersFor = useMemo(
-    () => (absPath: string): NoteOwner[] => index.get(normalize(absPath)) ?? [],
+    () => (absPath: string): NoteOwner[] => index.get(noteKey(absPath)) ?? [],
     [index],
   );
 

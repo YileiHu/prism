@@ -1,3 +1,5 @@
+import { normalizePath } from "../../lib/paths";
+
 export type { PdfDocument } from "../../shared/models";
 
 export interface PdfCollectionData {
@@ -13,7 +15,7 @@ export type PdfSortDir = "asc" | "desc";
 // Collection paths are repo-relative with forward slashes; comparisons are
 // case-insensitive because Windows paths are.
 export function relKey(relPath: string): string {
-  return relPath.replace(/\\/g, "/").toLowerCase();
+  return normalizePath(relPath);
 }
 
 export function pdfCoverUrl(id: number, version: number): string {

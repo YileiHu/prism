@@ -42,6 +42,34 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Keep the heavy document stacks out of the initial chunk. Each is
+        // still loaded on demand through DocumentPane's lazy imports.
+        manualChunks(id) {
+          const path = id.replace(/\\/g, "/");
+          if (!path.includes("/node_modules/")) return undefined;
+          if (path.includes("/node_modules/pdfjs-dist/")) return "pdfjs";
+          if (path.includes("/node_modules/@codemirror/") || path.includes("/node_modules/@lezer/")) return "codemirror";
+          // KaTeX renders edit-mode math too, so it stays a separate chunk that
+          // the editor pulls without the full markdown stack.
+          if (path.includes("/node_modules/katex/")) return "katex";
+          if (
+            path.includes("/node_modules/markdown-it") ||
+            path.includes("/node_modules/@mdit/") ||
+            path.includes("/node_modules/highlight.js/") ||
+            path.includes("/node_modules/js-yaml/")
+          ) return "markdown";
+          if (path.includes("/node_modules/@xyflow/") || path.includes("/node_modules/d3-")) return "canvas";
+          if (
+            path.includes("/node_modules/react/") ||
+            path.includes("/node_modules/react-dom/") ||
+            path.includes("/node_modules/scheduler/")
+          ) return "react";
+          return undefined;
+        },
+      },
+    },
   },
   resolve: {
     alias: {

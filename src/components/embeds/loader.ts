@@ -83,6 +83,16 @@ function wireInvalidation(): void {
   });
 }
 
+// Locking a private vault must forget every decrypted excerpt/canvas we cached.
+export function clearVaultEmbedCache(vaultPath: string): void {
+  const vaultKey = normalizePath(vaultPath);
+  canvasListCache.delete(vaultKey);
+  noteListCache.delete(vaultKey);
+  dropVaultEntries(canvasDocCache, vaultKey);
+  dropVaultEntries(noteExcerptCache, vaultKey);
+  notify();
+}
+
 // Cards subscribe once each; cache invalidation re-runs their loaders.
 export function subscribeEmbedData(listener: () => void): () => void {
   wireInvalidation();

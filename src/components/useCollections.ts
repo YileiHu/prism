@@ -1,33 +1,17 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { type CollectionData } from "./collectionTypes";
 import type { NoteBrief } from "../shared/models";
 import { useT } from "../i18n";
 import { useToast } from "../lib/toast";
+import { noteKey } from "../lib/workspace/types";
+import { relativePathInsideVault, toRelativePath } from "../lib/paths";
+import { useDebouncedPersist } from "../lib/useDebouncedJsonPersist";
+import { deleteById, insertAt, moveItem, renameById } from "../lib/collectionOps";
+
+export { relativePathInsideVault, toRelativePath } from "../lib/paths";
 
 function makeId(): string {
   return crypto.randomUUID().slice(0, 8);
-}
-
-export function toRelativePath(absPath: string, vaultPath: string): string {
-  const vp = vaultPath.replace(/\\/g, "/").toLowerCase();
-  const ap = absPath.replace(/\\/g, "/").toLowerCase();
-  if (ap.startsWith(vp)) {
-    return absPath.slice(vaultPath.length).replace(/^[/\\]/, "").replace(/\\/g, "/");
-  }
-  return absPath.replace(/\\/g, "/");
-}
-
-// Like toRelativePath, but returns null for paths outside the vault. Collection
-// files may only ever reference notes inside their own vault; anything else is
-// a cross-vault leak and must never be persisted.
-export function relativePathInsideVault(absPath: string, vaultPath: string): string | null {
-  const vp = vaultPath.replace(/[\\/]+$/, "");
-  if (!vp) return null;
-  const vpNorm = vp.replace(/\\/g, "/").toLowerCase();
-  const apNorm = absPath.replace(/\\/g, "/").toLowerCase();
-  if (apNorm === vpNorm) return "";
-  if (!apNorm.startsWith(vpNorm + "/")) return null;
-  return absPath.slice(vp.length).replace(/^[/\\]+/, "").replace(/\\/g, "/");
 }
 
 interface CollectionsFile {
@@ -56,9 +40,10 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   const showToast = useToast();
   const [collections, setCollections] = useState<CollectionData[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRef = useRef<CollectionData[] | null>(null);
-  const saveFailedRef = useRef(false);
+
+  const { schedule: schedulePersist } = useDebouncedPersist({
+    onError: () => showToast(t["common.saveFailed"], "error"),
+  });
 
   const persistCollections = useCallback((colls: CollectionData[]) => {
     // Never write collections that belong to a different vault than the target.
@@ -67,41 +52,12 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
       console.warn("Skipped collections save: state/vault mismatch", { dataVaultPath, vaultPath });
       return Promise.resolve();
     }
-    return window.prism.saveNoteCollections(vaultPath, { version: 1, collections: colls })
-      .then(() => { saveFailedRef.current = false; })
-      .catch(() => {
-        if (saveFailedRef.current) return;
-        saveFailedRef.current = true;
-        showToast(t["common.saveFailed"], "error");
-        setTimeout(() => { saveFailedRef.current = false; }, 4000);
-      });
-  }, [vaultPath, dataVaultPath, showToast, t]);
+    return window.prism.saveNoteCollections(vaultPath, { version: 1, collections: colls });
+  }, [vaultPath, dataVaultPath]);
 
   const saveCollections = useCallback((colls: CollectionData[]) => {
-    pendingRef.current = colls;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      pendingRef.current = null;
-      saveTimer.current = null;
-      void persistCollections(colls);
-    }, 300);
-  }, [persistCollections]);
-
-  // Flush pending debounced save on unmount / window close so the last edit isn't lost
-  useEffect(() => {
-    const flush = () => {
-      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      if (pendingRef.current) {
-        void persistCollections(pendingRef.current);
-        pendingRef.current = null;
-      }
-    };
-    window.addEventListener("beforeunload", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      flush();
-    };
-  }, [persistCollections]);
+    schedulePersist(() => persistCollections(colls));
+  }, [schedulePersist, persistCollections]);
 
   const loadCollections = useCallback(async (vp: string) => {
     const data = await window.prism.loadNoteCollections(vp) as CollectionsFile | null;
@@ -130,7 +86,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   const handleRenameCollection = useCallback((target: CollectionData, name: string) => {
     setCollections((prev) => {
-      const updated = prev.map((c) => c.id === target.id ? { ...c, name } : c);
+      const updated = renameById(prev, target.id, name);
       saveCollections(updated);
       return updated;
     });
@@ -141,7 +97,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     return {
       collName: coll?.name ?? "",
       onConfirm: () => {
-        const updated = collections.filter((c) => c.id !== id);
+        const updated = deleteById(collections, id);
         setCollections(updated);
         saveCollections(updated);
         if (selectedCollectionId === id) {
@@ -167,10 +123,8 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   const handleReorderCollections = useCallback((from: number, to: number) => {
     setCollections((prev) => {
-      const updated = [...prev];
-      const [moved] = updated.splice(from, 1);
-      updated.splice(to, 0, moved);
-      saveCollections(updated);
+      const updated = moveItem(prev, from, to);
+      if (updated !== prev) saveCollections(updated);
       return updated;
     });
   }, [saveCollections]);
@@ -243,43 +197,41 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   const handleRenameGroup = useCallback((collId: string, groupId: string, newName: string) => {
     updateCollection(collId, (c) => ({
       ...c,
-      groups: (c.groups ?? []).map((g) => g.id === groupId ? { ...g, name: newName } : g),
+      groups: renameById(c.groups ?? [], groupId, newName),
     }));
   }, [updateCollection]);
 
   const handleDeleteGroup = useCallback((collId: string, groupId: string) => {
     updateCollection(collId, (c) => ({
       ...c,
-      groups: (c.groups ?? []).filter((g) => g.id !== groupId),
+      groups: deleteById(c.groups ?? [], groupId),
     }));
   }, [updateCollection]);
 
   const handleReorderGroups = useCallback((collId: string, fromIndex: number, toIndex: number) => {
     updateCollection(collId, (c) => {
-      const groups = [...(c.groups ?? [])];
-      const [moved] = groups.splice(fromIndex, 1);
-      groups.splice(toIndex, 0, moved);
-      return { ...c, groups };
+      const groups = moveItem(c.groups ?? [], fromIndex, toIndex);
+      return groups === c.groups ? c : { ...c, groups };
     });
   }, [updateCollection]);
 
   const handleMoveNote = useCallback((collId: string, relPath: string, fromGroupId: string | null, toGroupId: string | null, toIndex?: number) => {
     updateCollection(collId, (c) => {
-      const updated = { ...c, groups: (c.groups ?? []).map((g) => ({ ...g, notePaths: [...g.notePaths] })), notePaths: [...c.notePaths] };
+      const groups = (c.groups ?? []).map((g) => ({ ...g, notePaths: [...g.notePaths] }));
+      let notePaths = c.notePaths;
       if (fromGroupId) {
-        const fromGroup = updated.groups!.find((g) => g.id === fromGroupId);
+        const fromGroup = groups.find((g) => g.id === fromGroupId);
         if (fromGroup) fromGroup.notePaths = fromGroup.notePaths.filter((p) => p !== relPath);
       } else {
-        updated.notePaths = updated.notePaths.filter((p) => p !== relPath);
+        notePaths = notePaths.filter((p) => p !== relPath);
       }
-      const targetArr = toGroupId
-        ? updated.groups!.find((g) => g.id === toGroupId)?.notePaths
-        : updated.notePaths;
-      if (targetArr && !targetArr.includes(relPath)) {
-        const idx = toIndex !== undefined ? Math.max(0, Math.min(toIndex, targetArr.length)) : targetArr.length;
-        targetArr.splice(idx, 0, relPath);
-      }
-      return updated;
+      const target = toGroupId ? groups.find((g) => g.id === toGroupId) : null;
+      const targetPaths = toGroupId ? target?.notePaths : notePaths;
+      if (!targetPaths || targetPaths.includes(relPath)) return { ...c, groups, notePaths };
+      const next = insertAt(targetPaths, toIndex ?? targetPaths.length, relPath);
+      if (target) target.notePaths = next;
+      else notePaths = next;
+      return { ...c, groups, notePaths };
     });
   }, [updateCollection]);
 
@@ -386,7 +338,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   const notesByRelPath = useMemo(() => {
     const map = new Map<string, NoteBrief>();
     for (const n of notes) {
-      map.set(toRelativePath(n.path, vaultPath).replace(/\//g, "\\").toLowerCase(), n);
+      map.set(noteKey(toRelativePath(n.path, vaultPath)), n);
     }
     return map;
   }, [notes, vaultPath]);
@@ -402,7 +354,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     const missing = new Set<string>();
     const collectMissing = (notePaths: string[]) => {
       for (const np of notePaths) {
-        if (!notesByRelPath.has(np.replace(/\//g, "\\").toLowerCase())) missing.add(np);
+        if (!notesByRelPath.has(noteKey(np))) missing.add(np);
       }
     };
     for (const c of collections) {
@@ -445,7 +397,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   const mapNotes = useCallback((notePaths: string[]) => {
     return notePaths.map((relPath) => {
-      const found = notesByRelPath.get(relPath.replace(/\//g, "\\").toLowerCase());
+      const found = notesByRelPath.get(noteKey(relPath));
       const absPath = found?.path ?? `${vaultPath}/${relPath}`.replace(/\\/g, "/");
       return { path: absPath, relPath, title: found?.title ?? relPath, missing: !found };
     });
@@ -472,14 +424,14 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     const map = new Map<string, string[]>();
     for (const c of collections) {
       for (const np of c.notePaths) {
-        const key = np.replace(/\//g, "\\").toLowerCase();
+        const key = noteKey(np);
         const names = map.get(key);
         if (names) names.push(c.name);
         else map.set(key, [c.name]);
       }
       for (const g of (c.groups ?? [])) {
         for (const np of g.notePaths) {
-          const key = np.replace(/\//g, "\\").toLowerCase();
+          const key = noteKey(np);
           const names = map.get(key);
           if (names) names.push(c.name);
           else map.set(key, [c.name]);
@@ -491,8 +443,8 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   const sortedNotes = useMemo(() => {
     return [...notes].sort((a, b) => {
-      const aKey = toRelativePath(a.path, vaultPath).replace(/\//g, "\\").toLowerCase();
-      const bKey = toRelativePath(b.path, vaultPath).replace(/\//g, "\\").toLowerCase();
+      const aKey = noteKey(toRelativePath(a.path, vaultPath));
+      const bKey = noteKey(toRelativePath(b.path, vaultPath));
       const aColls = noteCollections.get(aKey) ?? [];
       const bColls = noteCollections.get(bKey) ?? [];
       if (aColls.length === 0 && bColls.length > 0) return -1;

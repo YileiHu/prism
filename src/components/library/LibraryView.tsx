@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, LockKeyhole, LockOpen } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -24,6 +24,10 @@ import EmptyState from "../EmptyState";
 import RenameModal from "../RenameModal";
 import { relKey, type PdfCollectionData } from "../pdf/types";
 import type { CollectionData } from "../collectionTypes";
+import { useVaultLock } from "../../lib/vaultLock";
+import Button from "../Button";
+import Input from "../Input";
+import Spinner from "../Spinner";
 import { useLibraryData } from "./LibraryDataProvider";
 import LibrarySidebar from "./LibrarySidebar";
 import { ModuleSidebar } from "../AppSidebarSlot";
@@ -34,6 +38,75 @@ import CanvasLibraryContent from "./CanvasLibraryContent";
 interface Props {
   active: boolean;
   onOpenSettings: () => void;
+}
+
+function LockedVault({ vaultPath, vaultName }: { vaultPath: string; vaultName: string }) {
+  const { t } = useT();
+  const { unlock } = useVaultLock();
+  const name = vaultName || vaultPath.split(/[\\/]/).filter(Boolean).pop() || vaultPath;
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (busy || !password) return;
+    setBusy(true);
+    setError("");
+    try {
+      await unlock(vaultPath, password);
+    } catch (e) {
+      setError(String(e).includes("BAD_PASSWORD") ? t["private.wrongPassword"] : String(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex-1 flex items-center justify-center px-6">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+        className="w-80 max-w-full flex flex-col gap-3 p-6 bg-surface rounded-card border border-line/60 shadow-popover"
+      >
+        <div className="flex flex-col items-center gap-2 text-center">
+          <LockKeyhole size={28} strokeWidth={1.4} className="text-faint" />
+          <p className="text-body text-primary font-medium">{t["private.lockedTitle"]}</p>
+          <p className="text-caption text-tertiary">
+            {t["private.lockedDesc"].replace("{name}", name)}
+          </p>
+        </div>
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => { setPassword(event.target.value); setError(""); }}
+          placeholder={t["private.passwordPlaceholder"]}
+          className="w-full"
+          disabled={busy}
+          autoComplete="current-password"
+          autoFocus
+        />
+        {error && <p className="text-caption text-danger">{error}</p>}
+        <Button type="submit" variant="primary" size="sm" className="w-full" disabled={busy || !password}>
+          {busy ? <Spinner size={14} /> : <LockOpen size={14} />}
+          {busy ? t["private.unlocking"] : t["private.unlockToOpen"]}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function CollectionDragPreview({ name, color, count }: { name: string; color?: string; count: number }) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ backgroundColor: resolveTagColor(name, color).bar }}
+      />
+      <span className="flex-1 text-body text-primary">{name}</span>
+      <span className="text-caption text-muted">{count}</span>
+    </div>
+  );
 }
 
 type DragState =
@@ -48,8 +121,11 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
   const showToast = useToast();
   const { state: workspace, setLibrary } = useWorkspace();
   const { vaults, note, pdf, pdfCols, pdfMode, canvasMode } = useLibraryData();
+  const vaultLock = useVaultLock();
   const noteVaultPath = note.vaultPath;
   const sidebarCollapsed = useSidebarCollapsed();
+  const activeVaultPath = workspace.library.kind === "pdf" ? "" : workspace.library.vaultPath;
+  const activeLocked = activeVaultPath !== "" && vaultLock.isLocked(activeVaultPath);
 
   const [drag, setDrag] = useState<DragState>(null);
   const [noteRenameTarget, setNoteRenameTarget] = useState<CollectionData | null>(null);
@@ -150,6 +226,14 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
   const shownVaultPath = note.shownVaultPath || noteVaultPath;
 
   const content = useMemo(() => {
+    if (activeLocked) {
+      return (
+        <LockedVault
+          vaultPath={activeVaultPath}
+          vaultName={vaults.find((vault) => normalizePath(vault.path) === normalizePath(activeVaultPath))?.name ?? ""}
+        />
+      );
+    }
     if (canvasMode) {
       return <CanvasLibraryContent />;
     }
@@ -176,7 +260,8 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
       />
     );
   }, [
-    canvasMode, noteVaultPath, note, onOpenSettings, pdfCols, pdfMode, shownVaultPath, sidebarCollapsed, t, vaults,
+    activeLocked, activeVaultPath, canvasMode, noteVaultPath, note, onOpenSettings, pdfCols, pdfMode,
+    shownVaultPath, sidebarCollapsed, t, vaults,
   ]);
 
   return (
@@ -232,14 +317,11 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
           </div>
         )}
         {drag?.kind === "note-collection" && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: resolveTagColor(drag.collection.name, drag.collection.color).bar }}
-            />
-            <span className="flex-1 text-body text-primary">{drag.collection.name}</span>
-            <span className="text-caption text-muted">{drag.collection.notePaths.length}</span>
-          </div>
+          <CollectionDragPreview
+            name={drag.collection.name}
+            color={drag.collection.color}
+            count={drag.collection.notePaths.length}
+          />
         )}
         {drag?.kind === "pdf-doc" && (
           <div className="w-36 rounded-card bg-elevated border border-[var(--accent)] shadow-drag overflow-hidden opacity-95">
@@ -250,14 +332,11 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
           </div>
         )}
         {drag?.kind === "pdf-collection" && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: resolveTagColor(drag.collection.name, drag.collection.color).bar }}
-            />
-            <span className="flex-1 text-body text-primary">{drag.collection.name}</span>
-            <span className="text-caption text-muted">{drag.collection.pdfPaths.length}</span>
-          </div>
+          <CollectionDragPreview
+            name={drag.collection.name}
+            color={drag.collection.color}
+            count={drag.collection.pdfPaths.length}
+          />
         )}
       </DragOverlay>
 

@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme, nativeImage, powerMonitor } from "electron";
 import path from "path";
 import fs from "fs";
+import { isPathInside, pathKey as normalizePathKey } from "./paths";
 import { Readable } from "stream";
 import { spawn } from "child_process";
 import {
@@ -17,6 +18,7 @@ import {
   deleteNotesByPaths,
   getNoteMtimes,
   getNoteList,
+  getNoteBriefsByPaths,
   searchNotes,
   searchNoteContents,
   getSetting,
@@ -53,7 +55,9 @@ import {
   getRecentNotes,
   recordRecentOpen,
   renameNoteEntry,
+  purgeVaultNotes,
   listPdfDocuments,
+  getPdfDocumentsByPaths,
   syncPdfDocuments,
   getPdfDocument,
   findPdfDocumentByRelPath,
@@ -65,7 +69,31 @@ import {
   deletePdfDocuments,
   type PdfUpsertRow,
 } from "./database";
-import type { CanvasFile, CanvasSaveResult, GtdStatus } from "../src/shared/models";
+import type { CanvasFile, CanvasSaveResult, GtdStatus, NoteBrief } from "../src/shared/models";
+import {
+  changeVaultPassword,
+  dropSession,
+  isPrivateVault,
+  isUnlocked,
+  listNoteFiles,
+  lockAllVaults,
+  lockVault,
+  makeVaultPrivate,
+  makeVaultPublic,
+  privacyStatus,
+  readAssetBytes,
+  readEncryptedText,
+  refreshIdleTimers,
+  setIdleMinutesProvider,
+  setLockListener,
+  setUnlockListener,
+  touchAllVaults,
+  unlockVault,
+  withVaultKey,
+  writeEncryptedFile,
+  normalizeVaultPath,
+} from "./privateVault";
+import { readSidecar, writeSidecar } from "./sidecar";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -191,13 +219,17 @@ function createWindow(): void {
   mainWindow.on("focus", () => {
     const now = Date.now();
     for (const vp of watchedVaults) {
-      if (now - (focusScanAt.get(vp) ?? 0) < FOCUS_SCAN_INTERVAL) continue;
+      const interval = vaultWatchers.has(vp) ? FOCUS_SAFETY_INTERVAL : FOCUS_SCAN_INTERVAL;
+      if (now - (focusScanAt.get(vp) ?? 0) < interval) continue;
       focusScanAt.set(vp, now);
       rescanAndNotify(vp);
     }
-    if (pdfRepoPath && now - pdfFocusScanAt >= FOCUS_SCAN_INTERVAL) {
-      pdfFocusScanAt = now;
-      rescanPdfRepoAndNotify();
+    if (pdfRepoPath) {
+      const interval = pdfWatchers.length > 0 ? FOCUS_SAFETY_INTERVAL : FOCUS_SCAN_INTERVAL;
+      if (now - pdfFocusScanAt >= interval) {
+        pdfFocusScanAt = now;
+        rescanPdfRepoAndNotify();
+      }
     }
   });
 
@@ -305,11 +337,14 @@ function extractTags(content: string): Set<string> {
   return tagSet;
 }
 
-async function scanVaultIncremental(vaultPath: string): Promise<{
+async function scanVaultIncremental(vaultPath: string, excludedRoots: string[] = []): Promise<{
   upsert: { path: string; title: string; content: string; tags: string; modified_at: string }[];
   deletePaths: string[];
   totalCount: number;
 }> {
+  // Nested private vaults must never be read as plaintext by a public parent.
+  const excluded = new Set(excludedRoots.map(normalizeVaultPath));
+
   // 1. Walk directory with async I/O — collect paths + mtimes
   async function walk(dir: string): Promise<Map<string, string>> {
     const result = new Map<string, string>();
@@ -322,7 +357,9 @@ async function scanVaultIncremental(vaultPath: string): Promise<{
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".")) subdirs.push(fullPath);
+        if (!entry.name.startsWith(".") && !excluded.has(normalizeVaultPath(fullPath))) {
+          subdirs.push(fullPath);
+        }
       } else if (entry.name.endsWith(".md")) {
         statPromises.push(
           fs.promises.stat(fullPath).then(
@@ -410,8 +447,16 @@ const vaultWatchers = new Map<string, fs.FSWatcher[]>(); // live watchers (may b
 const watcherRebuildTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingScanVaults = new Set<string>();
 let vaultScanTimer: ReturnType<typeof setTimeout> | null = null;
+// First scan per vault is shared between the concurrent startup callers; the
+// watcher keeps the index current after that.
+const vaultScanDone = new Map<string, number>();
+const vaultScanInFlight = new Map<string, Promise<number>>();
 
+// The fs watcher is the primary change channel. A healthy watcher only needs
+// an occasional safety-net scan; a missing one (unplugged drive, network share,
+// buffer overflow) catches up on every focus.
 const FOCUS_SCAN_INTERVAL = 30_000;
+const FOCUS_SAFETY_INTERVAL = 5 * 60_000;
 const focusScanAt = new Map<string, number>();
 
 function unwatchVault(vaultPath: string): void {
@@ -443,11 +488,19 @@ async function rescanAndNotify(vaultPath: string): Promise<void> {
     if (!isValidVaultDir(vaultPath)) return;
     // Re-arm a dead watcher (e.g. after the drive was unplugged and came back)
     if (!vaultWatchers.has(vaultPath) && watchedVaults.has(vaultPath)) watchVault(vaultPath);
-    const { upsert, deletePaths } = await scanVaultIncremental(vaultPath);
+    if (isPrivateVault(vaultPath)) {
+      schedulePrivateNotify(vaultPath);
+      return;
+    }
+    const { upsert, deletePaths } = await scanVaultIncremental(vaultPath, privateVaultRoots());
     // Only notify when the index actually changed (e.g. ignore .prism/collections.json writes)
     if (upsert.length === 0 && deletePaths.length === 0) return;
     syncVaultNotes(vaultPath, upsert, deletePaths);
-    mainWindow?.webContents.send("vault:updated", vaultPath);
+    const changes = {
+      upserted: getNoteBriefsByPaths(vaultPath, upsert.map((note) => note.path)),
+      deleted: deletePaths,
+    };
+    mainWindow?.webContents.send("vault:updated", vaultPath, changes);
   } catch { /* watcher-triggered scans are best-effort */ }
 }
 
@@ -470,8 +523,13 @@ function watchVault(vaultPath: string): void {
       const segments = filename.split(/[\\/]/);
       // Ignore dot-directories (.obsidian, .prism, .git) and non-markdown files
       if (segments.some((s) => s.startsWith("."))) return;
-      if (!filename.toLowerCase().endsWith(".md")) return;
     }
+    // Private vaults are never indexed — a change only refreshes the file list
+    if (isPrivateVault(vaultPath)) {
+      schedulePrivateNotify(vaultPath);
+      return;
+    }
+    if (filename && !filename.toLowerCase().endsWith(".md")) return;
     scheduleVaultScan(vaultPath);
   };
   const onError = () => handleWatcherError(vaultPath);
@@ -511,19 +569,107 @@ function watchVault(vaultPath: string): void {
 // nested vault roots resolve to the tighter scope. Returns null when the file
 // is outside every registered vault — read/write IPC must refuse such paths.
 function findOwningVault(filePath: string): string | null {
-  let vaults: string[] = [];
-  try {
-    const raw = getSetting("vault_paths");
-    if (raw) vaults = (JSON.parse(raw) as { path: string }[]).map((v) => v.path);
-  } catch { /* malformed setting — treat as no vaults */ }
-  const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-  const target = norm(filePath);
-  const owned = vaults.filter((v) => {
-    const vNorm = norm(v);
-    return target === vNorm || target.startsWith(vNorm + "/");
-  });
+  const owned = registeredVaultPaths().filter((vaultPath) => isPathInside(vaultPath, filePath));
   if (owned.length === 0) return null;
   return owned.sort((a, b) => b.length - a.length)[0];
+}
+
+// ---- Private vaults ----
+
+// Cached because findOwningVault runs on every protocol/IPC path check. Any
+// write to `vault_paths` (settings:set or privacy toggles) clears it.
+let vaultPathsCache: string[] | null = null;
+
+function registeredVaultPaths(): string[] {
+  if (vaultPathsCache) return vaultPathsCache;
+  try {
+    const raw = getSetting("vault_paths");
+    if (!raw) return (vaultPathsCache = []);
+    const parsed = JSON.parse(raw);
+    vaultPathsCache = Array.isArray(parsed)
+      ? parsed.map((v: { path?: string }) => v?.path).filter((p): p is string => Boolean(p))
+      : [];
+    return vaultPathsCache;
+  } catch {
+    return (vaultPathsCache = []);
+  }
+}
+
+// Normalized roots whose contents must never be indexed or read as plaintext.
+function privateVaultRoots(): string[] {
+  return registeredVaultPaths().filter(isPrivateVault);
+}
+
+function isPrivateNotePath(filePath: string): boolean {
+  const owner = findOwningVault(filePath);
+  return owner !== null && isPrivateVault(owner);
+}
+
+function requireUnlocked(vaultPath: string): void {
+  if (isPrivateVault(vaultPath) && !isUnlocked(vaultPath)) throw new Error("VAULT_LOCKED");
+}
+
+// Synthetic stable ids for private-vault notes — they live outside SQLite.
+function syntheticNoteId(filePath: string): number {
+  let hash = 0;
+  for (let i = 0; i < filePath.length; i++) hash = (hash * 31 + filePath.charCodeAt(i)) | 0;
+  return hash >= 0 ? -(hash + 1) : hash;
+}
+
+function setVaultPrivateFlag(vaultPath: string, isPrivateVaultFlag: boolean): void {
+  let entries: { path: string; [key: string]: unknown }[] = [];
+  try {
+    const raw = getSetting("vault_paths");
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) entries = parsed;
+  } catch { return; }
+  const key = normalizeVaultPath(vaultPath);
+  const next = entries.map((entry) => {
+    if (!entry || typeof entry.path !== "string" || normalizeVaultPath(entry.path) !== key) return entry;
+    if (isPrivateVaultFlag) return { ...entry, private: true };
+    const { private: _omit, ...rest } = entry;
+    return rest;
+  });
+  setSetting("vault_paths", JSON.stringify(next));
+  vaultPathsCache = null;
+}
+
+function privacyStatuses(): { path: string; private: boolean; locked: boolean }[] {
+  return registeredVaultPaths().map((vaultPath) => ({ path: vaultPath, ...privacyStatus(vaultPath) }));
+}
+
+// Watcher-driven notifications for private vaults: file contents stay
+// encrypted, so a change just tells the renderer to re-list names.
+const PRIVATE_NOTIFY_DEBOUNCE = 800;
+const PRIVATE_ECHO_SUPPRESS = 1000;
+const privateNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const privateSelfWriteAt = new Map<string, number>();
+
+function markPrivateWrite(vaultPath: string): void {
+  privateSelfWriteAt.set(normalizeVaultPath(vaultPath), Date.now());
+}
+
+function schedulePrivateNotify(vaultPath: string): void {
+  const existing = privateNotifyTimers.get(vaultPath);
+  if (existing) clearTimeout(existing);
+  privateNotifyTimers.set(vaultPath, setTimeout(() => {
+    privateNotifyTimers.delete(vaultPath);
+    const lastWrite = privateSelfWriteAt.get(normalizeVaultPath(vaultPath)) ?? 0;
+    if (Date.now() - lastWrite < PRIVATE_ECHO_SUPPRESS) return;
+    mainWindow?.webContents.send("vault:updated", vaultPath);
+  }, PRIVATE_NOTIFY_DEBOUNCE));
+}
+
+function privateNoteBriefs(vaultPath: string): NoteBrief[] {
+  return listNoteFiles(vaultPath, privateVaultRoots())
+    .map((note) => ({
+      id: syntheticNoteId(note.path),
+      path: note.path,
+      title: note.title,
+      tags: "",
+      modifiedAt: note.modifiedAt,
+    }))
+    .sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : a.modifiedAt > b.modifiedAt ? -1 : 0));
 }
 
 // ---- PDF library scanning ----
@@ -535,14 +681,13 @@ let pdfScanTimer: ReturnType<typeof setTimeout> | null = null;
 let pdfScanPending = false;
 let pdfFocusScanAt = 0;
 
-function normalizePathKey(p: string): string {
-  return path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
-
-function isPathInside(root: string, target: string): boolean {
-  const r = normalizePathKey(root);
-  const t = normalizePathKey(target);
-  return t === r || t.startsWith(r + "/");
+// .prism sidecar metadata belongs to a vault root; a nested note path is not
+// allowed to address it.
+function requireVaultRoot(vaultPath: string): void {
+  const owner = findOwningVault(vaultPath);
+  if (!owner || normalizePathKey(owner) !== normalizePathKey(vaultPath)) {
+    throw new Error("OUTSIDE_VAULT");
+  }
 }
 
 function currentPdfRepo(): string | null {
@@ -679,7 +824,11 @@ async function rescanPdfRepoAndNotify(): Promise<void> {
     if (upsert.length === 0 && deletePaths.length === 0) return;
     syncPdfDocuments(repo, upsert, deletePaths);
     for (const row of deletedRows) removePdfCoverFile(row.id);
-    mainWindow?.webContents.send("pdf:updated", repo);
+    const changes = {
+      upserted: getPdfDocumentsByPaths(repo, upsert.map((doc) => doc.path)),
+      deleted: deletePaths,
+    };
+    mainWindow?.webContents.send("pdf:updated", repo, changes);
   } catch { /* watcher-triggered scans are best-effort */ }
 }
 
@@ -778,9 +927,7 @@ function resolveAttachmentsDir(): string {
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-// Writes one attachment into the vault's attachment folder and returns the
-// vault-relative ref (forward slashes).
-function persistAttachment(vaultPath: string, safeExt: string, data: Buffer): string {
+function attachmentTarget(vaultPath: string, safeExt: string): { filePath: string; ref: string } {
   const relDir = resolveAttachmentsDir();
   const dir = path.join(vaultPath, ...relDir.split("/"));
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -795,8 +942,24 @@ function persistAttachment(vaultPath: string, safeExt: string, data: Buffer): st
     filePath = path.join(dir, name);
     counter++;
   }
+  return { filePath, ref: `${relDir}/${name}` };
+}
+
+// Writes one attachment into the vault's attachment folder and returns the
+// vault-relative ref (forward slashes).
+function persistAttachment(vaultPath: string, safeExt: string, data: Buffer): string {
+  const { filePath, ref } = attachmentTarget(vaultPath, safeExt);
   fs.writeFileSync(filePath, data);
-  return `${relDir}/${name}`;
+  return ref;
+}
+
+function persistPrivateAttachment(vaultPath: string, safeExt: string, data: Buffer): Promise<string> {
+  markPrivateWrite(vaultPath);
+  return withVaultKey(vaultPath, async (dek) => {
+    const { filePath, ref } = attachmentTarget(vaultPath, safeExt);
+    await writeEncryptedFile(filePath, dek, data);
+    return ref;
+  });
 }
 
 // Mind-map documents live in a vault-relative folder (default "canvases") as
@@ -851,6 +1014,40 @@ function uniqueCanvasName(dir: string, title: string): { path: string; title: st
   return { path: filePath, title: counter > 1 ? `${safeName} ${counter - 1}` : safeName };
 }
 
+// Index a vault at most once per app run; concurrent callers share the scan.
+// Private vaults are never indexed, so this only counts their files.
+async function ensureVaultIndex(vaultPath: string): Promise<number> {
+  // Refuse to scan a missing/unreadable path — the empty walk would
+  // otherwise wipe this vault's entire index from the DB
+  if (!isValidVaultDir(vaultPath)) {
+    throw new Error("VAULT_NOT_FOUND");
+  }
+  watchedVaults.add(vaultPath);
+  if (!vaultWatchers.has(vaultPath)) watchVault(vaultPath);
+  // Private vaults are never indexed. Return a file count so the workspace
+  // can finish hydrating whether the vault is locked or unlocked.
+  if (isPrivateVault(vaultPath)) {
+    return listNoteFiles(vaultPath, privateVaultRoots()).length;
+  }
+  const key = normalizePathKey(vaultPath);
+  const pending = vaultScanInFlight.get(key);
+  if (pending) return pending;
+  const cached = vaultScanDone.get(key);
+  if (cached !== undefined) return cached;
+  const scan = (async () => {
+    const { upsert, deletePaths, totalCount } = await scanVaultIncremental(vaultPath, privateVaultRoots());
+    syncVaultNotes(vaultPath, upsert, deletePaths);
+    vaultScanDone.set(key, totalCount);
+    return totalCount;
+  })();
+  vaultScanInFlight.set(key, scan);
+  try {
+    return await scan;
+  } finally {
+    vaultScanInFlight.delete(key);
+  }
+}
+
 function registerIpcHandlers(): void {
   // Resources
   ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[], notes: string) => {
@@ -872,35 +1069,57 @@ function registerIpcHandlers(): void {
   ipcMain.handle("fetch:title", async (_e, url: string) => fetchPageTitle(url));
 
   // Vault notes
-  ipcMain.handle("vault:set-path", async (_e, vaultPath: string) => {
-    // Refuse to scan a missing/unreadable path — the empty walk would
-    // otherwise wipe this vault's entire index from the DB
-    if (!isValidVaultDir(vaultPath)) {
-      throw new Error("VAULT_NOT_FOUND");
-    }
-    watchedVaults.add(vaultPath);
-    watchVault(vaultPath);
-    const { upsert, deletePaths, totalCount } = await scanVaultIncremental(vaultPath);
-    syncVaultNotes(vaultPath, upsert, deletePaths);
-    return totalCount;
+  ipcMain.handle("vault:set-path", (_e, vaultPath: string) => ensureVaultIndex(vaultPath));
+
+  // One round-trip for the startup path: index (if needed), then the note
+  // briefs, collection sidecar and canvas list for a single vault.
+  ipcMain.handle("vault:library-summary", async (_e, vaultPath: string) => {
+    await ensureVaultIndex(vaultPath);
+    if (isPrivateVault(vaultPath)) requireUnlocked(vaultPath);
+    return {
+      notes: isPrivateVault(vaultPath) ? privateNoteBriefs(vaultPath) : getNoteList(vaultPath),
+      collections: readSidecar(path.join(vaultPath, ".prism"), "collections.json"),
+      canvases: listCanvasFiles(vaultPath),
+    };
   });
 
   ipcMain.handle("vault:unwatch-path", (_e, vaultPath: string) => {
     watchedVaults.delete(vaultPath);
     unwatchVault(vaultPath);
+    vaultScanDone.delete(normalizePathKey(vaultPath));
+    vaultScanInFlight.delete(normalizePathKey(vaultPath));
   });
 
-  ipcMain.handle("vault:list-brief", (_e, vaultPath: string) => getNoteList(vaultPath));
+  ipcMain.handle("vault:list-brief", (_e, vaultPath: string) => {
+    if (isPrivateVault(vaultPath)) {
+      requireUnlocked(vaultPath);
+      return privateNoteBriefs(vaultPath);
+    }
+    return getNoteList(vaultPath);
+  });
 
-  ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => searchNotes(vaultPath, query, searchResultLimit()));
+  // Search never touches private vaults — no index, no plaintext, no titles.
+  ipcMain.handle("vault:search", (_e, vaultPath: string, query: string) => {
+    if (isPrivateVault(vaultPath)) return [];
+    return searchNotes(vaultPath, query, searchResultLimit());
+  });
 
-  ipcMain.handle("vault:search-content", (_e, vaultPath: string, query: string) => searchNoteContents(vaultPath, query, searchResultLimit()));
+  ipcMain.handle("vault:search-content", (_e, vaultPath: string, query: string) => {
+    if (isPrivateVault(vaultPath)) return [];
+    return searchNoteContents(vaultPath, query, searchResultLimit());
+  });
 
   ipcMain.handle("vault:delete-notes", (_e, paths: string[]) => {
+    for (const p of paths) {
+      const owner = findOwningVault(p);
+      if (owner) requireUnlocked(owner);
+    }
     deleteNotesByPaths(paths);
   });
 
-  ipcMain.handle("vault:create-note", (_e, vaultPath: string, title: string) => {
+  ipcMain.handle("vault:create-note", async (_e, vaultPath: string, title: string) => {
+    const isPrivate = isPrivateVault(vaultPath);
+    if (isPrivate) requireUnlocked(vaultPath);
     const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
     const defaultDir = getSetting("default_notes_dir") || "";
     const targetDir = defaultDir ? path.join(vaultPath, defaultDir) : vaultPath;
@@ -917,13 +1136,30 @@ function registerIpcHandlers(): void {
     }
     const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
     const content = `# ${finalTitle}\n\n`;
+    if (isPrivate) {
+      markPrivateWrite(vaultPath);
+      return withVaultKey(vaultPath, async (dek) => {
+        const { modified_at } = await writeEncryptedFile(filePath, dek, content);
+        return {
+          id: syntheticNoteId(filePath),
+          vault_path: vaultPath,
+          path: filePath,
+          title: finalTitle,
+          content,
+          tags: "",
+          modified_at,
+        };
+      });
+    }
     const now = new Date().toISOString();
     fs.writeFileSync(filePath, content, "utf-8");
     const tags = Array.from(extractTags(content)).join(" ");
     return insertNote({ vault_path: vaultPath, path: filePath, title: finalTitle, content, tags, modified_at: now });
   });
 
-  ipcMain.handle("vault:rename-note", (_e, vaultPath: string, oldPath: string, newTitle: string) => {
+  ipcMain.handle("vault:rename-note", async (_e, vaultPath: string, oldPath: string, newTitle: string) => {
+    const isPrivate = isPrivateVault(vaultPath);
+    if (isPrivate) requireUnlocked(vaultPath);
     const safeName = newTitle.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
     const dir = path.dirname(oldPath);
     let newPath = path.join(dir, `${safeName}.md`);
@@ -936,6 +1172,21 @@ function registerIpcHandlers(): void {
     if (newPath !== oldPath) {
       fs.renameSync(oldPath, newPath);
     }
+    if (isPrivate) {
+      // Not indexed, but favorites may point at this path — keep them in sync.
+      markPrivateWrite(vaultPath);
+      renameNoteEntry(oldPath, newPath, finalTitle);
+      const stat = await fs.promises.stat(newPath);
+      return {
+        id: syntheticNoteId(newPath),
+        vault_path: vaultPath,
+        path: newPath,
+        title: finalTitle,
+        content: "",
+        tags: "",
+        modified_at: stat.mtime.toISOString(),
+      };
+    }
     const updated = renameNoteInDb(oldPath, newPath, finalTitle);
     renameNoteEntry(oldPath, newPath, finalTitle);
     if (updated) return updated;
@@ -947,7 +1198,20 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("vault:read-note", async (_e, filePath: string) => {
-    if (!findOwningVault(filePath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    const vaultPath = findOwningVault(filePath);
+    if (!vaultPath) throw new Error("NOTE_OUTSIDE_VAULT");
+    if (isPrivateVault(vaultPath)) {
+      return withVaultKey(vaultPath, async (dek) => {
+        const content = await readEncryptedText(filePath, dek);
+        const stat = await fs.promises.stat(filePath);
+        return {
+          path: filePath,
+          title: path.basename(filePath).replace(/\.md$/i, ""),
+          content,
+          modified_at: stat.mtime.toISOString(),
+        };
+      });
+    }
     recordRecentOpen(filePath);
     const content = await fs.promises.readFile(filePath, "utf-8");
     const stat = await fs.promises.stat(filePath);
@@ -962,6 +1226,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle("vault:save-note", async (_e, filePath: string, content: string) => {
     const vaultPath = findOwningVault(filePath);
     if (!vaultPath) throw new Error("NOTE_OUTSIDE_VAULT");
+    if (isPrivateVault(vaultPath)) {
+      markPrivateWrite(vaultPath);
+      return withVaultKey(vaultPath, async (dek) => {
+        const { modified_at } = await writeEncryptedFile(filePath, dek, content);
+        return { modified_at };
+      });
+    }
     await fs.promises.writeFile(filePath, content, "utf-8");
     // Store the file's real mtime so the watcher's incremental scan compares
     // equal and skips re-reading — no save→rescan→vault-updated loop
@@ -981,17 +1252,23 @@ function registerIpcHandlers(): void {
   // Pasted editor images → <vault>/<attachments_dir>/<YYYY-MM-DD-HHmmss>.<ext>.
   // Space-free names keep standard ![](path) links clean (no <> wrapping).
   // Returns the vault-relative ref (forward slashes).
-  ipcMain.handle("vault:save-attachment", (_e, vaultPath: string, ext: string, data: Uint8Array) => {
+  ipcMain.handle("vault:save-attachment", async (_e, vaultPath: string, ext: string, data: Uint8Array) => {
     if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
     const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (!ASSET_MIME[safeExt]) throw new Error("UNSUPPORTED_TYPE");
-    return persistAttachment(vaultPath, safeExt, Buffer.from(data));
+    const bytes = Buffer.from(data);
+    if (isPrivateVault(vaultPath)) {
+      requireUnlocked(vaultPath);
+      return persistPrivateAttachment(vaultPath, safeExt, bytes);
+    }
+    return persistAttachment(vaultPath, safeExt, bytes);
   });
 
   // "Insert image" picks a file from disk and copies it into the vault, so the
   // note gets the same ![[...]] ref a paste would produce.
   ipcMain.handle("vault:pick-attachment", async (_e, vaultPath: string) => {
     if (!findOwningVault(vaultPath)) throw new Error("NOTE_OUTSIDE_VAULT");
+    if (isPrivateVault(vaultPath)) requireUnlocked(vaultPath);
     if (!mainWindow) return null;
     const imageExts = Object.keys(ASSET_MIME).filter((ext) => ASSET_MIME[ext].startsWith("image/"));
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -1005,7 +1282,9 @@ function registerIpcHandlers(): void {
     if (!ASSET_MIME[ext] || !ASSET_MIME[ext].startsWith("image/")) throw new Error("UNSUPPORTED_TYPE");
     const stat = await fs.promises.stat(source);
     if (stat.size > MAX_ATTACHMENT_BYTES) throw new Error("FILE_TOO_LARGE");
-    return persistAttachment(vaultPath, ext, await fs.promises.readFile(source));
+    const bytes = await fs.promises.readFile(source);
+    if (isPrivateVault(vaultPath)) return persistPrivateAttachment(vaultPath, ext, bytes);
+    return persistAttachment(vaultPath, ext, bytes);
   });
 
   // Mind-map / canvas documents (plain JSON, no database index)
@@ -1015,14 +1294,33 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("canvas:read", async (_e, canvasPath: string) => {
-    assertCanvasFile(canvasPath);
+    const vaultPath = assertCanvasFile(canvasPath);
+    if (isPrivateVault(vaultPath)) {
+      return withVaultKey(vaultPath, async (dek) => {
+        const json = await readEncryptedText(canvasPath, dek);
+        const stat = await fs.promises.stat(canvasPath);
+        return { path: canvasPath, title: canvasTitle(canvasPath), json, modifiedAt: stat.mtimeMs };
+      });
+    }
     const json = await fs.promises.readFile(canvasPath, "utf-8");
     const stat = await fs.promises.stat(canvasPath);
     return { path: canvasPath, title: canvasTitle(canvasPath), json, modifiedAt: stat.mtimeMs };
   });
 
   ipcMain.handle("canvas:save", async (_e, canvasPath: string, json: string, expectedModifiedAt: number | null) => {
-    assertCanvasFile(canvasPath);
+    const vaultPath = assertCanvasFile(canvasPath);
+    if (isPrivateVault(vaultPath)) {
+      if (!fs.existsSync(canvasPath)) throw new Error("CANVAS_MISSING");
+      return withVaultKey(vaultPath, async (dek) => {
+        const stat = await fs.promises.stat(canvasPath);
+        if (expectedModifiedAt !== null && Math.abs(stat.mtimeMs - expectedModifiedAt) > 0.5) {
+          return { conflict: true, modifiedAt: stat.mtimeMs } satisfies CanvasSaveResult;
+        }
+        markPrivateWrite(vaultPath);
+        const { mtimeMs } = await writeEncryptedFile(canvasPath, dek, json);
+        return { modifiedAt: mtimeMs } satisfies CanvasSaveResult;
+      });
+    }
     if (!fs.existsSync(canvasPath)) throw new Error("CANVAS_MISSING");
     const stat = await fs.promises.stat(canvasPath);
     if (expectedModifiedAt !== null && Math.abs(stat.mtimeMs - expectedModifiedAt) > 0.5) {
@@ -1043,8 +1341,19 @@ function registerIpcHandlers(): void {
     return { modifiedAt: next.mtimeMs } satisfies CanvasSaveResult;
   });
 
-  ipcMain.handle("canvas:create", (_e, vaultPath: string, title: string, templateJson: string) => {
+  ipcMain.handle("canvas:create", async (_e, vaultPath: string, title: string, templateJson: string) => {
     if (!findOwningVault(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+    if (isPrivateVault(vaultPath)) {
+      requireUnlocked(vaultPath);
+      markPrivateWrite(vaultPath);
+      return withVaultKey(vaultPath, async (dek) => {
+        const dir = resolveCanvasDir(vaultPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const target = uniqueCanvasName(dir, title);
+        const { mtimeMs } = await writeEncryptedFile(target.path, dek, templateJson);
+        return { path: target.path, title: target.title, modifiedAt: mtimeMs };
+      });
+    }
     const dir = resolveCanvasDir(vaultPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const target = uniqueCanvasName(dir, title);
@@ -1085,11 +1394,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle("settings:get", (_e, key: string) => getSetting(key));
   ipcMain.handle("settings:set", (_e, key: string, value: string) => {
     setSetting(key, value);
+    if (key === "vault_paths") vaultPathsCache = null;
     // Repo changes must re-arm the watcher and rescan; do it after persisting
     // so a crash mid-scan still leaves the user's choice saved.
     if (key === "pdf_repo_path") {
       void applyPdfRepo(value).catch(() => { /* surfaced via pdf:get-state */ });
     }
+    if (key === "private_lock_minutes") refreshIdleTimers();
   });
   ipcMain.handle("settings:get-all", () => getAllSettings());
   ipcMain.handle("app:set-color-mode", (_e, mode: string) => applyNativeColorMode(mode));
@@ -1126,58 +1437,109 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:set-action-due-date", (_e, id: number, dueDate: string | null) => setGtdActionDueDate(id, dueDate));
   ipcMain.handle("gtd:next-list", () => getGtdNextList());
 
-  // Favorite / recent notes
-  ipcMain.handle("notes:toggle-favorite", (_e, notePath: string, title: string) => toggleFavoriteNote(notePath, title));
-  ipcMain.handle("notes:favorites", () => getFavoriteNotes().map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
+  // Favorite / recent notes. Private-vault favorites keep working: titles are
+  // filename-derived (filenames stay plaintext by design) and the home list
+  // gates opening through the unlock modal. Recents still exclude private
+  // notes so that opening one never advertises it afterwards.
+  ipcMain.handle("notes:toggle-favorite", (_e, notePath: string, title: string) =>
+    toggleFavoriteNote(notePath, title));
+  ipcMain.handle("notes:favorites", () =>
+    getFavoriteNotes().map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
   ipcMain.handle("notes:favorite-status", (_e, paths: string[]) => getFavoriteStatus(paths));
-  ipcMain.handle("notes:recents", (_e, limit?: number) => getRecentNotes(limit).map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
+  ipcMain.handle("notes:recents", (_e, limit?: number) =>
+    getRecentNotes(limit)
+      .filter((n) => !isPrivateNotePath(n.path))
+      .map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
+
+  // Private vaults
+  ipcMain.handle("vault:privacy-statuses", () => privacyStatuses());
+
+  ipcMain.handle("vault:unlock", async (_e, vaultPath: string, password: string) => {
+    await unlockVault(vaultPath, String(password ?? ""));
+  });
+
+  ipcMain.handle("vault:lock", async (_e, vaultPath: string) => {
+    await lockVault(vaultPath);
+  });
+
+  ipcMain.handle("vault:touch", () => touchAllVaults());
+
+  ipcMain.handle("vaults:update-meta", (_e, vaultPath: string, patch: { private?: boolean }) => {
+    if (!findOwningVault(vaultPath)) throw new Error("VAULT_NOT_FOUND");
+    if (typeof patch?.private === "boolean") setVaultPrivateFlag(vaultPath, patch.private);
+  });
+
+  const migrationProgress = (vaultPath: string) => (done: number, total: number) => {
+    mainWindow?.webContents.send("vault:migration-progress", { vaultPath, done, total });
+  };
+
+  // Nested private vaults keep their own keys — skip them when (en|de)crypting
+  // this vault so their files are never mixed into this vault's format.
+  const nestedPrivateRoots = (vaultPath: string) => {
+    const self = normalizeVaultPath(vaultPath);
+    return privateVaultRoots().filter((root) => normalizeVaultPath(root) !== self);
+  };
+
+  ipcMain.handle("vault:make-private", async (_e, vaultPath: string, password: string) => {
+    if (!isValidVaultDir(vaultPath)) throw new Error("VAULT_NOT_FOUND");
+    const result = await makeVaultPrivate(
+      vaultPath,
+      String(password ?? ""),
+      resolveAttachmentsDir(),
+      resolveCanvasDir(vaultPath),
+      nestedPrivateRoots(vaultPath),
+      migrationProgress(vaultPath),
+    );
+    purgeVaultNotes(vaultPath);
+    setVaultPrivateFlag(vaultPath, true);
+    await dropSession(vaultPath);
+    mainWindow?.webContents.send("vault:privacy-changed", { path: vaultPath, ...privacyStatus(vaultPath) });
+    return result;
+  });
+
+  ipcMain.handle("vault:make-public", async (_e, vaultPath: string) => {
+    if (!isPrivateVault(vaultPath)) throw new Error("NOT_PRIVATE");
+    const result = await makeVaultPublic(
+      vaultPath,
+      resolveAttachmentsDir(),
+      resolveCanvasDir(vaultPath),
+      nestedPrivateRoots(vaultPath),
+      migrationProgress(vaultPath),
+    );
+    await dropSession(vaultPath);
+    setVaultPrivateFlag(vaultPath, false);
+    // Contents are readable again — rebuild the search index.
+    const { upsert, deletePaths } = await scanVaultIncremental(vaultPath, privateVaultRoots());
+    syncVaultNotes(vaultPath, upsert, deletePaths);
+    mainWindow?.webContents.send("vault:privacy-changed", { path: vaultPath, ...privacyStatus(vaultPath) });
+    mainWindow?.webContents.send("vault:updated", vaultPath);
+    return result;
+  });
+
+  ipcMain.handle("vault:change-password", async (_e, vaultPath: string, currentPassword: string, newPassword: string) => {
+    await changeVaultPassword(vaultPath, String(currentPassword ?? ""), String(newPassword ?? ""));
+  });
 
   // Note collections
   ipcMain.handle("note-collections:load", (_e, vaultPath: string) => {
-    const dir = path.join(vaultPath, ".prism");
-    const file = path.join(dir, "collections.json");
-    if (!fs.existsSync(file)) return null;
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf-8"));
-    } catch {
-      // Backup corrupted file
-      const bak = file + ".bak";
-      try { fs.copyFileSync(file, bak); } catch { /* ignore */ }
-      return null;
-    }
+    requireVaultRoot(vaultPath);
+    return readSidecar(path.join(vaultPath, ".prism"), "collections.json");
   });
 
   ipcMain.handle("note-collections:save", (_e, vaultPath: string, data: any) => {
-    const dir = path.join(vaultPath, ".prism");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "collections.json"), JSON.stringify(data, null, 2), "utf-8");
+    requireVaultRoot(vaultPath);
+    writeSidecar(path.join(vaultPath, ".prism"), "collections.json", data);
   });
 
   // Canvas groups — one virtual "mind maps" collection per vault.
-  const canvasGroupsFile = (vaultPath: string) => path.join(vaultPath, ".prism", "canvas-groups.json");
-  const requireVaultRoot = (vaultPath: string) => {
-    const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-    const owner = findOwningVault(vaultPath);
-    if (!owner || norm(owner) !== norm(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
-  };
-
   ipcMain.handle("canvas-groups:load", (_e, vaultPath: string) => {
     requireVaultRoot(vaultPath);
-    const file = canvasGroupsFile(vaultPath);
-    if (!fs.existsSync(file)) return null;
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf-8"));
-    } catch {
-      try { fs.copyFileSync(file, `${file}.bak`); } catch { /* ignore */ }
-      return null;
-    }
+    return readSidecar(path.join(vaultPath, ".prism"), "canvas-groups.json");
   });
 
   ipcMain.handle("canvas-groups:save", (_e, vaultPath: string, data: any) => {
     requireVaultRoot(vaultPath);
-    const dir = path.join(vaultPath, ".prism");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(canvasGroupsFile(vaultPath), JSON.stringify(data, null, 2), "utf-8");
+    writeSidecar(path.join(vaultPath, ".prism"), "canvas-groups.json", data);
   });
 
   // PDF library
@@ -1289,22 +1651,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("pdf-collections:load", () => {
     const repo = pdfRepoPath;
     if (!repo) return null;
-    const file = path.join(repo, ".prism", "pdf-collections.json");
-    if (!fs.existsSync(file)) return null;
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf-8"));
-    } catch {
-      try { fs.copyFileSync(file, file + ".bak"); } catch { /* ignore */ }
-      return null;
-    }
+    return readSidecar(path.join(repo, ".prism"), "pdf-collections.json");
   });
 
-  ipcMain.handle("pdf-collections:save", (_e, _repoPath: string, data: any) => {
-    const repo = pdfRepoPath;
+  ipcMain.handle("pdf-collections:save", (_e, repoPath: string, data: any) => {
+    // Use the caller's repo: the renderer may still be finishing a save for the
+    // previous repo when the active one changes.
+    const repo = (repoPath || pdfRepoPath || "").trim();
     if (!repo) throw new Error("PDF_REPO_NOT_SET");
-    const dir = path.join(repo, ".prism");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "pdf-collections.json"), JSON.stringify(data, null, 2), "utf-8");
+    writeSidecar(path.join(repo, ".prism"), "pdf-collections.json", data);
   });
 
   // Shell
@@ -1375,8 +1730,13 @@ const ASSET_MIME: Record<string, string> = {
   wav: "audio/wav", ogg: "audio/ogg", pdf: "application/pdf",
 };
 
-async function findAssetByBasename(vaultPath: string, basename: string): Promise<string | null> {
+async function findAssetByBasename(
+  vaultPath: string,
+  basename: string,
+  excludedRoots: string[] = [],
+): Promise<string | null> {
   const wanted = basename.toLowerCase();
+  const excluded = new Set(excludedRoots.map(normalizeVaultPath));
   const queue: string[] = [vaultPath];
   while (queue.length > 0) {
     const dir = queue.shift()!;
@@ -1385,7 +1745,7 @@ async function findAssetByBasename(vaultPath: string, basename: string): Promise
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".")) queue.push(full);
+        if (!entry.name.startsWith(".") && !excluded.has(normalizeVaultPath(full))) queue.push(full);
       } else if (entry.name.toLowerCase() === wanted) {
         return full;
       }
@@ -1407,7 +1767,8 @@ function registerAssetProtocol(): void {
       const vault = url.searchParams.get("vault") ?? "";
       const ref = url.searchParams.get("ref") ?? "";
       const dir = url.searchParams.get("dir") ?? "";
-      if (!vault || !ref || !findOwningVault(vault)) {
+      const owner = vault ? findOwningVault(vault) : null;
+      if (!vault || !ref || !owner) {
         return new Response("forbidden", { status: 403 });
       }
       const ext = path.extname(ref).replace(".", "").toLowerCase();
@@ -1415,12 +1776,7 @@ function registerAssetProtocol(): void {
       if (!mime) return new Response("unsupported type", { status: 415 });
 
       const cleanRef = ref.replace(/^[\\/]+/, "");
-      const norm = (p: string) => path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-      const vaultNorm = norm(vault);
-      const inside = (p: string) => {
-        const n = norm(p);
-        return n === vaultNorm || n.startsWith(vaultNorm + "/");
-      };
+      const inside = (p: string) => isPathInside(vault, p);
 
       const candidates = [
         // dir arrives absolute from the renderer, but accept vault-relative too
@@ -1434,10 +1790,19 @@ function registerAssetProtocol(): void {
       // Exact paths failed — fall back to a basename scan (wiki-style
       // "shortest path" resolution, so a moved attachment folder won't 404)
       if (!target) {
-        const found = await findAssetByBasename(vault, path.basename(cleanRef));
+        const found = await findAssetByBasename(vault, path.basename(cleanRef), privateVaultRoots());
         if (found && inside(found)) target = found;
       }
       if (!target) return new Response("not found", { status: 404 });
+
+      if (isPrivateVault(owner)) {
+        if (!isUnlocked(owner)) return new Response("locked", { status: 423 });
+        const data = await withVaultKey(owner, (dek) => readAssetBytes(target!, dek));
+        // Decrypted bytes must never sit in Chromium's disk cache after a lock.
+        return new Response(new Uint8Array(data), {
+          headers: { "content-type": mime, "cache-control": "no-store" },
+        });
+      }
 
       const data = await fs.promises.readFile(target);
       return new Response(new Uint8Array(data), { headers: { "content-type": mime } });
@@ -1587,6 +1952,12 @@ function registerPdfjsAssetProtocol(): void {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   initDatabase();
+  setIdleMinutesProvider(() => Number(getSetting("private_lock_minutes")) || 10);
+  setLockListener((vaultPath) => mainWindow?.webContents.send("vault:locked", vaultPath));
+  setUnlockListener((vaultPath) => mainWindow?.webContents.send("vault:unlocked", vaultPath));
+  // Walking away or suspending must not leave decrypted content on screen.
+  powerMonitor.on("lock-screen", () => { void lockAllVaults(); });
+  powerMonitor.on("suspend", () => { void lockAllVaults(); });
   registerAssetProtocol();
   registerCoverProtocol();
   registerPdfProtocol();
@@ -1607,4 +1978,6 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   for (const vaultPath of Array.from(watchedVaults)) unwatchVault(vaultPath);
   unwatchPdfRepo();
+  // Zero every session key (process memory disappears right after anyway).
+  void lockAllVaults();
 });

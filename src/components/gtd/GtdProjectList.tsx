@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Pencil, Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import NavItem from "../NavItem";
 import Badge from "../Badge";
@@ -7,8 +6,7 @@ import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { resolveTagColor } from "../../lib/colors";
 import { buildColorMenuItem } from "../ColorPicker";
-import RenameModal from "../RenameModal";
-import ConfirmDialog from "../ConfirmDialog";
+import { useGtdItemActions } from "./useGtdItemActions";
 import type { GtdItem } from "./types";
 
 interface Props {
@@ -23,8 +21,12 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
   const showToast = useToast();
-  const [renaming, setRenaming] = useState<GtdItem | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<GtdItem | null>(null);
+  const projectActions = useGtdItemActions({
+    kind: "item",
+    onChanged,
+    deleteMessage: t["gtd.deleteProjectConfirm"],
+    renameMultiline: false,
+  });
 
   const setProjectArchived = async (item: GtdItem, value: boolean) => {
     try {
@@ -46,18 +48,6 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
     onChanged();
   };
 
-  const deleteProject = async () => {
-    if (!confirmDelete) return;
-    try {
-      await window.prism.deleteGtdItem(confirmDelete.id);
-    } catch {
-      showToast(t["common.deleteFailed"], "error");
-      return;
-    }
-    showToast(t["common.deleted"]);
-    onChanged();
-  };
-
   return (
     <>
       {projects.map((p) => (
@@ -70,11 +60,11 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
               archived
                 ? [
                     { label: t["gtd.unarchive"], icon: <ArchiveRestore size={14} />, onClick: () => setProjectArchived(p, false) },
-                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
+                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => projectActions.requestDelete(p) },
                   ]
                 : [
                     { label: t["gtd.archiveProject"], icon: <Archive size={14} />, onClick: () => setProjectArchived(p, true) },
-                    { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => setRenaming(p) },
+                    { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: () => projectActions.requestRename(p) },
                     buildColorMenuItem(t, {
                       label: t["gtd.projectColor"],
                       autoLabel: t["collections.colorAuto"],
@@ -82,7 +72,7 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
                       current: p.color,
                       onSelect: (color) => setProjectColor(p, color),
                     }),
-                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(p) },
+                    { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: () => projectActions.requestDelete(p) },
                   ],
             )
           }
@@ -99,27 +89,7 @@ export default function GtdProjectList({ projects, selectedId, onSelect, onChang
         />
       ))}
 
-      <RenameModal
-        open={renaming !== null}
-        initialValue={renaming?.title ?? ""}
-        onClose={() => setRenaming(null)}
-        onSubmit={async (title) => {
-          try {
-            if (renaming) await window.prism.renameGtdItem(renaming.id, title);
-          } catch {
-            showToast(t["common.saveFailed"], "error");
-            return;
-          }
-          onChanged();
-        }}
-      />
-
-      <ConfirmDialog
-        open={confirmDelete !== null}
-        message={t["gtd.deleteProjectConfirm"]}
-        onConfirm={deleteProject}
-        onClose={() => setConfirmDelete(null)}
-      />
+      {projectActions.modals}
     </>
   );
 }

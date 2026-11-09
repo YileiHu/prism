@@ -1,3 +1,5 @@
+import { normalizePath } from "../../lib/paths";
+
 // Path inserted for an attachment, per the image_path_style setting:
 // "note" (default) = relative to the note's folder (../attachments/x.png),
 // "vault" = vault-root-relative, "name" = filename only.
@@ -13,9 +15,8 @@ export async function imagePathFor(
   if (style === "name") {
     target = ref.split("/").pop() ?? ref;
   } else if (style === "note") {
-    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-    const vaultN = norm(vaultPath);
-    let dir = norm(notePath);
+    const vaultN = normalizePath(vaultPath);
+    let dir = normalizePath(notePath);
     dir = dir.slice(0, dir.lastIndexOf("/")); // note's folder
     if (dir === vaultN) dir = "";
     else if (dir.startsWith(vaultN + "/")) dir = dir.slice(vaultN.length + 1);

@@ -48,9 +48,9 @@ export interface WorkspaceState {
   hydrated: boolean;
 }
 
-export function normalizePath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
+import { normalizePath } from "../paths";
+
+export { normalizePath, noteKey } from "../paths";
 
 export function noteDocId(notePath: string): string {
   return `note::${normalizePath(notePath)}`;

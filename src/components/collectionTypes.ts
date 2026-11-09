@@ -1,16 +1,5 @@
-export interface NoteGroup {
-  id: string;
-  name: string;
-  notePaths: string[];
-  // Palette `bar` hex from TAG_COLORS; empty/undefined falls back to hashColor(name)
-  color?: string;
-}
+import type { NoteCollectionData, NoteGroupData } from "../shared/models";
 
-export interface CollectionData {
-  id: string;
-  name: string;
-  notePaths: string[];
-  groups?: NoteGroup[];
-  // Palette `bar` hex from TAG_COLORS; empty/undefined falls back to hashColor(name)
-  color?: string;
-}
+// Renderer-side aliases for the IPC-facing shapes in shared/models.
+export type NoteGroup = NoteGroupData;
+export type CollectionData = NoteCollectionData;
