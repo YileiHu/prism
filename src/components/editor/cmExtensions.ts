@@ -2,11 +2,16 @@ import { Compartment, EditorSelection, EditorState, Extension, Prec } from "@cod
 import { EditorView, dropCursor, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
+import { search, searchKeymap } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, type LivePreviewHooks } from "./livePreview";
+import { tableTab } from "./blockActions";
+import {
+  blockBoundaryKeydown, focusAdjacentBlock, focusedBlockHighlighter, focusedBlockKeydown,
+  sourceSessionEscape,
+} from "./blockFocus";
 
 // All colors come from the app's theme CSS variables (index.css) so the
 // editor follows the active accent/surface scheme automatically
@@ -23,14 +28,42 @@ const editorTheme = EditorView.theme({
     overflowX: "hidden",
     fontFamily: "inherit",
     lineHeight: "var(--content-line-height)",
+    // The reading view's scroller reserves the same gutter, so the text
+    // measure doesn't change when a scrollbar appears or disappears.
+    scrollbarGutter: "stable",
   },
   ".cm-content": {
     maxWidth: "var(--content-width)",
     margin: "0 auto",
-    padding: "20px 28px 45vh",
-    caretColor: "rgb(var(--accent))",
+    // Horizontal padding must match MarkdownPreview's px-8 so both modes wrap
+    // at the same text width.
+    padding: "20px 32px 45vh",
+    caretColor: "var(--accent)",
+  },
+  // Match the reading view's wrapping rules instead of CM's default
+  // overflow-wrap: anywhere / word-break: break-word.
+  ".cm-lineWrapping": {
+    whiteSpace: "pre-wrap",
+    wordBreak: "normal",
+    overflowWrap: "break-word",
   },
   ".cm-line": { padding: "0" },
+  // Heading lines mirror the reading view (.markdown-preview h1..h6):
+  // line-height 1.3 and 1.2em/0.45em vertical margins relative to each
+  // level's own font size. Padding instead of margin so CodeMirror's line
+  // height measurement (getBoundingClientRect) includes the spacing.
+  ".cm-line.cm-md-heading": { lineHeight: "1.3" },
+  ".cm-line.cm-md-heading-1": { paddingTop: "1.92em", paddingBottom: "0.72em" },
+  ".cm-line.cm-md-heading-2": { paddingTop: "1.68em", paddingBottom: "0.63em" },
+  ".cm-line.cm-md-heading-3": { paddingTop: "1.464em", paddingBottom: "0.549em" },
+  ".cm-line.cm-md-heading-4": { paddingTop: "1.32em", paddingBottom: "0.495em" },
+  ".cm-line.cm-md-heading-5": { paddingTop: "1.2em", paddingBottom: "0.45em" },
+  ".cm-line.cm-md-heading-6": { paddingTop: "1.2em", paddingBottom: "0.45em" },
+  // The reading view drops the first element's top margin; do the same here.
+  ".cm-content > .cm-line:first-child": { paddingTop: "0" },
+  // Adjacent headings: the reading view's margins collapse so the gap equals
+  // the next heading's top margin only — don't add the previous bottom padding.
+  ".cm-line.cm-md-heading:has(+ .cm-line.cm-md-heading)": { paddingBottom: "0" },
   // No line numbers (Obsidian default) — keep gutter chrome invisible anyway
   ".cm-gutters": {
     backgroundColor: "transparent",
@@ -38,7 +71,7 @@ const editorTheme = EditorView.theme({
     color: "rgb(var(--c-faint))",
   },
   ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "transparent" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "rgb(var(--accent))" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent)" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
     backgroundColor: "rgb(var(--accent-rgb) / 0.18)",
   },
@@ -160,7 +193,6 @@ export function buildExtensions(hooks: LivePreviewHooks & {
     indentCompartment.of(indentUnit.of(" ".repeat(options.indentWidth))),
     wrapCompartment.of(options.lineWrapping ? EditorView.lineWrapping : []),
     search({ top: true }),
-    highlightSelectionMatches(),
     // markdownLanguage (not the markdown() default commonmarkLanguage!) —
     // GFM gives us Table/TaskMarker/StrikethroughMark/Autolink nodes.
     // addKeymap defaults to true: Enter continues lists/quotes/tasks.
@@ -214,6 +246,26 @@ export function buildExtensions(hooks: LivePreviewHooks & {
         return true;
       },
     }),
+    // Outline the block focused with the arrow keys (see blockFocus.ts)
+    focusedBlockHighlighter,
+    // Arrow keys / Enter / Delete on a focused block; returns false when no
+    // block is focused so normal editing is unaffected
+    Prec.highest(EditorView.domEventHandlers({
+      keydown: (event, view) =>
+        focusedBlockKeydown(event, view)
+        || blockBoundaryKeydown(event, view)
+        || sourceSessionEscape(event, view),
+    })),
+    // Tab moves between table cells; outside a table it falls through to
+    // indentWithTab below.
+    Prec.high(keymap.of([
+      { key: "Tab", run: (view) => tableTab(view, false) },
+      { key: "Shift-Tab", run: (view) => tableTab(view, true) },
+      { key: "ArrowRight", run: (view) => focusAdjacentBlock(view, 1) },
+      { key: "ArrowLeft", run: (view) => focusAdjacentBlock(view, -1) },
+      { key: "ArrowDown", run: (view) => focusAdjacentBlock(view, 1) },
+      { key: "ArrowUp", run: (view) => focusAdjacentBlock(view, -1) },
+    ])),
     Prec.highest(keymap.of([
       { key: "Mod-s", preventDefault: true, run: () => { hooks.onSave(); return true; } },
       { key: "Mod-b", preventDefault: true, run: wrapInMarkers("**") },

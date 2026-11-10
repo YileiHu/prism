@@ -24,6 +24,9 @@ export function useGlobalShortcuts(activeTab: string, isVaultTab: boolean) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.repeat || e.isComposing || e.key === "Process") return;
+      // Container block editors own the keyboard while focused (Ctrl+E/F must
+      // not toggle modes or steal focus mid-edit).
+      if (e.target instanceof Element && e.target.closest("[data-prism-subeditor]")) return;
       if (overlayOpen()) return;
       const combo = shortcutFromEvent(e);
       if (!combo) return;

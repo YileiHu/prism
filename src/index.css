@@ -518,6 +518,9 @@ body {
 }
 
 /* Rendered preview typography (markdown-it output) */
+.preview-scroll {
+  scrollbar-gutter: stable;
+}
 .markdown-preview {
   font-size: var(--content-font-size);
   line-height: var(--content-line-height);
@@ -613,9 +616,33 @@ body {
 }
 .markdown-preview th, .markdown-preview td {
   padding: 7px 14px;
+  /* Minimum row height so empty columns still read as columns */
+  height: 1.9em;
   border-bottom: 1px solid rgb(var(--c-line));
   text-align: left;
   vertical-align: top;
+}
+/* Inset, softly faded column dividers; the outer frame stays the wrap border */
+.markdown-preview th:not(:first-child),
+.markdown-preview td:not(:first-child) {
+  position: relative;
+}
+.markdown-preview th:not(:first-child)::before,
+.markdown-preview td:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--c-line) / 0.85) 18%,
+    rgb(var(--c-line) / 0.85) 82%,
+    transparent
+  );
+  pointer-events: none;
 }
 .markdown-preview th {
   background: rgb(var(--c-tint) / 0.05);
@@ -722,15 +749,17 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 4px 6px;
+  gap: 2px 4px;
   width: max-content;
   max-width: calc(100% - 12px);
-  padding: 3px 6px;
+  padding: 4px 6px;
   border: 1px solid rgb(var(--c-line));
-  border-radius: 7px;
+  /* Popover frame (rounded-control) with chip-sized items — the same
+     convention as the app menus */
+  border-radius: 8px;
   background: rgb(var(--c-surface));
   box-shadow: rgb(var(--c-overlay) / 0.3) 0 2px 12px;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
@@ -742,28 +771,43 @@ body {
   pointer-events: auto;
 }
 .md-embed-toolbar > button {
-  padding: 2px 6px;
+  min-height: 24px;
+  padding: 2px 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
-  color: rgb(var(--c-tertiary));
+  color: rgb(var(--c-secondary));
   cursor: pointer;
+  font-size: 12px;
   line-height: 1.4;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 .md-embed-toolbar > button:hover {
-  background: rgb(var(--c-hover) / 0.7);
+  background: rgb(var(--c-hover));
   color: rgb(var(--c-primary));
+}
+.md-embed-toolbar > .md-embed-toolbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.md-embed-toolbar > .md-embed-toolbar-danger:hover {
+  color: rgb(var(--c-danger));
 }
 .md-embed-size {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 0 2px;
 }
 .md-embed-size-slider {
   width: 96px;
 }
 .md-embed-size-value {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   color: rgb(var(--c-tertiary));
   font-variant-numeric: tabular-nums;
@@ -944,6 +988,7 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
 }
+.cm-md-math-clickable { cursor: text; }
 
 /* Edit-mode embed cards: block widget below the raw ![]()/![[ ]] line */
 .cm-md-embed-preview {
@@ -1048,6 +1093,208 @@ input[type="range"]:disabled {
   font-size: 13px;
   padding: 0 14px;
 }
+
+/* Explicit block-edit source state: background only, no live-preview effects */
+.cm-line.cm-md-block-edit {
+  background: rgb(var(--c-tint) / 0.08);
+}
+
+/* Container sub-editors: block chrome stays, only content becomes editable */
+.cm-md-code-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--md-code-fg);
+  font-family: Consolas, 'Cascadia Code', SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 14px 12px;
+  min-height: 3em;
+  overflow-y: hidden;
+}
+/* The cell itself becomes the editing surface: same padding and typography
+   as the rendered cell, so text doesn't shift when editing starts. */
+.cm-md-table-render th[data-cell-editing],
+.cm-md-table-render td[data-cell-editing] {
+  padding: 0;
+  background: rgb(var(--accent-rgb) / 0.08);
+  box-shadow: inset 0 -2px 0 rgb(var(--accent-rgb) / 0.55);
+}
+.cm-md-cell-editor {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  caret-color: var(--accent);
+  resize: none;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+}
+/* Callout body: a miniature live-preview editor hosted inside the card */
+.cm-md-callout-subeditor {
+  min-height: 2.5em;
+}
+.cm-editor.prism-callout-cm {
+  height: auto;
+  background: transparent;
+}
+.cm-editor.prism-callout-cm .cm-content {
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 0 4px;
+}
+.cm-editor.prism-callout-cm .cm-scroller {
+  height: auto;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.cm-md-callout-title-editor {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
+/* ---- Edit-mode block widgets (code / table / callout) ---- */
+.cm-md-block-widget {
+  /* CodeMirror measures block DOM without its vertical margins, so margins
+     make every line below a widget resolve one row late on click. Spacing
+     comes from the source blank lines, which stay selectable. */
+  margin: 0;
+  cursor: default;
+}
+/* Editing a container: same accent border replacement as keyboard focus,
+   but static — no breathing animation while typing */
+.cm-md-code-card.cm-md-block-active,
+.cm-md-math-block.cm-md-block-active,
+.cm-md-block-active .md-table-wrap,
+.cm-md-block-active .callout {
+  border-width: 2px;
+  border-color: rgb(var(--accent-rgb) / 0.8);
+}
+/* Keyboard-focused block (arrow keys landed on it): the accent ring replaces
+   the card's own border (an outline would double it) and breathes gently.
+   The static border-color is the fallback for reduced-motion users. */
+@keyframes block-focus-breathe {
+  0%, 100% { border-color: rgb(var(--accent-rgb) / 0.25); }
+  50% { border-color: rgb(var(--accent-rgb) / 1); }
+}
+.cm-md-code-card.cm-md-block-selected,
+.cm-md-math-block.cm-md-block-selected,
+.cm-md-table-render.cm-md-block-selected .md-table-wrap,
+.cm-md-callout-render.cm-md-block-selected .callout,
+.cm-md-embed-preview.cm-md-block-selected .md-embed-card {
+  border-width: 2px;
+  border-color: rgb(var(--accent-rgb) / 0.62);
+  animation: block-focus-breathe 1.8s ease-in-out infinite;
+}
+/* The CodeMirror content uses white-space: pre-wrap. Reset it inside rendered
+   HTML widgets so formatting newlines between block tags don't become blank
+   lines (visible in callouts between the title and content). */
+.cm-md-block-widget .markdown-preview {
+  white-space: normal;
+}
+.cm-md-code-card,
+.cm-md-math-block {
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  background: var(--md-code-bg);
+  overflow: hidden;
+}
+.cm-md-math-block-body {
+  margin: 0;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.cm-md-math-preview {
+  padding: 10px 16px 4px;
+  overflow-x: auto;
+}
+.cm-md-math-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  border-top: 1px solid rgb(var(--c-line) / 0.7);
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--md-code-fg);
+  font-family: Consolas, 'Cascadia Code', SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 14px 10px;
+  min-height: 2.5em;
+  overflow-y: hidden;
+}
+.cm-md-code-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-bottom: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-tint) / 0.05);
+  font-size: 11px;
+  color: rgb(var(--c-faint));
+  cursor: text;
+  user-select: none;
+}
+.cm-md-code-lang {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: rgb(var(--c-tertiary));
+}
+.cm-md-code-count { margin-left: auto; }
+.cm-md-code-fold-hint { color: rgb(var(--c-secondary)); }
+.cm-md-code-card pre.md-code {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 14px 12px;
+  overflow-x: auto;
+  cursor: text;
+}
+.cm-md-code-card pre.md-code[data-lang]::before { display: none; }
+.cm-md-code-card pre.md-code code {
+  background: none;
+  padding: 0;
+  color: var(--md-code-fg);
+  font-family: Consolas, 'Cascadia Code', SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cm-md-code-card-folded .cm-md-code-header { border-bottom: none; }
+.cm-md-table-render .md-table-wrap { margin: 0; }
+.cm-md-table-render th,
+.cm-md-table-render td { cursor: text; }
+.cm-md-callout-render { cursor: text; }
+.cm-md-callout-render .callout { margin: 0; }
 
 /* Heading fold controls — reading view */
 .markdown-preview .md-foldable {

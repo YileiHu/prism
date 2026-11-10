@@ -129,5 +129,5 @@ export function DropdownMenuItem({ onClick, danger, active, className = "", chil
 /* ---- DropdownMenuDivider ---- */
 
 export function DropdownMenuDivider() {
-  return <div className="border-t border-strong mx-2 my-1" />;
+  return <div className="h-px bg-strong mx-2 my-1" />;
 }

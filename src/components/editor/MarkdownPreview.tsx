@@ -1,36 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import {
-  Pencil, Info, Flame, CheckCircle2, Check, HelpCircle,
-  AlertTriangle, XCircle, AlertOctagon, Bug, Zap, Quote,
-  ListChecks, List, FileText,
-} from "lucide-react";
 import "katex/dist/katex.min.css";
 import { renderMarkdown, type AssetContext } from "./markdown";
 import { loadFolds, saveFold, FoldKeyCounter } from "./folds";
+import { hydrateMarkdown } from "./markdownHydration";
 import OutlineCard, { type OutlineItem } from "./OutlineCard";
 import { useSettings } from "../../lib/settings";
-import { mountEmbedCard } from "../embeds/embedMount";
-import { specFromData, type EmbedOpenTarget } from "../embeds/model";
+import type { EmbedOpenTarget } from "../embeds/model";
 import type { EmbedLabels } from "../embeds/EmbedCard";
-
-// Icons per canonical callout family (see CALLOUT_FAMILIES in markdown.ts)
-const CALLOUT_ICONS: Record<string, typeof Info> = {
-  note: Pencil,
-  info: Info,
-  todo: CheckCircle2,
-  abstract: ListChecks,
-  tip: Flame,
-  success: Check,
-  question: HelpCircle,
-  warning: AlertTriangle,
-  failure: XCircle,
-  danger: Zap,
-  error: AlertOctagon,
-  bug: Bug,
-  example: List,
-  quote: Quote,
-};
 
 interface Props {
   content: string;
@@ -76,8 +52,8 @@ function FrontmatterCard({ data }: { data: Record<string, unknown> }) {
 export default function MarkdownPreview({ content, assetContext, foldScope, onToggleTask, onOpenWikilink, onResolveRelativeLink, onOpenEmbed, embedLabels, scrollRef, initialSection }: Props) {
   const { values } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
-  const openEmbedRef = useRef(onOpenEmbed);
-  openEmbedRef.current = onOpenEmbed;
+  const actionsRef = useRef({ onToggleTask, onOpenWikilink, onResolveRelativeLink, onOpenEmbed });
+  actionsRef.current = { onToggleTask, onOpenWikilink, onResolveRelativeLink, onOpenEmbed };
   const { html, frontmatter, outline } = useMemo(() => renderMarkdown(content, assetContext), [content, assetContext]);
   // React diffs dangerouslySetInnerHTML by object identity, so a fresh literal
   // would rewrite the container on every unrelated re-render — detaching the
@@ -265,92 +241,28 @@ export default function MarkdownPreview({ content, assetContext, foldScope, onTo
     });
   }, [html, foldScope]);
 
-  // Inject callout title icons into the rendered HTML (lucide is React-side,
-  // so we serialize icons to markup and splice them into the DOM)
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
-    root.querySelectorAll<HTMLElement>(".callout").forEach((el) => {
-      const title = el.querySelector(".callout-title");
-      if (!title || title.querySelector(".callout-title-icon")) return;
-      const Icon = CALLOUT_ICONS[el.getAttribute("data-callout") ?? ""] ?? FileText;
-      const holder = document.createElement("span");
-      holder.className = "callout-title-icon";
-      holder.innerHTML = renderToStaticMarkup(<Icon size={14} className="shrink-0" />);
-      title.prepend(holder);
+    return hydrateMarkdown(root, {
+      assetContext,
+      embedLabels,
+      onOpenWikilink: (target) => actionsRef.current.onOpenWikilink(target),
+      onOpenEmbed: (target) => actionsRef.current.onOpenEmbed(target),
+      onResolveRelativeLink: (href) => actionsRef.current.onResolveRelativeLink(href),
+      onToggleTask: (index) => actionsRef.current.onToggleTask(index),
     });
-  }, [html]);
-
-  // canvas / note embeds render as placeholders; mount a card into each one.
-  // The React root is independent of the preview tree, so cards get their data
-  // from the loader and their navigation/copy from props refs.
-  useEffect(() => {
-    const root = containerRef.current;
-    if (!root || !assetContext) return;
-    const hosts = root.querySelectorAll<HTMLElement>(".md-embed-pending[data-embed-kind]");
-    const cleanups: (() => void)[] = [];
-    for (const host of hosts) {
-      const spec = specFromData({
-        kind: host.dataset.embedKind,
-        target: host.dataset.embedTarget,
-        label: host.dataset.embedLabel,
-        size: host.dataset.embedSize,
-      });
-      if (!spec) continue;
-      cleanups.push(mountEmbedCard(host, {
-        spec,
-        ctx: assetContext,
-        editable: false,
-        labels: embedLabels,
-        onOpen: (target) => openEmbedRef.current(target),
-      }));
-    }
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
   }, [html, assetContext, embedLabels]);
-
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-
-    const wikilink = target.closest("a[data-wikilink]") as HTMLElement | null;
-    if (wikilink) {
-      e.preventDefault();
-      onOpenWikilink(wikilink.getAttribute("data-wikilink") ?? "");
-      return;
-    }
-
-    const checkbox = target.closest("input.task-list-item-checkbox");
-    if (checkbox) {
-      e.preventDefault();
-      const all = Array.from(containerRef.current?.querySelectorAll("input.task-list-item-checkbox") ?? []);
-      onToggleTask(all.indexOf(checkbox));
-      return;
-    }
-
-    const anchor = target.closest("a[href]");
-    if (anchor) {
-      e.preventDefault();
-      const href = anchor.getAttribute("href") ?? "";
-      if (/^(https?:|mailto:)/i.test(href)) {
-        onOpenEmbed({ kind: "link", url: href });
-      } else if (/\.md$/i.test(href)) {
-        onResolveRelativeLink(href);
-      }
-      // other relative hrefs (images/anchors) are not navigable here
-    }
-  };
 
   return (
     <div className="relative h-full">
       <OutlineCard items={outline} onJump={jumpToHeading} activeId={activeHeadingId} />
-      <div ref={scrollRef} className="h-full overflow-y-auto">
+      <div ref={scrollRef} className="preview-scroll h-full overflow-y-auto">
         {frontmatter && values.show_frontmatter && <FrontmatterCard data={frontmatter} />}
         <div
           ref={containerRef}
           className="markdown-preview mx-auto px-8 pb-40 pt-4"
           style={{ maxWidth: "var(--content-width)" }}
-          onClick={handleClick}
           {...htmlProps}
         />
       </div>

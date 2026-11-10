@@ -58,7 +58,6 @@ export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
               )}
               <div className="mb-2.5 flex items-center gap-2">
                 <Badge variant="accent" className="font-semibold">v{entry.version}</Badge>
-                {entry.test && <Badge variant="warning">{t["changelog.testBadge"]}</Badge>}
                 {entryIndex === 0 && (
                   <span className="inline-flex items-center gap-1 text-meta text-faint">
                     <Sparkles size={12} />

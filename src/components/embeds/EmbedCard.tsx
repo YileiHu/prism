@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
-import { BookOpen, Loader2 } from "lucide-react";
+import { BookOpen, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
 import type { ImageSize } from "../editor/imageSize";
 import { assetSrc } from "../editor/assetUrl";
 import { pdfCoverUrl } from "../pdf/types";
@@ -32,6 +32,9 @@ export interface EmbedLabels {
   emptyCanvas: string;
   imageFailed: string;
   pageCount: string;
+  copySyntax?: string;
+  deleteEmbed?: string;
+  editSource?: string;
 }
 
 export const DEFAULT_EMBED_LABELS: EmbedLabels = {
@@ -56,6 +59,9 @@ export interface EmbedCardProps {
   onOpen: (target: EmbedOpenTarget) => void;
   onSizeCommit?: (size: ImageSize | null) => void;
   onLabelCommit?: (label: string) => void;
+  onCopySyntax?: () => void;
+  onDelete?: () => void;
+  onEditSource?: () => void;
 }
 
 function StateLine({ text, error = false }: { text: string; error?: boolean }) {
@@ -83,6 +89,9 @@ export default function EmbedCard({
   onOpen,
   onSizeCommit,
   onLabelCommit,
+  onCopySyntax,
+  onDelete,
+  onEditSource,
 }: EmbedCardProps) {
   const asyncKind = isAsyncKind(spec.kind);
   const [result, setResult] = useState<EmbedLoadResult | null>(
@@ -324,14 +333,14 @@ export default function EmbedCard({
               }}
             />
           )}
-          {canResize && onLabelCommit && (
+          {canResize && onLabelCommit && spec.kind !== "image" && (
             <span className="h-4 w-px shrink-0 self-center bg-line" aria-hidden="true" />
           )}
-          {onLabelCommit && (
+          {onLabelCommit && spec.kind !== "image" && (
             <label className="flex items-center gap-1.5">
-              <span className="text-meta text-muted">{labels.label}</span>
+              <span className="text-caption text-muted">{labels.label}</span>
               <input
-                className="field-inset w-24 rounded-chip border px-2 py-0.5 text-meta text-primary transition-colors focus:border-[var(--accent)] focus:outline-none"
+                className="field-inset w-24 rounded-chip border px-2 py-1 text-caption text-primary transition-colors focus:border-[var(--accent)] focus:outline-none"
                 value={labelDraft}
                 spellCheck={false}
                 aria-label={labels.label}
@@ -351,6 +360,48 @@ export default function EmbedCard({
                 }}
               />
             </label>
+          )}
+          {onEditSource && (
+            <button
+              type="button"
+              className="md-embed-toolbar-icon"
+              title={labels.editSource ?? "Edit source"}
+              aria-label={labels.editSource ?? "Edit source"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEditSource();
+              }}
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          {onCopySyntax && (
+            <button
+              type="button"
+              className="md-embed-toolbar-icon"
+              title={labels.copySyntax ?? "Copy reference"}
+              aria-label={labels.copySyntax ?? "Copy reference"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopySyntax();
+              }}
+            >
+              <Copy size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              className="md-embed-toolbar-icon md-embed-toolbar-danger"
+              title={labels.deleteEmbed ?? "Delete"}
+              aria-label={labels.deleteEmbed ?? "Delete"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       )}

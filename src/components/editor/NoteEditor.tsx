@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { EditorState, type Text as CMText, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
-import { ArrowLeft, BookOpen, Columns3, Pencil, Plus, Table, TextQuote, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Code2, Columns3, FileText, ImagePlus, MessageSquare, Pencil, Plus, Sigma, Table, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
@@ -15,8 +15,21 @@ import Button from "../Button";
 import Input from "../Input";
 import SegmentedToggle from "../SegmentedToggle";
 import Spinner from "../Spinner";
-import { buildExtensions, indentCompartment, schemeCompartment, wrapCompartment } from "./cmExtensions";
-import { type EmbedLabels } from "./livePreview";
+import {
+  buildExtensions, indentCompartment, schemeCompartment, wrapCompartment,
+  type EditorOptions,
+} from "./cmExtensions";
+import { createCalloutSubEditor } from "./calloutSubEditor";
+import { type EmbedLabels, type LivePreviewHooks } from "./livePreview";
+import { type BlockWidgetLabels } from "./blockRender";
+import { blockAt } from "./blockModel";
+import { containerSession, sourceSession } from "./blockState";
+import { commitActiveBlock } from "./blockSession";
+import { CALLOUT_DEFAULT_TITLES, CALLOUT_TYPES } from "./callouts";
+import { CALLOUT_ICONS } from "./calloutIcons";
+import { COMMON_CODE_LANGUAGES } from "./codeLanguages";
+import { exitBlockEdit, insertCallout, insertCodeBlock, insertMathBlock, insertTable } from "./blockActions";
+import { blockMenuItems } from "./blockMenu";
 import type { EmbedOpenTarget } from "../embeds/model";
 import { imagePathFor } from "./imagePath";
 import InsertModal from "./InsertModal";
@@ -49,6 +62,15 @@ interface Props {
 }
 
 const norm = normalizePath;
+
+const TABLE_PRESETS = [
+  { rows: 2, cols: 2 },
+  { rows: 3, cols: 2 },
+  { rows: 3, cols: 3 },
+  { rows: 4, cols: 3 },
+  { rows: 4, cols: 4 },
+  { rows: 5, cols: 4 },
+];
 
 const PREVIEW_HEADING_SEL = ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6";
 
@@ -197,33 +219,7 @@ export default function NoteEditor({
   const { t } = useT();
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
-
-  // Prefix every line overlapping the selection with "> " (blank lines get a
-  // bare ">") — or strip one level of ">" when adding is false
-  const applyQuotePrefix = useCallback((add: boolean) => {
-    const view = viewRef.current;
-    if (!view) return;
-    const { state } = view;
-    const main = state.selection.main;
-    const fromLine = state.doc.lineAt(main.from);
-    // A selection ending exactly at a line boundary shouldn't touch that line
-    const endPos = main.to > main.from && main.to === state.doc.lineAt(main.to).from ? main.to - 1 : main.to;
-    const toLine = state.doc.lineAt(Math.max(main.from, endPos));
-    const changes: { from: number; to: number; insert: string }[] = [];
-    for (let n = fromLine.number; n <= toLine.number; n++) {
-      const line = state.doc.line(n);
-      if (add) {
-        changes.push({ from: line.from, to: line.from, insert: line.text.trim() ? "> " : ">" });
-      } else {
-        const m = /^> ?/.exec(line.text);
-        if (m) changes.push({ from: line.from, to: line.from + m[0].length, insert: "" });
-      }
-    }
-    if (changes.length === 0) return;
-    // Selection maps through the changes automatically
-    view.dispatch({ changes, scrollIntoView: true, userEvent: "input" });
-    view.focus();
-  }, []);
+  const [insertOpen, setInsertOpen] = useState(false);
 
   // Insert an embed at the current selection. The edit view stays mounted while
   // reading, so this works right after the mode switch.
@@ -240,33 +236,118 @@ export default function NoteEditor({
     view.focus();
   }, []);
 
-  // Insert a 2×2 table skeleton; the cursor lands in the first cell
-  const insertTableSkeleton = useCallback(() => {
+  const handleEditorMouseDownCapture = useCallback((e: React.MouseEvent) => {
     const view = viewRef.current;
-    if (!view) return;
-    const { state } = view;
-    const main = state.selection.main;
-    const line = state.doc.lineAt(main.head);
-    const before = state.sliceDoc(line.from, main.head);
-    const prefix = before.trim() ? "\n" : "";
-    const skeleton = `${prefix}|  |  |\n| --- | --- |\n|  |  |`;
-    view.dispatch({
-      changes: { from: main.from, to: main.to, insert: skeleton },
-      selection: { anchor: main.from + prefix.length + 2 },
-      scrollIntoView: true,
-      userEvent: "input",
-    });
+    if (!view || e.button !== 0 || !containerSession(view.state)) return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("[data-prism-subeditor], [data-prism-container-edit]")) return;
+    if (target.closest("button, a, input, textarea, select, [data-prism-menu]")) return;
+    const blockEl = target.closest<HTMLElement>("[data-block-kind]");
+    if (blockEl) {
+      if (blockEl.dataset.blockKind === "embed") commitActiveBlock(view, false);
+      return;
+    }
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos == null) return;
+    e.preventDefault();
+    view.dispatch({ selection: { anchor: pos } });
+    commitActiveBlock(view, false, true);
     view.focus();
   }, []);
 
   const handleEditorContextMenu = useCallback((e: React.MouseEvent) => {
+    const outer = viewRef.current;
+    if (!outer) return;
+    const target = e.target as HTMLElement | null;
+    // Right-clicks inside a callout body belong to its nested live-preview
+    // editor: resolve that view so menus act on the callout draft.
+    const editorEl = target?.closest?.(".cm-editor") as HTMLElement | null;
+    const nested = editorEl ? EditorView.findFromDOM(editorEl) : null;
+    const inner = nested != null && nested !== outer;
+    const view = inner ? nested : outer;
+    const editRange = sourceSession(view.state);
+
+    const widgetEl = target?.closest?.<HTMLElement>("[data-block-from]") ?? null;
+    let pos = view.state.selection.main.head;
+    if (widgetEl) {
+      try {
+        pos = view.posAtDOM(widgetEl, 0);
+      } catch {
+        /* keep the current selection */
+      }
+    } else {
+      pos = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? pos;
+    }
+    const block = blockAt(view.state, pos);
+    const insertAt = (action: () => void) => {
+      view.dispatch({ selection: { anchor: pos } });
+      action();
+    };
+
+    if (block) {
+      onContextMenu(e, blockMenuItems(view, block, target, t, showToast));
+      return;
+    }
+
+    if (editRange && pos >= editRange.from && pos <= editRange.to) {
+      onContextMenu(e, [{
+        label: t["menu.finishBlockEdit"],
+        onClick: () => exitBlockEdit(view),
+      }]);
+      return;
+    }
+
+    // Plain text: offer quick block insertion.
     const items: MenuItem[] = [
-      { label: t["editor.addQuotePrefix"], icon: <TextQuote size={14} />, onClick: () => applyQuotePrefix(true) },
-      { label: t["editor.removeQuotePrefix"], icon: <TextQuote size={14} />, onClick: () => applyQuotePrefix(false) },
-      { label: t["editor.insertTable"], icon: <Table size={14} />, onClick: insertTableSkeleton },
+      {
+        label: t["menu.insertTable"],
+        icon: <Table size={14} />,
+        children: TABLE_PRESETS.map(({ rows, cols }) => ({
+          label: `${rows}×${cols}`,
+          onClick: () => insertAt(() => insertTable(view, rows, cols)),
+        })),
+      },
+      {
+        label: t["menu.insertCodeBlock"],
+        icon: <Code2 size={14} />,
+        children: COMMON_CODE_LANGUAGES.map((lang) => ({
+          label: lang === "text" ? t["blockCode.plainText"] : lang,
+          onClick: () => insertAt(() => insertCodeBlock(view, lang)),
+        })),
+      },
+      {
+        label: t["menu.insertCallout"],
+        icon: <MessageSquare size={14} />,
+        children: CALLOUT_TYPES.map((type) => {
+          const Icon = CALLOUT_ICONS[type] ?? FileText;
+          return {
+            label: CALLOUT_DEFAULT_TITLES[type] ?? type,
+            icon: <Icon size={14} />,
+            onClick: () => insertAt(() => insertCallout(view, type)),
+          };
+        }),
+      },
+      {
+        label: t["menu.insertMathBlock"],
+        icon: <Sigma size={14} />,
+        onClick: () => insertAt(() => insertMathBlock(view)),
+      },
     ];
+    // The insert-card modal writes through the outer view, so it is only
+    // offered for the main editor, not for a callout's nested draft.
+    if (!inner) {
+      items.push({
+        label: t["menu.insertEmbed"],
+        icon: <ImagePlus size={14} />,
+        onClick: () => {
+          view.dispatch({ selection: { anchor: pos } });
+          setInsertOpen(true);
+        },
+      });
+    }
     onContextMenu(e, items);
-  }, [applyQuotePrefix, insertTableSkeleton, onContextMenu, t]);
+  }, [onContextMenu, setInsertOpen, showToast, t]);
 
   const { values: settings, ready: settingsReady, get: getSetting } = useSettings();
   const { resolvedMode } = useTheme();
@@ -280,7 +361,6 @@ export default function NoteEditor({
     setMode(getSetting("default_view"));
   }, [notePath, settingsReady, getSetting]);
   const [ready, setReady] = useState(false);
-  const [insertOpen, setInsertOpen] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -315,6 +395,9 @@ export default function NoteEditor({
     emptyCanvas: t["embed.emptyCanvas"],
     imageFailed: t["embed.imageFailed"],
     pageCount: t["embed.pageCount"],
+    editSource: t["embed.editSource"],
+    copySyntax: t["embed.copySyntax"],
+    deleteEmbed: t["embed.delete"],
   });
   embedLabelsRef.current = {
     open: t["embed.open"],
@@ -326,8 +409,28 @@ export default function NoteEditor({
     emptyCanvas: t["embed.emptyCanvas"],
     imageFailed: t["embed.imageFailed"],
     pageCount: t["embed.pageCount"],
+    editSource: t["embed.editSource"],
+    copySyntax: t["embed.copySyntax"],
+    deleteEmbed: t["embed.delete"],
   };
   const embedLabels = useMemo<EmbedLabels>(() => embedLabelsRef.current, [t]);
+  const blockLabelsRef = useRef<BlockWidgetLabels>({
+    codeLines: (count) => `${count} lines`,
+  });
+  blockLabelsRef.current = {
+    codeLines: (count) => t["blockCode.lines"].replace("{count}", String(count)),
+  };
+  // Read lazily when a callout body editor is created
+  const editorOptionsRef = useRef<EditorOptions>({
+    dark: true,
+    indentWidth: 2,
+    lineWrapping: true,
+  });
+  editorOptionsRef.current = {
+    dark: resolvedMode === "dark",
+    indentWidth: getSetting("indent_width"),
+    lineWrapping: getSetting("line_wrapping"),
+  };
   const assetContext = useMemo(
     () => ({ vaultPath, noteDir: notePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/") }),
     [vaultPath, notePath],
@@ -412,7 +515,14 @@ export default function NoteEditor({
   const doSave = useCallback((): Promise<void> => {
     cancelSaveTimer();
     const view = viewRef.current;
-    if (!view || !dirtyRef.current) return Promise.resolve();
+    if (!view) return Promise.resolve();
+    if (containerSession(view.state)) {
+      if (dirtyRef.current) {
+        scheduleSaveTimer(() => { void saveNowRef.current(); }, getSetting("autosave_delay"));
+      }
+      return Promise.resolve();
+    }
+    if (!dirtyRef.current) return Promise.resolve();
     const savedPath = notePathRef.current;
     let content = view.state.doc.toString();
     if (crlfRef.current) content = content.replace(/\n/g, "\r\n");
@@ -431,7 +541,7 @@ export default function NoteEditor({
         showToast(t["editor.noteDeleted"], "error");
         onNoteGone(savedPath);
       });
-  }, [cancelSaveTimer, onNoteGone, showToast, t]);
+  }, [cancelSaveTimer, getSetting, onNoteGone, scheduleSaveTimer, showToast, t]);
 
   useEffect(() => {
     saveNowRef.current = doSave;
@@ -469,34 +579,47 @@ export default function NoteEditor({
       crlfRef.current = note.content.includes("\r\n");
       setDocText(note.content);
       setEditOutline(outlineItemsOf(note.content.split("\n")));
+      const pasteImage = async (file: File): Promise<string | null> => {
+        try {
+          const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
+          const buf = await file.arrayBuffer();
+          const ref = await window.prism.saveAttachment(vaultPath, ext, buf);
+          const target = await imagePathFor(ref, vaultPath, notePath);
+          return `![[${target}]]`;
+        } catch {
+          showToast(t["editor.pasteImageFailed"], "error");
+          return null;
+        }
+      };
+      const baseHooks: Omit<LivePreviewHooks, "createSubEditor"> = {
+        onSave: () => saveNowRef.current(),
+        onOpenWikilink,
+        onOpenLink: (url) => void window.prism.openUrl(url),
+        onOpenEmbed: (target) => onOpenEmbedRef.current(target),
+        assetCtx: assetContext,
+        embedLabels: () => embedLabelsRef.current,
+        blockLabels: () => blockLabelsRef.current,
+        onToggleTask: (taskIndex) => handleToggleTask(taskIndex),
+      };
+      const createSubEditor = createCalloutSubEditor({
+        hooks: () => baseHooks,
+        options: () => editorOptionsRef.current,
+        onPasteImage: pasteImage,
+      });
       const view = new EditorView({
         parent: mountRef.current,
         state: EditorState.create({
           doc: note.content,
           extensions: [
             ...buildExtensions({
+              ...baseHooks,
+              createSubEditor,
               onSave: () => saveNowRef.current(),
-              onOpenWikilink,
-              onOpenLink: (url) => void window.prism.openUrl(url),
-              onOpenEmbed: (target) => onOpenEmbedRef.current(target),
-              assetCtx: assetContext,
-              embedLabels: () => embedLabelsRef.current,
-              onPasteImage: async (file) => {
-                try {
-                  const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
-                  const buf = await file.arrayBuffer();
-                  const ref = await window.prism.saveAttachment(vaultPath, ext, buf);
-                  const target = await imagePathFor(ref, vaultPath, notePath);
-                  return `![[${target}]]`;
-                } catch {
-                  showToast(t["editor.pasteImageFailed"], "error");
-                  return null;
-                }
-              },
+              onPasteImage: pasteImage,
             }, {
-              dark: resolvedMode === "dark",
-              indentWidth: getSetting("indent_width"),
-              lineWrapping: getSetting("line_wrapping"),
+              dark: editorOptionsRef.current.dark,
+              indentWidth: editorOptionsRef.current.indentWidth,
+              lineWrapping: editorOptionsRef.current.lineWrapping,
             }),
             EditorView.updateListener.of((u) => {
               if (!u.docChanged) return;
@@ -539,9 +662,10 @@ export default function NoteEditor({
 
     return () => {
       cancelled = true;
-      // Flush pending edits while the view is still alive
+      const view = viewRef.current;
+      if (view && containerSession(view.state)) commitActiveBlock(view, false);
       void saveNowRef.current();
-      viewRef.current?.destroy();
+      view?.destroy();
       viewRef.current = null;
       cancelSaveTimer();
     };
@@ -566,7 +690,7 @@ export default function NoteEditor({
     return window.prism.onVaultUpdated((changedVault) => {
       if (norm(changedVault) !== norm(vaultPath) || dirtyRef.current) return;
       const view = viewRef.current;
-      if (!view) return;
+      if (!view || containerSession(view.state)) return;
       void (async () => {
         try {
           const note = await window.prism.readNote(notePathRef.current);
@@ -593,8 +717,10 @@ export default function NoteEditor({
   const switchMode = useCallback((next: EditorMode) => {
     if (next === mode) return;
     captureScrollAnchor(mode);
+    const view = viewRef.current;
     if (next === "read") {
-      setDocText(viewRef.current?.state.doc.toString() ?? "");
+      if (view && containerSession(view.state)) commitActiveBlock(view, false);
+      setDocText(view?.state.doc.toString() ?? "");
     }
     setMode(next);
   }, [mode, captureScrollAnchor]);
@@ -698,6 +824,16 @@ export default function NoteEditor({
     container.scrollTop = ratio * Math.max(0, container.scrollHeight - container.clientHeight);
   }, [mode, ready]);
 
+  useEffect(() => {
+    if (mode !== "edit" || !ready || !focused) return;
+    const view = viewRef.current;
+    if (!view) return;
+    const raf = requestAnimationFrame(() => {
+      if (viewRef.current === view && !containerSession(view.state)) view.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [mode, ready, focused]);
+
   const handleToggleTask = (taskIndex: number) => {
     const view = viewRef.current;
     if (!view) return;
@@ -723,8 +859,14 @@ export default function NoteEditor({
     jumpLockTimerRef.current = setTimeout(() => {
       jumpSettledRef.current = true;
     }, 1000);
-    view.dispatch({ selection: { anchor: line.from } });
-    view.scrollDOM.scrollTo({ top: Math.max(0, view.lineBlockAt(line.from).top - 12), behavior: "smooth" });
+    // Let CodeMirror expand the viewport and measure the target block itself.
+    // Manual scrollTop from lineBlockAt().top uses estimated heights for
+    // off-screen lines (headings have their own line-height and padding, so
+    // the estimate drifts and repeated clicks creep toward the target).
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 12 }),
+    });
     view.focus();
   };
 
@@ -946,7 +1088,12 @@ export default function NoteEditor({
             <Spinner size={20} className="text-muted" />
           </div>
         ) : null}
-        <div ref={mountRef} className={mode === "edit" && ready ? "h-full" : "hidden"} onContextMenu={handleEditorContextMenu} />
+        <div
+          ref={mountRef}
+          className={mode === "edit" && ready ? "h-full" : "hidden"}
+          onContextMenu={handleEditorContextMenu}
+          onMouseDownCapture={handleEditorMouseDownCapture}
+        />
         {mode === "edit" && ready && (
           <OutlineCard items={editOutline} onJump={jumpToEditHeading} activeId={editActiveId} />
         )}

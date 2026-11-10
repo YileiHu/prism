@@ -4,7 +4,8 @@ import markPlugin from "markdown-it-mark";
 import taskLists from "markdown-it-task-lists";
 import { load as loadYaml } from "js-yaml";
 import { katex } from "@mdit/plugin-katex";
-import hljs from "highlight.js/lib/core";
+import { highlightCode } from "./codeHighlight";
+import { CALLOUT_DEFAULT_TITLES, CALLOUT_FAMILIES, CALLOUT_RE } from "./callouts";
 import { formatSizeToken, imageSizeAttrs, parseImageAlt } from "./imageSize";
 import { IMAGE_EXTS, assetSrc, prismFileUrl, type AssetContext } from "./assetUrl";
 import {
@@ -18,80 +19,8 @@ import {
 
 export { IMAGE_EXTS, prismFileUrl };
 export type { AssetContext };
+export { CALLOUT_FAMILIES } from "./callouts";
 
-import javascript from "highlight.js/lib/languages/javascript";
-import typescript from "highlight.js/lib/languages/typescript";
-import python from "highlight.js/lib/languages/python";
-import json from "highlight.js/lib/languages/json";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import xml from "highlight.js/lib/languages/xml";
-import yamlLang from "highlight.js/lib/languages/yaml";
-import sql from "highlight.js/lib/languages/sql";
-import go from "highlight.js/lib/languages/go";
-import rust from "highlight.js/lib/languages/rust";
-import java from "highlight.js/lib/languages/java";
-import c from "highlight.js/lib/languages/c";
-import cpp from "highlight.js/lib/languages/cpp";
-import markdownLang from "highlight.js/lib/languages/markdown";
-import diff from "highlight.js/lib/languages/diff";
-import ini from "highlight.js/lib/languages/ini";
-
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("shell", bash);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("xml", xml);
-hljs.registerLanguage("html", xml);
-hljs.registerLanguage("yaml", yamlLang);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("c", c);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("markdown", markdownLang);
-hljs.registerLanguage("diff", diff);
-hljs.registerLanguage("ini", ini);
-hljs.registerLanguage("toml", ini);
-
-const CODE_HIGHLIGHT_LIMIT = 100_000;
-
-// Obsidian's full callout type list — every alias maps to a canonical family
-// that decides the color and icon (data-callout holds the family name)
-export const CALLOUT_FAMILIES: Record<string, string> = {
-  note: "note",
-  abstract: "abstract", summary: "abstract", tldr: "abstract",
-  info: "info",
-  todo: "todo",
-  tip: "tip", hint: "tip", important: "tip",
-  success: "success", check: "success", done: "success",
-  question: "question", help: "question", faq: "question",
-  warning: "warning", caution: "warning", attention: "warning",
-  failure: "failure", fail: "failure", missing: "failure",
-  danger: "danger",
-  error: "error",
-  bug: "bug",
-  example: "example",
-  quote: "quote", cite: "quote",
-};
-
-const CALLOUT_DEFAULT_TITLES: Record<string, string> = {
-  note: "Note", abstract: "Abstract", summary: "Summary", tldr: "TLDR",
-  info: "Info", todo: "Todo",
-  tip: "Tip", hint: "Hint", important: "Important",
-  success: "Success", check: "Check", done: "Done",
-  question: "Question", help: "Help", faq: "FAQ",
-  warning: "Warning", caution: "Caution", attention: "Attention",
-  failure: "Failure", fail: "Fail", missing: "Missing",
-  danger: "Danger", error: "Error", bug: "Bug",
-  example: "Example", quote: "Quote", cite: "Cite",
-};
-
-const CALLOUT_RE = /^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const TAG_RE = /^#([\p{L}\p{N}_/-]+)/u;
 
@@ -249,17 +178,9 @@ const md: MarkdownItType = new MarkdownIt({
   linkify: true,
   breaks: true,
   highlight: (str: string, lang: string): string => {
-    const safeLang = lang.trim().split(/\s+/)[0].toLowerCase();
+    const { html, lang: safeLang, highlighted } = highlightCode(str, lang);
     const cls = safeLang ? ` data-lang="${escapeAttr(safeLang)}"` : "";
-    if (str.length > CODE_HIGHLIGHT_LIMIT) {
-      return `<pre class="md-code"${cls}><code>${md.utils.escapeHtml(str)}</code></pre>`;
-    }
-    if (safeLang && hljs.getLanguage(safeLang)) {
-      try {
-        return `<pre class="md-code"${cls}><code class="hljs">${hljs.highlight(str, { language: safeLang, ignoreIllegals: true }).value}</code></pre>`;
-      } catch { /* fall through to plain */ }
-    }
-    return `<pre class="md-code"${cls}><code>${md.utils.escapeHtml(str)}</code></pre>`;
+    return `<pre class="md-code"${cls}><code${highlighted ? ' class="hljs"' : ""}>${html}</code></pre>`;
   },
 });
 
@@ -473,6 +394,15 @@ export function stripFrontmatter(src: string): { body: string; frontmatter: Reco
     }
   } catch { /* malformed YAML — show nothing rather than fail the render */ }
   return { body: src.slice(m[0].length), frontmatter };
+}
+
+export function renderInlineMarkdown(src: string, assetContext?: AssetContext | null): string {
+  assetCtx = assetContext ?? null;
+  try {
+    return md.renderInline(src);
+  } finally {
+    assetCtx = null;
+  }
 }
 
 export function renderMarkdown(src: string, assetContext?: AssetContext | null): RenderResult {

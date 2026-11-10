@@ -1,19 +1,35 @@
-import { EditorState, Range, StateField, type Transaction } from "@codemirror/state";
-import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import { syntaxTree } from "@codemirror/language";
+import { EditorState, Range, RangeSet, StateField, type Transaction } from "@codemirror/state";
+import {
+  Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType, type ViewUpdate,
+} from "@codemirror/view";
+import { forceParsing, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
-import { renderToString } from "katex";
 import type { AssetContext } from "./assetUrl";
 import { withSizeInAlt } from "./imageSize";
 import { mountEmbedCard } from "../embeds/embedMount";
 import {
-  parseEmbedSpec,
-  parseMarkdownImage,
   serializeEmbedSpec,
   type EmbedOpenTarget,
   type EmbedSpec,
 } from "../embeds/model";
+import {
+  collectEmbeds, isEmbedOnlyLine, sameEmbed,
+  type EditorEmbed,
+} from "./embedBlockModel";
 import { DEFAULT_EMBED_LABELS, type EmbedLabels } from "../embeds/EmbedCard";
+import { calloutBlockRef, codeBlockRef } from "./blockModel";
+import {
+  blockSession, blockSessionField, codeFoldField, containerSession, createBlockSession,
+  focusedBlockField, isCodeFolded, setBlockSession, sourceSession, toggleCodeFold,
+  type BlockSession,
+} from "./blockState";
+import {
+  CalloutWidget, CodeBlockWidget, TableWidget,
+  type BlockPreviewContext, type BlockWidgetLabels, type CreateSubEditor,
+} from "./blockRender";
+import { MathBlockWidget, MathWidget } from "./mathRender";
+import { mathBlockRefs, mathBlocksField } from "./mathModel";
+import { tableBlockRef } from "./tableModel";
 
 export type { EmbedLabels };
 
@@ -25,6 +41,11 @@ export interface LivePreviewHooks {
   // edit-mode embed widgets
   assetCtx: AssetContext;
   embedLabels?: () => EmbedLabels;
+  blockLabels?: () => BlockWidgetLabels;
+  onToggleTask?: (taskIndex: number) => void;
+  onSave?: () => void;
+  // Builds the miniature live-preview editor used for callout bodies
+  createSubEditor: CreateSubEditor;
 }
 
 // Nodes whose marker text hides while the selection is outside their parent
@@ -62,19 +83,6 @@ class CheckboxWidget extends WidgetType {
   override ignoreEvent(): boolean { return true; }
 }
 
-class MathWidget extends WidgetType {
-  constructor(readonly tex: string, readonly displayMode: boolean) { super(); }
-
-  override eq(other: this): boolean { return other.tex === this.tex && other.displayMode === this.displayMode; }
-
-  override toDOM(): HTMLElement {
-    const span = document.createElement(this.displayMode ? "div" : "span");
-    span.className = this.displayMode ? "cm-md-math cm-md-math-display" : "cm-md-math";
-    span.innerHTML = renderToString(this.tex, { throwOnError: false, displayMode: this.displayMode });
-    return span;
-  }
-}
-
 // Replaces "-"/"*" list markers with a dot on non-cursor lines
 class BulletWidget extends WidgetType {
   override eq(other: this): boolean { return true; }
@@ -89,24 +97,47 @@ class BulletWidget extends WidgetType {
 
 // An embed found in the raw source line. from/to span the editable part: the
 // alt text for ![alt](url), or the full "target|label|size" for ![[...]].
-interface PreviewEmbed {
-  spec: EmbedSpec;
-  syntax: "embed" | "md";
-  from: number;
-  to: number;
-  raw: string;
+// syntaxFrom/syntaxTo cover the complete syntax so it can be copied or deleted.
+// Re-read the embeds at the widget's current document position. Widgets are
+// mapped through edits above them without being rebuilt, so the positions
+// captured at build time can be stale by the time a toolbar button is used.
+function rescanEmbedsFrom(
+  view: EditorView,
+  wrap: HTMLElement,
+  expected: EditorEmbed[],
+): EditorEmbed[] {
+  let pos: number;
+  try {
+    pos = view.posAtDOM(wrap, 0);
+  } catch {
+    return expected;
+  }
+  const startLine = view.state.doc.lineAt(Math.max(0, Math.min(pos, view.state.doc.length)));
+  const found: EditorEmbed[] = [];
+  const lastLine = Math.min(view.state.doc.lines, startLine.number + expected.length + 1);
+  for (let n = startLine.number; n <= lastLine && found.length < expected.length; n++) {
+    found.push(...collectEmbeds(view.state, view.state.doc.line(n)));
+  }
+  return found.slice(0, expected.length);
 }
 
-function sameEmbed(a: PreviewEmbed, b: PreviewEmbed): boolean {
-  return a.syntax === b.syntax
-    && a.from === b.from
-    && a.to === b.to
-    && a.raw === b.raw
-    && a.spec.kind === b.spec.kind
-    && a.spec.target === b.spec.target
-    && (a.spec.label ?? "") === (b.spec.label ?? "")
-    && a.spec.size?.width === b.spec.size?.width
-    && a.spec.size?.height === b.spec.size?.height;
+function deleteEmbedAt(view: EditorView, embed: EditorEmbed): void {
+  const { state } = view;
+  if (state.sliceDoc(embed.syntaxFrom, embed.syntaxTo) !== embed.syntaxRaw) return;
+  const line = state.doc.lineAt(embed.syntaxFrom);
+  const rest = line.text.slice(0, embed.syntaxFrom - line.from)
+    + line.text.slice(embed.syntaxTo - line.from);
+  const change = rest.trim() === ""
+    ? (line.to < state.doc.length
+      ? { from: line.from, to: line.to + 1, insert: "" }
+      : { from: Math.max(0, line.from - 1), to: line.to, insert: "" })
+    : { from: embed.syntaxFrom, to: embed.syntaxTo, insert: "" };
+  view.dispatch({
+    changes: change,
+    selection: { anchor: Math.min(change.from, state.doc.length) },
+    userEvent: "delete",
+  });
+  view.focus();
 }
 
 // Rewrite the markdown source for one embed, preserving everything outside the
@@ -114,7 +145,7 @@ function sameEmbed(a: PreviewEmbed, b: PreviewEmbed): boolean {
 // listener.
 function commitEmbedChange(
   view: EditorView,
-  embed: PreviewEmbed,
+  embed: EditorEmbed,
   patch: { size?: EmbedSpec["size"]; label?: string },
 ): void {
   if (embed.from < 0 || embed.to > view.state.doc.length) return;
@@ -135,40 +166,79 @@ function commitEmbedChange(
 // Card roots mount independent React trees; the widget owns their cleanup.
 const embedCleanups = new WeakMap<HTMLElement, (() => void)[]>();
 
-// Editable embed cards rendered as a block widget below the line that holds
-// the raw ![]()/![[ ]] syntax (the syntax itself stays visible and editable).
+// Editable embed cards. A blockRange marks the line-replacement form (source
+// hidden); without one the widget is the preview below a mixed source line.
 class EmbedPreviewWidget extends WidgetType {
   constructor(
-    readonly embeds: PreviewEmbed[],
+    readonly embeds: EditorEmbed[],
     readonly labels: () => EmbedLabels,
     readonly assetCtx: AssetContext,
     readonly onOpen: (target: EmbedOpenTarget) => void,
+    readonly blockRange: { from: number; to: number } | null = null,
   ) { super(); }
 
   override eq(other: this): boolean {
-    return other.embeds.length === this.embeds.length &&
-      other.embeds.every((embed, i) => sameEmbed(embed, this.embeds[i]));
+    return other.embeds.length === this.embeds.length
+      && (other.blockRange == null) === (this.blockRange == null)
+      && other.embeds.every((embed, i) => sameEmbed(embed, this.embeds[i]));
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "cm-md-embed-preview";
+    wrap.className = "cm-md-block-widget cm-md-embed-preview";
+    if (this.blockRange) {
+      wrap.dataset.blockKind = "embed";
+      wrap.dataset.blockFrom = String(this.blockRange.from);
+      wrap.dataset.blockTo = String(this.blockRange.to);
+    }
     const labels = this.labels();
     const cleanups: (() => void)[] = [];
-    for (const embed of this.embeds) {
+    this.embeds.forEach((embed, index) => {
       const host = document.createElement("div");
       host.className = "cm-md-embed-host";
       wrap.appendChild(host);
+      const current = () => rescanEmbedsFrom(view, wrap, this.embeds)[index] ?? null;
       cleanups.push(mountEmbedCard(host, {
         spec: embed.spec,
         ctx: this.assetCtx,
         editable: true,
         labels,
         onOpen: this.onOpen,
-        onSizeCommit: (size) => commitEmbedChange(view, embed, { size }),
-        onLabelCommit: (label) => commitEmbedChange(view, embed, { label }),
+        onSizeCommit: (size) => {
+          const live = current();
+          if (live) commitEmbedChange(view, live, { size });
+        },
+        onLabelCommit: (label) => {
+          const live = current();
+          if (live) commitEmbedChange(view, live, { label });
+        },
+        onCopySyntax: () => {
+          const live = current();
+          if (live) void navigator.clipboard.writeText(live.syntaxRaw);
+        },
+        onDelete: () => {
+          const live = current();
+          if (live) deleteEmbedAt(view, live);
+        },
+        onEditSource: () => {
+          const live = current();
+          if (!live) return;
+          const line = view.state.doc.lineAt(live.syntaxFrom);
+          view.dispatch({
+            effects: setBlockSession.of(createBlockSession({
+              kind: "embed",
+              mode: "source",
+              from: line.from,
+              to: line.to,
+              anchor: live.syntaxFrom,
+            })),
+            selection: { anchor: live.syntaxFrom },
+            scrollIntoView: true,
+          });
+          view.focus();
+        },
       }));
-    }
+    });
     embedCleanups.set(wrap, cleanups);
     return wrap;
   }
@@ -215,11 +285,6 @@ interface BuildWindow {
   toLine: number;
 }
 
-interface MathBlock {
-  fromLine: number;
-  toLine: number;
-}
-
 // Inline constructs reveal/hide as a whole when the selection enters them.
 // Expanding a partial rebuild to cover these keeps it equivalent to a full one.
 const EXPAND_INLINE_NODES = new Set([
@@ -238,26 +303,6 @@ const BLOCK_BOUNDARY_NODES = new Set([
 
 // Edits inside code never change surrounding decorations; keep them local.
 const CODE_BLOCK_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock"]);
-
-function findMathBlocks(state: EditorState): MathBlock[] {
-  const blocks: MathBlock[] = [];
-  let open = -1;
-  let lineNo = 1;
-  for (const text of state.doc.iterLines()) {
-    if (text.trim() === "$$") {
-      // A "$$" inside fenced/indented code is not a delimiter, but once a
-      // block is open the first closing "$$" wins (mirrors the old scan).
-      if (open >= 0) {
-        blocks.push({ fromLine: open, toLine: lineNo });
-        open = -1;
-      } else if (!isInCode(state, state.doc.line(lineNo).from)) {
-        open = lineNo;
-      }
-    }
-    lineNo += 1;
-  }
-  return blocks;
-}
 
 function findFrontmatter(state: EditorState): BuildWindow | null {
   if (state.doc.line(1).text.trim() !== "---") return null;
@@ -307,10 +352,51 @@ function expandBlockAt(
   }
 }
 
+interface RenderBlockRange {
+  from: number;
+  to: number;
+}
+
+// Nearest block that toggles between rendered-source and replaced-card states.
+// Used to expand the rebuild window when the selection enters or leaves one.
+function renderBlockRangeAt(state: EditorState, pos: number): RenderBlockRange | null {
+  const clamped = Math.max(0, Math.min(pos, state.doc.length));
+  const tree = syntaxTree(state);
+  const lineNo = state.doc.lineAt(clamped).number;
+  const linesOf = (node: SyntaxNode): [number, number] => [
+    state.doc.lineAt(node.from).number,
+    state.doc.lineAt(Math.max(node.from, node.to - 1)).number,
+  ];
+  for (const side of [-1, 1] as const) {
+    let node: SyntaxNode | null = tree.resolveInner(clamped, side);
+    while (node) {
+      if (node.name === "FencedCode" || node.name === "Table") {
+        const [first, last] = linesOf(node);
+        // Checking line containment (not just from/to) treats leading
+        // indentation as part of the block while excluding the line after it,
+        // which resolveInner(-1) would otherwise attribute to the block.
+        if (lineNo >= first && lineNo <= last) return { from: node.from, to: node.to };
+      }
+      if (node.name === "Blockquote") {
+        const [first, last] = linesOf(node);
+        if (lineNo >= first && lineNo <= last) {
+          const callout = calloutBlockRef(state, node);
+          if (callout) return { from: callout.from, to: callout.to };
+        }
+      }
+      if (node.name === "Document") break;
+      node = node.parent;
+    }
+  }
+  return null;
+}
+
 // A full rebuild is required when an edit can change decorations far beyond
 // its own range: fenced code may swallow or release the rest of the document,
 // frontmatter/$$ blocks re-pair, or the edit is simply too large to window.
 function needsFullRebuild(startState: EditorState, tr: Transaction): boolean {
+  if (tr.effects.some((effect) => effect.is(toggleCodeFold)
+    || (effect.is(setBlockSession) && effect.value?.mode === "source"))) return true;
   if (Math.abs(tr.newDoc.length - startState.doc.length) > 2000) return true;
   let structural = false;
   let edits = 0;
@@ -344,7 +430,7 @@ function computeWindow(
   tr: Transaction,
   mapped: DecorationSet,
 ): BuildWindow | null {
-  const mathBlocks = findMathBlocks(state);
+  const mathBlocks = mathBlockRefs(state);
   const frontmatter = findFrontmatter(state);
 
   let fromLine = Number.POSITIVE_INFINITY;
@@ -383,6 +469,64 @@ function computeWindow(
     });
   }
 
+  // A change inside a rendered block made from outside (toolbar actions such
+  // as changing a language or a table column) must rebuild the whole block.
+  // Otherwise the mapped widget is dropped and the rest of the block loses
+  // its decorations. Edits made while the selection is inside the block stay
+  // on the cheap windowed path.
+  if (tr.docChanged) {
+    for (const pos of changedPositions) {
+      const block = renderBlockRangeAt(state, pos);
+      if (!block) continue;
+      const selected = state.selection.ranges.some(
+        (range) => range.from <= block.to && range.to >= block.from,
+      );
+      if (!selected) include(block.from, block.to);
+    }
+  }
+
+  // A block that just gained or lost the selection must be rebuilt in full —
+  // otherwise a table or code block can stay half source and half rendered.
+  // Moves *within* the same block stay on the cheap path (the block was and
+  // remains source), so long code blocks don't rebuild on every keystroke.
+  const newBlocks = new Map<string, RenderBlockRange>();
+  for (const range of tr.newSelection.ranges) {
+    const block = renderBlockRangeAt(state, range.from) ?? renderBlockRangeAt(state, range.to);
+    if (block) newBlocks.set(`${block.from}:${block.to}`, block);
+  }
+  const oldBlocks = new Map<string, RenderBlockRange>();
+  for (const range of tr.startState.selection.ranges) {
+    const block = renderBlockRangeAt(tr.startState, range.from) ?? renderBlockRangeAt(tr.startState, range.to);
+    if (!block) continue;
+    const from = tr.changes.mapPos(block.from, 1);
+    const to = tr.changes.mapPos(block.to, -1);
+    oldBlocks.set(`${from}:${to}`, { from, to });
+  }
+  for (const [key, block] of newBlocks) {
+    if (!oldBlocks.has(key)) include(block.from, block.to);
+  }
+  for (const [key, block] of oldBlocks) {
+    if (!newBlocks.has(key)) include(block.from, block.to);
+  }
+
+  // Container edit state changes must rebuild the affected block without a
+  // full-document rebuild (cell-to-cell navigation is effect-only). Toggling
+  // edit mode is an effect, so the state object differs; a background parse
+  // advance keeps the same object and must not touch an open editor.
+  const oldContainer = containerSession(tr.startState);
+  const newContainer = containerSession(state);
+  if (!sameContainerState(oldContainer, newContainer)) {
+    if (oldContainer) {
+      // Map into the new document: a code/callout commit can add or remove
+      // lines, and the old end position would otherwise miss the block tail.
+      include(
+        tr.changes.mapPos(oldContainer.from, -1),
+        tr.changes.mapPos(oldContainer.to, 1),
+      );
+    }
+    if (newContainer) include(newContainer.from, newContainer.to);
+  }
+
   if (fromLine === Number.POSITIVE_INFINITY) return null;
 
   for (let pass = 0; pass < 6; pass++) {
@@ -393,8 +537,8 @@ function computeWindow(
     for (const pos of changedPositions) expandBlockAt(state, pos, include);
 
     for (const block of mathBlocks) {
-      if (block.fromLine <= toLine && block.toLine >= fromLine) {
-        grow(block.fromLine, block.toLine);
+      if (block.openLine <= toLine && block.closeLine >= fromLine) {
+        grow(block.openLine, block.closeLine);
       }
     }
     if (frontmatter && frontmatter.fromLine <= toLine && frontmatter.toLine >= fromLine) {
@@ -414,6 +558,63 @@ function computeWindow(
     fromLine: Math.max(1, Math.min(fromLine, state.doc.lines)),
     toLine: Math.max(1, Math.min(toLine, state.doc.lines)),
   };
+}
+
+function sameContainerState(
+  a: BlockSession | null,
+  b: BlockSession | null,
+): boolean {
+  if (!a || !b) return a === b;
+  return a.id === b.id
+    && a.from === b.from
+    && a.to === b.to
+    && a.mode === b.mode
+    && a.target?.kind === b.target?.kind
+    && (a.target?.kind !== "table" || b.target?.kind !== "table"
+      || (a.target.row === b.target.row && a.target.col === b.target.col));
+}
+
+// The parser initially covers only a prefix of the document. When background
+// parsing advances, rebuild the newly parsed region. The outermost node that
+// straddles the old boundary may start many lines above it (a code fence or a
+// paragraph whose emphasis only closes in the new text), so include it whole.
+function treeAdvanceWindow(tr: Transaction, previous: DecorationSet): BuildWindow {
+  const state = tr.state;
+  const oldLen = syntaxTree(tr.startState).length;
+  const newLen = syntaxTree(state).length;
+  if (newLen <= oldLen) {
+    return { fromLine: 1, toLine: state.doc.lines };
+  }
+  let start = oldLen;
+  let node = syntaxTree(state).resolveInner(oldLen, 1);
+  while (node.parent && node.parent.name !== "Document") node = node.parent;
+  if (node.name !== "Document") start = Math.min(node.from, oldLen);
+  let fromLine = state.doc.lineAt(start).number;
+  let toLine = Math.min(
+    state.doc.lines,
+    state.doc.lineAt(Math.min(newLen, state.doc.length)).number + 1,
+  );
+  // The windowed build only replaces a rendered block when the block fits
+  // entirely inside it; cutting one in half would drop its widget. Expand
+  // over anything the window touches — widget equality keeps an open
+  // container editor's DOM (and draft) alive while its block is rebuilt.
+  for (let grew = true; grew;) {
+    grew = false;
+    const from = state.doc.line(fromLine).from;
+    const to = state.doc.line(toLine).to;
+    previous.between(from, to, (rangeFrom, rangeTo) => {
+      const window = lineWindowForRange(state, rangeFrom, rangeTo);
+      if (window.fromLine < fromLine) {
+        fromLine = window.fromLine;
+        grew = true;
+      }
+      if (window.toLine > toLine) {
+        toLine = window.toLine;
+        grew = true;
+      }
+    });
+  }
+  return { fromLine, toLine };
 }
 
 function forEachDecoration(
@@ -454,13 +655,26 @@ function mergeDecorations(
 class DecorationsBuilder {
   private replaceRanges: Array<[number, number]> = [];
 
+  private insertionIndex(from: number, to: number): number | null {
+    let low = 0;
+    let high = this.replaceRanges.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (this.replaceRanges[mid][1] <= from) low = mid + 1;
+      else high = mid;
+    }
+    if (low < this.replaceRanges.length && this.replaceRanges[low][0] < to) return null;
+    return low;
+  }
+
   canReplace(from: number, to: number): boolean {
-    return !this.replaceRanges.some(([f, t]) => from < t && to > f);
+    return this.insertionIndex(from, to) != null;
   }
 
   markReplace(ranges: Range<Decoration>[], from: number, to: number, spec: Parameters<typeof Decoration.replace>[0]): boolean {
-    if (!this.canReplace(from, to)) return false;
-    this.replaceRanges.push([from, to]);
+    const index = this.insertionIndex(from, to);
+    if (index == null) return false;
+    this.replaceRanges.splice(index, 0, [from, to]);
     ranges.push(Decoration.replace(spec).range(from, to));
     return true;
   }
@@ -475,15 +689,13 @@ function wikilinkParts(inner: string): { target: string; hiddenHead: number } {
 }
 
 // Regex-based inline decorations for syntax the lezer grammar doesn't model
-// (wikilinks, ==highlight==, #tags, $math$, ![[embeds]]). Also COLLECTS the
-// line's images (![](url) and image ![[embeds]]) into `images` — the caller
-// renders them in a block widget below the line; their syntax stays raw.
+// (wikilinks, ==highlight==, #tags, $math$). Embed syntax is collected
+// separately by collectEmbeds so it can be folded as a whole line/group.
 function collectRegexDecorations(
   state: EditorState,
   line: { from: number; text: string },
   ranges: Range<Decoration>[],
   builder: DecorationsBuilder,
-  embeds: PreviewEmbed[],
 ): void {
   // Per-match construct granularity: a construct stays raw only while the
   // selection overlaps its own range
@@ -497,43 +709,6 @@ function collectRegexDecorations(
       apply(m, from, to);
     }
   };
-
-  // ![[embeds]] — collected WITHOUT the tryAdd selection check: the preview
-  // stays rendered even while the cursor sits on the syntax
-  {
-    const re = /!\[\[([^\[\]\n]+)\]\]/g;
-    for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
-      if (isInCode(state, line.from + m.index)) continue;
-      const inner = m[1];
-      const spec = parseEmbedSpec(inner);
-      if (!spec.target) continue;
-      const from = line.from + m.index + 3;
-      embeds.push({
-        spec,
-        syntax: "embed",
-        from,
-        to: from + inner.length,
-        raw: inner,
-      });
-    }
-  }
-
-  // ![alt|size](url) — standard image syntax, local ref or remote URL
-  {
-    const re = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))[^)]*\)/g;
-    for (let m = re.exec(line.text); m; m = re.exec(line.text)) {
-      if (isInCode(state, line.from + m.index)) continue;
-      const rawAlt = m[1];
-      const from = line.from + m.index + 2;
-      embeds.push({
-        spec: parseMarkdownImage(rawAlt, (m[2] ?? m[3]).replace(/^<|>$/g, "")),
-        syntax: "md",
-        from,
-        to: from + rawAlt.length,
-        raw: rawAlt,
-      });
-    }
-  }
 
   // [[wikilinks]] — hide "[[target|" + "]]" so only the alias shows.
   // (?<!!) excludes the inner "[[...]]" of an embed — the embed branch owns it
@@ -555,13 +730,13 @@ function collectRegexDecorations(
   // $$display$$ then $inline$ (longest delimiters first)
   tryAdd(/\$\$[^$\n]+\$\$/g, (m, from, to) => {
     builder.markReplace(ranges, from, to, {
-      widget: new MathWidget(m[0].slice(2, -2), true),
+      widget: new MathWidget(m[0].slice(2, -2), true, from + 2),
       block: false,
     });
   });
   tryAdd(/(?<![$\\])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)(?![$])/g, (m, from, to) => {
     builder.markReplace(ranges, from, to, {
-      widget: new MathWidget(m[1], false),
+      widget: new MathWidget(m[1], false, from + 1),
       block: false,
     });
   });
@@ -590,6 +765,20 @@ function buildDecorations(
   const windowToLine = window?.toLine ?? state.doc.lines;
   const windowFrom = state.doc.line(windowFromLine).from;
   const windowTo = state.doc.line(windowToLine).to;
+  const editRange = sourceSession(state);
+  const blockLabels = hooks.blockLabels?.() ?? {
+    codeLines: (count: number) => `${count} lines`,
+  };
+  const embedLabels = hooks.embedLabels?.() ?? DEFAULT_EMBED_LABELS;
+  const preview: BlockPreviewContext = {
+    assetContext: hooks.assetCtx,
+    embedLabels,
+    onOpenWikilink: hooks.onOpenWikilink,
+    onOpenLink: hooks.onOpenLink,
+    onOpenEmbed: hooks.onOpenEmbed,
+    onToggleTask: hooks.onToggleTask,
+    createSubEditor: hooks.createSubEditor,
+  };
 
   const activeLines = new Set<number>();
   for (const range of state.selection.ranges) {
@@ -605,6 +794,24 @@ function buildDecorations(
   syntaxTree(state).iterate({
     ...(window ? { from: windowFrom, to: windowTo } : {}),
     enter: (node) => {
+      // Explicit edit mode: the block's source is shown as plain text, with
+      // just the line background added by the per-line pass below.
+      if (editRange && node.from >= editRange.from && node.to <= editRange.to) {
+        return false;
+      }
+
+      // Heading lines carry a level class so the editor's vertical rhythm can
+      // match the reading view (line-height + padding, see cmExtensions).
+      if (node.name.startsWith("ATXHeading") || node.name.startsWith("SetextHeading")) {
+        const line = state.doc.lineAt(node.from);
+        if (line.number >= windowFromLine && line.number <= windowToLine) {
+          ranges.push(Decoration.line({
+            class: `cm-md-heading cm-md-heading-${node.name.slice(-1)}`,
+          }).range(line.from));
+        }
+        return true;
+      }
+
       if (node.name === "ListMark") {
         if (node.from < windowFrom || node.to > windowTo) return false;
         if (isActiveLine(activeLines, state, node.from)) return false;
@@ -667,6 +874,25 @@ function buildDecorations(
       }
 
       if (node.name === "Blockquote") {
+        const callout = calloutBlockRef(state, node.node);
+        if (callout && callout.replaceFrom >= windowFrom && callout.replaceTo <= windowTo) {
+          const source = state.doc.sliceString(callout.replaceFrom, callout.replaceTo);
+          const container = containerSession(state);
+          const editing = container?.kind === "callout"
+            && container.from <= callout.replaceFrom
+            && container.to >= callout.replaceTo;
+          const target = editing && container.target?.kind === "callout"
+            ? container.target
+            : undefined;
+          const replaced = builder.markReplace(ranges, callout.replaceFrom, callout.replaceTo, {
+            widget: new CalloutWidget(
+              callout, source, hooks.assetCtx,
+              editing && container ? container.id : null, target, preview, hooks.onSave,
+            ),
+            block: true,
+          });
+          if (replaced) return false;
+        }
         const lineFrom = state.doc.lineAt(node.from).number;
         const lineTo = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
         for (let n = Math.max(lineFrom, windowFromLine); n <= Math.min(lineTo, windowToLine); n++) {
@@ -677,9 +903,60 @@ function buildDecorations(
         return true;
       }
 
-      // Fenced/indented code: block background + monospace; the ``` fences
-      // stay visible (children skipped so their CodeMarks aren't hidden)
+      // GFM table: unfocused tables become a rendered grid; focused ones keep
+      // the source plus the usual inline decorations.
+      if (node.name === "Table") {
+        if (node.from >= windowFrom && node.to <= windowTo) {
+          const ref = tableBlockRef(state, node.node);
+          if (ref) {
+            const container = containerSession(state);
+            const editing = container?.kind === "table"
+              && container.from <= ref.replaceFrom
+              && container.to >= ref.replaceTo;
+            const target = editing && container.target?.kind === "table"
+              ? container.target
+              : undefined;
+            const replaced = builder.markReplace(ranges, ref.replaceFrom, ref.replaceTo, {
+              widget: new TableWidget(
+                ref.model,
+                hooks.assetCtx,
+                editing && container ? container.id : null,
+                target,
+                preview,
+                hooks.onSave,
+              ),
+              block: true,
+            });
+            if (replaced) return false;
+          }
+        }
+        return true;
+      }
+
+      // Fenced/indented code. An unfocused fenced block becomes a card; when
+      // the selection is inside it (or the block is only partly in the rebuild
+      // window) the source stays visible with the usual line decorations.
       if (node.name === "FencedCode" || node.name === "CodeBlock") {
+        if (node.name === "FencedCode") {
+          const ref = codeBlockRef(state, node.node);
+          if (ref && ref.replaceFrom >= windowFrom && ref.replaceTo <= windowTo) {
+            const container = containerSession(state);
+            const editing = container?.kind === "code"
+              && container.from <= ref.replaceFrom
+              && container.to >= ref.replaceTo;
+            const target = editing && container.target?.kind === "code"
+              ? container.target
+              : undefined;
+            const replaced = builder.markReplace(ranges, ref.replaceFrom, ref.replaceTo, {
+              widget: new CodeBlockWidget(
+                ref, isCodeFolded(state, ref.from), blockLabels,
+                editing && container ? container.id : null, target, hooks.onSave,
+              ),
+              block: true,
+            });
+            if (replaced) return false;
+          }
+        }
         const firstLine = state.doc.lineAt(node.from).number;
         const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
         for (let n = Math.max(firstLine, windowFromLine); n <= Math.min(lastLine, windowToLine); n++) {
@@ -722,20 +999,23 @@ function buildDecorations(
     },
   });
 
-  // 2) Multi-line $$ math blocks — replace the whole block with display
-  // KaTeX unless the selection is inside it
-  for (const block of findMathBlocks(state)) {
-    if (block.fromLine < windowFromLine || block.toLine > windowToLine) continue;
-    const openLine = state.doc.line(block.fromLine);
-    if (isInCode(state, openLine.from)) continue;
-    const closeLine = state.doc.line(block.toLine);
-    if (!selectionIntersects(state, openLine.from, closeLine.to)) {
-      const tex = state.doc.sliceString(openLine.to, closeLine.from).trim();
-      builder.markReplace(ranges, openLine.from, closeLine.to, {
-        widget: new MathWidget(tex, true),
-        block: true,
-      });
-    }
+  // 2) Multi-line $$ math blocks — replaced as a whole until explicitly edited
+  for (const ref of mathBlockRefs(state)) {
+    if (ref.openLine < windowFromLine || ref.closeLine > windowToLine) continue;
+    if (editRange && ref.replaceFrom <= editRange.to && ref.replaceTo >= editRange.from) continue;
+    const container = containerSession(state);
+    const editing = container?.kind === "math"
+      && container.from <= ref.replaceFrom
+      && container.to >= ref.replaceTo;
+    const target = editing && container.target?.kind === "math"
+      ? container.target
+      : undefined;
+    builder.markReplace(ranges, ref.replaceFrom, ref.replaceTo, {
+      widget: new MathBlockWidget(
+        ref, editing && container ? container.id : null, target, hooks.onSave,
+      ),
+      block: true,
+    });
   }
 
   // 3) Frontmatter: de-emphasize the whole "--- ... ---" block at doc start
@@ -746,16 +1026,49 @@ function buildDecorations(
     }
   }
 
-  // 4) Regex-driven decorations, line by line; lines that hold embed syntax
-  // also get an embed card widget directly below them
-  const labels = hooks.embedLabels ?? (() => DEFAULT_EMBED_LABELS);
+  // 4) Regex-driven decorations, line by line. Embed-only lines collapse into
+  // cards until explicitly edited; mixed lines keep the source and show a
+  // preview below.
+  const labels = () => embedLabels;
+  const embedLines: { lineNo: number; embeds: EditorEmbed[]; embedOnly: boolean; edited: boolean }[] = [];
   for (let n = windowFromLine; n <= windowToLine; n++) {
     const line = state.doc.line(n);
-    const embeds: PreviewEmbed[] = [];
-    collectRegexDecorations(state, line, ranges, builder, embeds);
-    if (embeds.length > 0) {
+    if (editRange && line.from <= editRange.to && line.to >= editRange.from) {
+      embedLines.push({ lineNo: n, embeds: [], embedOnly: false, edited: true });
+      continue;
+    }
+    const embeds = collectEmbeds(state, line);
+    embedLines.push({
+      lineNo: n,
+      embeds,
+      embedOnly: embeds.length > 0 && isEmbedOnlyLine(line.text, embeds),
+      edited: false,
+    });
+  }
+
+  for (const info of embedLines) {
+    const line = state.doc.line(info.lineNo);
+    if (info.edited) {
+      const classes = editRange?.kind === "code"
+        ? "cm-md-block-edit cm-md-codeblock"
+        : "cm-md-block-edit";
+      ranges.push(Decoration.line({ class: classes }).range(line.from));
+      continue;
+    }
+    if (info.embedOnly) {
+      const replaced = builder.markReplace(ranges, line.from, line.to, {
+        widget: new EmbedPreviewWidget(
+          info.embeds, labels, hooks.assetCtx, hooks.onOpenEmbed,
+          { from: line.from, to: line.to },
+        ),
+        block: true,
+      });
+      if (replaced) continue;
+    }
+    collectRegexDecorations(state, line, ranges, builder);
+    if (info.embeds.length > 0) {
       ranges.push(Decoration.widget({
-        widget: new EmbedPreviewWidget(embeds, labels, hooks.assetCtx, hooks.onOpenEmbed),
+        widget: new EmbedPreviewWidget(info.embeds, labels, hooks.assetCtx, hooks.onOpenEmbed),
         block: true,
         side: 1,
       }).range(line.to));
@@ -766,30 +1079,121 @@ function buildDecorations(
   return Decoration.set(ranges, true);
 }
 
+// Background parsing reaches far ahead on its own, but it may hold a completed
+// parse in its context before dispatching it to the state. Push the parser
+// forward for the visible viewport and dispatch, so scrolling into an unparsed
+// region doesn't leave headings/blocks raw until the user clicks.
+function parseViewportOnDemand() {
+  return ViewPlugin.fromClass(class {
+    private raf = 0;
+    private view: EditorView;
+
+    constructor(view: EditorView) {
+      this.view = view;
+      this.schedule();
+    }
+
+    update(update: ViewUpdate): void {
+      if (update.viewportChanged) this.schedule();
+    }
+
+    private schedule(): void {
+      if (this.raf) return;
+      this.raf = requestAnimationFrame(() => {
+        this.raf = 0;
+        if (!this.view.dom.isConnected) return;
+        const upto = this.view.viewport.to;
+        if (syntaxTreeAvailable(this.view.state, upto)) return;
+        forceParsing(this.view, upto, 40);
+      });
+    }
+
+    destroy(): void {
+      if (this.raf) cancelAnimationFrame(this.raf);
+    }
+  });
+}
+
 export function livePreview(hooks: LivePreviewHooks) {
   const decorationsField = StateField.define<DecorationSet>({
     create: (state) => buildDecorations(state, hooks),
     update: (deco, tr) => {
-      if (!tr.docChanged && !tr.selection) return deco;
+      // The language parser feeds a transaction when its tree advances; that
+      // transaction has no doc/selection change but new regions of the note
+      // must get their live-preview decorations.
+      const treeChanged = !tr.docChanged
+        && syntaxTree(tr.startState) !== syntaxTree(tr.state);
+      const actionEffects = tr.effects.some(
+        (effect) => effect.is(setBlockSession) || effect.is(toggleCodeFold),
+      );
+      if (!tr.docChanged && !tr.selection && !treeChanged && !actionEffects) {
+        return deco;
+      }
 
       const state = tr.state;
       if (tr.docChanged && needsFullRebuild(tr.startState, tr)) {
         return buildDecorations(state, hooks);
       }
-
-      const previous = tr.docChanged ? deco.map(tr.changes) : deco;
-      const window = computeWindow(state, tr, previous);
-      if (!window) return previous;
-      if (window.fromLine <= 1 && window.toLine >= state.doc.lines) {
+      // Folding swaps a card's body; a full rebuild keeps the path simple.
+      if (tr.effects.some((effect) => effect.is(toggleCodeFold))) {
         return buildDecorations(state, hooks);
       }
-      return mergeDecorations(previous, buildDecorations(state, hooks, window), state, window);
+
+      const previous = tr.docChanged ? deco.map(tr.changes) : deco;
+      // Pure background-parse advances have no document or selection change:
+      // rebuild only the newly parsed region. computeWindow could widen the
+      // window toward the selection and tear down an open container editor.
+      const parseOnly = treeChanged && !tr.docChanged && !tr.selection && !actionEffects;
+      const windows: BuildWindow[] = [];
+      if (!parseOnly) {
+        const baseWindow = computeWindow(state, tr, previous);
+        if (baseWindow) windows.push(baseWindow);
+      }
+      if (treeChanged) windows.push(treeAdvanceWindow(tr, previous));
+      if (windows.length === 0) return previous;
+
+      let next = previous;
+      for (const window of windows) {
+        if (window.fromLine <= 1 && window.toLine >= state.doc.lines) {
+          return buildDecorations(state, hooks);
+        }
+        next = mergeDecorations(next, buildDecorations(state, hooks, window), state, window);
+      }
+      return next;
     },
     provide: (field) => EditorView.decorations.from(field),
   });
 
+  // Rendered blocks are atomic: keyboard/pointer movement skips over them
+  // instead of letting the caret land inside hidden source text. Source
+  // editing removes the replacement, so the block stops being atomic.
+  let atomicSource: DecorationSet | null = null;
+  let atomicValue: RangeSet<Decoration> = RangeSet.empty;
+  const atomicRanges = EditorView.atomicRanges.of((view) => {
+    const deco = view.state.field(decorationsField, false);
+    if (!deco) return RangeSet.empty;
+    if (deco !== atomicSource) {
+      const ranges: Range<Decoration>[] = [];
+      deco.between(0, view.state.doc.length, (from, to, value) => {
+        const spec = value.spec;
+        if (from < to && spec?.block && spec.widget) {
+          ranges.push(value.range(from, to));
+        }
+      });
+      atomicValue = ranges.length > 0 ? RangeSet.of(ranges, true) : RangeSet.empty;
+      atomicSource = deco;
+    }
+    return atomicValue;
+  });
+
   return [
+    focusedBlockField,
+    blockSessionField,
+    codeFoldField,
+    mathBlocksField,
     decorationsField,
+    parseViewportOnDemand(),
+    atomicRanges,
     EditorView.domEventHandlers({
       click: (event, view) => {
         const target = event.target as HTMLElement | null;
