@@ -1,10 +1,30 @@
+import { useEffect, useState } from "react";
 import { useT, langOptions } from "../../i18n";
 import { useSettings } from "../../lib/settings";
-import { NumberInput, SectionHeader, Select, SettingRow, Toggle } from "./controls";
+import type { AppLaunchState } from "../../shared/models";
+import type { CloseBehavior } from "../../shared/settings";
+import { SectionHeader, Select, SettingRow, Toggle } from "./controls";
 
 export default function GeneralSection() {
   const { t, lang, setLang } = useT();
   const { values, set } = useSettings();
+  // Capabilities of the running build: login items are only written by packaged
+  // builds, and hidden login startup is Windows-only. Unknown → keep the rows
+  // enabled (the hints are optional polish).
+  const [launch, setLaunch] = useState<AppLaunchState | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.prism
+      .getLaunchState()
+      .then((state) => { if (!cancelled) setLaunch(state); })
+      .catch(() => { /* hints are optional */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const loginItemSupported = launch?.loginItemSupported ?? true;
+  const hiddenStartSupported = launch?.hiddenStartSupported ?? true;
+  const packaged = launch?.packaged ?? true;
 
   return (
     <section>
@@ -19,30 +39,62 @@ export default function GeneralSection() {
           />
         </SettingRow>
 
-        <SettingRow label={t["settings.clockFormat"]} description={t["settings.clockFormatDesc"]}>
-          <Select
-            value={values.clock_format}
-            options={[
-              { value: "24", label: t["settings.clock24"] },
-              { value: "12", label: t["settings.clock12"] },
-            ]}
-            onChange={(v) => set("clock_format", v as "24" | "12")}
-          />
-        </SettingRow>
-
-        <SettingRow label={t["settings.homeRecents"]} description={t["settings.homeRecentsDesc"]}>
-          <NumberInput
-            value={values.home_recents_count}
-            min={5}
-            max={30}
-            step={1}
-            onChange={(v) => set("home_recents_count", v)}
-          />
-        </SettingRow>
-
         <SettingRow label={t["settings.restoreTabs"]} description={t["settings.restoreTabsDesc"]}>
           <Toggle checked={values.restore_note_tabs} onChange={(v) => set("restore_note_tabs", v)} />
         </SettingRow>
+      </div>
+
+      <div className="mt-8 pt-6 border-t border-line/50">
+        <SectionHeader
+          title={t["settings.windowStartup"]}
+          description={t["settings.windowStartupDesc"]}
+        />
+
+        <div className="space-y-3">
+          <SettingRow
+            label={t["settings.closeBehavior"]}
+            description={t["settings.closeBehaviorDesc"]}
+          >
+            <Select
+              value={values.close_behavior}
+              options={[
+                { value: "quit", label: t["settings.closeQuit"] },
+                { value: "tray", label: t["settings.closeTray"] },
+              ]}
+              onChange={(v) => set("close_behavior", v as CloseBehavior)}
+            />
+          </SettingRow>
+
+          <SettingRow label={t["settings.autoLaunch"]} description={t["settings.autoLaunchDesc"]}>
+            <Toggle
+              checked={values.auto_launch}
+              disabled={!loginItemSupported}
+              onChange={(v) => set("auto_launch", v)}
+            />
+          </SettingRow>
+          {launch && !loginItemSupported && (
+            <p className="px-4 text-caption text-muted">{t["settings.autoLaunchUnsupported"]}</p>
+          )}
+          {launch && loginItemSupported && !packaged && (
+            <p className="px-4 text-caption text-muted">{t["settings.autoLaunchDevHint"]}</p>
+          )}
+
+          <SettingRow
+            label={t["settings.autoLaunchHidden"]}
+            description={t["settings.autoLaunchHiddenDesc"]}
+          >
+            <Toggle
+              checked={values.auto_launch_hidden}
+              disabled={!hiddenStartSupported}
+              onChange={(v) => set("auto_launch_hidden", v)}
+            />
+          </SettingRow>
+          {launch && !hiddenStartSupported && (
+            <p className="px-4 text-caption text-muted">
+              {t["settings.autoLaunchHiddenUnsupported"]}
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );

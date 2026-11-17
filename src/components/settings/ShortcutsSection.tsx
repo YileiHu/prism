@@ -1,20 +1,21 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import {
   DEFAULT_SHORTCUTS,
+  GLOBAL_SHORTCUT_ACTIONS,
   SHORTCUT_ACTIONS,
   formatShortcut,
   isReservedShortcut,
   isValidShortcut,
   shortcutFromEvent,
   type ShortcutAction,
-  type ShortcutMap,
 } from "../../shared/shortcuts";
 import Button from "../Button";
 import { CONTROL_CLASSES } from "../Input";
 import { SectionHeader, SettingRow } from "./controls";
+import type { GlobalShortcutStatus } from "../../shared/models";
 
 type RecorderError = "conflict" | "reserved";
 
@@ -79,6 +80,7 @@ function ShortcutRecorder({
           stopRecording();
         }}
         title={t["settings.shortcutRecording"]}
+        data-prism-shortcut-recorder=""
         className={`${CONTROL_CLASSES} min-w-[150px] flex items-center justify-center gap-1 ${
           recording ? "accent-ring border-[var(--accent)]" : ""
         }`}
@@ -111,12 +113,26 @@ export default function ShortcutsSection() {
   const { t } = useT();
   const { values, set } = useSettings();
   const shortcuts = values.shortcuts;
+  const [globalStatus, setGlobalStatus] = useState<GlobalShortcutStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.prism
+      .getGlobalShortcutStatus()
+      .then((status) => { if (!cancelled) setGlobalStatus(status); })
+      .catch(() => { /* the warning is optional */ });
+    return () => { cancelled = true; };
+  }, [shortcuts.quickCapture, shortcuts.showMain]);
 
   const update = (action: ShortcutAction, combo: string) => {
-    const next: ShortcutMap = action === "focusSearch"
-      ? { ...shortcuts, focusSearch: combo }
-      : { ...shortcuts, toggleReadEdit: combo };
-    set("shortcuts", next);
+    set("shortcuts", { ...shortcuts, [action]: combo });
+  };
+
+  const labelFor = (action: ShortcutAction): string => {
+    if (action === "focusSearch") return t["settings.shortcutFocusSearch"];
+    if (action === "toggleReadEdit") return t["settings.shortcutToggleReadEdit"];
+    if (action === "showMain") return t["settings.shortcutShowMain"];
+    return t["settings.shortcutQuickCapture"];
   };
 
   const rows = [
@@ -130,38 +146,65 @@ export default function ShortcutsSection() {
       label: t["settings.shortcutToggleReadEdit"],
       description: t["settings.shortcutToggleReadEditDesc"],
     },
+    {
+      action: "quickCapture" as const,
+      label: t["settings.shortcutQuickCapture"],
+      description: t["settings.shortcutQuickCaptureDesc"],
+    },
+    {
+      action: "showMain" as const,
+      label: t["settings.shortcutShowMain"],
+      description: t["settings.shortcutShowMainDesc"],
+    },
   ];
-  const otherAction = (action: ShortcutAction): ShortcutAction =>
-    action === "focusSearch" ? "toggleReadEdit" : "focusSearch";
-  const otherLabel = (action: ShortcutAction): string =>
-    action === "focusSearch" ? t["settings.shortcutToggleReadEdit"] : t["settings.shortcutFocusSearch"];
+
+  const conflictFor = (action: ShortcutAction): ShortcutAction | undefined =>
+    SHORTCUT_ACTIONS.find((candidate) => candidate !== action && shortcuts[candidate] === shortcuts[action]);
+
   const allDefault = SHORTCUT_ACTIONS.every((action) => shortcuts[action] === DEFAULT_SHORTCUTS[action]);
+  // Only warn about an OS registration that failed for the combo currently
+  // stored (a stale status after editing would be misleading).
+  const failedGlobalActions = GLOBAL_SHORTCUT_ACTIONS.filter((action) => {
+    const state = globalStatus?.[action];
+    return state !== undefined && !state.registered && state.shortcut === shortcuts[action];
+  });
 
   return (
     <section>
       <SectionHeader title={t["settings.shortcuts"]} description={t["settings.shortcutsDesc"]} />
 
       <div className="space-y-3">
-        {rows.map(({ action, label, description }) => (
-          <SettingRow key={action} label={label} description={description}>
-            <div className="flex items-center gap-1">
-              <ShortcutRecorder
-                value={shortcuts[action]}
-                otherValue={shortcuts[otherAction(action)]}
-                otherLabel={otherLabel(action)}
-                onChange={(combo) => update(action, combo)}
-              />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                title={t["settings.shortcutReset"]}
-                disabled={shortcuts[action] === DEFAULT_SHORTCUTS[action]}
-                onClick={() => update(action, DEFAULT_SHORTCUTS[action])}
-              >
-                <RotateCcw size={12} />
-              </Button>
-            </div>
-          </SettingRow>
+        {rows.map(({ action, label, description }) => {
+          const conflict = conflictFor(action);
+          return (
+            <SettingRow key={action} label={label} description={description}>
+              <div className="flex items-center gap-1">
+                <ShortcutRecorder
+                  value={shortcuts[action]}
+                  otherValue={conflict ? shortcuts[conflict] : ""}
+                  otherLabel={conflict ? labelFor(conflict) : ""}
+                  onChange={(combo) => update(action, combo)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  title={t["settings.shortcutReset"]}
+                  disabled={shortcuts[action] === DEFAULT_SHORTCUTS[action]}
+                  onClick={() => update(action, DEFAULT_SHORTCUTS[action])}
+                >
+                  <RotateCcw size={12} />
+                </Button>
+              </div>
+            </SettingRow>
+          );
+        })}
+
+        {failedGlobalActions.map((action) => (
+          <p key={action} className="px-1 text-caption leading-snug text-danger">
+            {t["settings.shortcutGlobalFailed"]
+              .replace("{name}", labelFor(action))
+              .replace("{shortcut}", formatShortcut(shortcuts[action]).join("+"))}
+          </p>
         ))}
 
         <div className="flex justify-end">

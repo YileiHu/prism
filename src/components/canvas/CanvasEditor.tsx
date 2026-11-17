@@ -40,6 +40,7 @@ import RenameModal from "../RenameModal";
 import ConfirmDialog from "../ConfirmDialog";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
+import ProjectJumpButton from "../gtd/ProjectJumpButton";
 import { AUTO_SWATCH_COLOR, buildColorMenuItem } from "../ColorPicker";
 import type { MenuItem } from "../ContextMenu";
 import Button from "../Button";
@@ -1091,6 +1092,7 @@ export default function CanvasEditor({
     ),
     actions: (
       <>
+        <ProjectJumpButton filePath={canvasPath} />
         <Button
           variant="ghost"
           size="icon-sm"

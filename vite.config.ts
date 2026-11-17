@@ -43,6 +43,10 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        quickCapture: path.resolve(__dirname, "quick-capture.html"),
+      },
       output: {
         // Keep the heavy document stacks out of the initial chunk. Each is
         // still loaded on demand through DocumentPane's lazy imports.

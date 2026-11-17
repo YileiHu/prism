@@ -3,6 +3,8 @@
 // shapes at the IPC boundary so the renderer never sees snake_case columns
 // or 0/1 flags.
 
+import type { GlobalShortcutAction } from "./shortcuts";
+
 export interface NoteRef {
   path: string;
   title: string;
@@ -49,47 +51,88 @@ export interface PdfDocument {
   addedAt: string;
 }
 
-export type GtdStatus = "inbox" | "someday" | "waiting" | "project" | "archived";
-
-export interface GtdItem {
+export interface GtdTaskProjectRef {
   id: number;
   title: string;
-  status: GtdStatus;
-  isNext: boolean;
+  color: string;
+  archived: boolean;
+}
+
+export interface GtdTask {
+  id: number;
+  title: string;
+  notes: string;
+  project: GtdTaskProjectRef | null;
+  /** Local calendar date (YYYY-MM-DD): the day the user plans to work on it. */
+  scheduledDate: string | null;
+  /** Local calendar date (YYYY-MM-DD): a hard deadline. */
+  dueDate: string | null;
+  /** SQLite UTC timestamp; null means the task is still open. */
+  completedAt: string | null;
+  createdAt: string;
+  /** Manual order inside a project. */
+  sortOrder: number;
+}
+
+export interface GtdTaskPatch {
+  title?: string;
+  notes?: string;
+  projectId?: number | null;
+  scheduledDate?: string | null;
+  dueDate?: string | null;
+}
+
+export interface GtdProject {
+  id: number;
+  title: string;
   description: string;
   color: string;
-  dueDate: string | null;
   createdAt: string;
   archivedAt: string | null;
-  actionCount: number;
-  doneActionCount: number;
+  taskCount: number;
+  doneTaskCount: number;
 }
 
-export interface GtdAction {
+export type GtdViewKey = "calendar" | "completed" | "project";
+
+export type GtdProjectLinkKind = "note" | "canvas";
+
+export interface GtdProjectLink {
   id: number;
-  projectId: number;
+  kind: GtdProjectLinkKind;
+  vaultPath: string;
+  filePath: string;
   title: string;
-  isDone: boolean;
-  isNext: boolean;
-  sortOrder: number;
-  dueDate: string | null;
-  createdAt: string;
-  doneAt: string | null;
+  missing: boolean;
 }
 
-export interface GtdNextList {
-  waiting: GtdItem[];
-  projects: { project: GtdItem; action: GtdAction }[];
+export interface GtdProjectFolder {
+  projectId: number;
+  vaultPath: string;
+  folderPath: string;
+  missing: boolean;
 }
 
-export interface FavoriteNote extends NoteRef {
-  createdAt: string;
-  missing?: boolean;
+export interface GtdProjectDocsPayload {
+  folder: GtdProjectFolder | null;
+  links: GtdProjectLink[];
 }
 
-export interface RecentNote extends NoteRef {
-  openedAt: string;
-  missing?: boolean;
+export interface GlobalShortcutState {
+  shortcut: string;
+  registered: boolean;
+}
+
+// OS-level registration result keyed by the global shortcut actions.
+export type GlobalShortcutStatus = Record<GlobalShortcutAction, GlobalShortcutState>;
+
+// Capabilities behind the "close behavior / launch at login" settings. The
+// renderer uses it to disable unsupported rows and to explain that login items
+// are only written by packaged builds.
+export interface AppLaunchState {
+  packaged: boolean;
+  loginItemSupported: boolean;
+  hiddenStartSupported: boolean;
 }
 
 export interface CanvasFile {

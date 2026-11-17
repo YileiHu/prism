@@ -1,9 +1,17 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppLaunchState,
   CanvasContent,
   CanvasFile,
   CanvasGroupsFile,
   CanvasSaveResult,
+  GlobalShortcutStatus,
+  GtdProject,
+  GtdProjectDocsPayload,
+  GtdProjectFolder,
+  GtdProjectLink,
+  GtdProjectLinkKind,
+  GtdTaskPatch,
   NoteBrief,
   NoteCollectionsFile,
   NoteContentHit,
@@ -114,32 +122,55 @@ const api = {
   deleteTag: (name: string) => ipcRenderer.invoke("tags:delete", name),
 
   // GTD
-  addGtdItem: (title: string) => ipcRenderer.invoke("gtd:add", title),
-  getGtdItems: (status: string) => ipcRenderer.invoke("gtd:list", status),
-  getGtdCounts: () => ipcRenderer.invoke("gtd:counts"),
-  setGtdItemStatus: (id: number, status: string) => ipcRenderer.invoke("gtd:set-status", id, status),
-  setGtdItemArchived: (id: number, archived: boolean) => ipcRenderer.invoke("gtd:set-archived", id, archived),
-  renameGtdItem: (id: number, title: string) => ipcRenderer.invoke("gtd:rename", id, title),
-  setGtdItemDescription: (id: number, description: string) => ipcRenderer.invoke("gtd:set-description", id, description),
-  setGtdItemColor: (id: number, color: string) => ipcRenderer.invoke("gtd:set-color", id, color),
-  setGtdItemDueDate: (id: number, dueDate: string | null) => ipcRenderer.invoke("gtd:set-due-date", id, dueDate),
-  deleteGtdItem: (id: number) => ipcRenderer.invoke("gtd:delete", id),
-  setGtdItemNext: (id: number, isNext: boolean) => ipcRenderer.invoke("gtd:set-next", id, isNext),
-  getGtdActions: (projectId: number) => ipcRenderer.invoke("gtd:list-actions", projectId),
-  addGtdAction: (projectId: number, title: string) => ipcRenderer.invoke("gtd:add-action", projectId, title),
-  renameGtdAction: (id: number, title: string) => ipcRenderer.invoke("gtd:rename-action", id, title),
-  toggleGtdAction: (id: number) => ipcRenderer.invoke("gtd:toggle-action", id),
-  reorderGtdActions: (projectId: number, orderedIds: number[]) => ipcRenderer.invoke("gtd:reorder-actions", projectId, orderedIds),
-  deleteGtdAction: (id: number) => ipcRenderer.invoke("gtd:delete-action", id),
-  setGtdActionNext: (projectId: number, actionId: number | null) => ipcRenderer.invoke("gtd:set-action-next", projectId, actionId),
-  setGtdActionDueDate: (id: number, dueDate: string | null) => ipcRenderer.invoke("gtd:set-action-due-date", id, dueDate),
-  getGtdNextList: () => ipcRenderer.invoke("gtd:next-list"),
+  getGtdOpenTasks: () => ipcRenderer.invoke("gtd:open-tasks"),
+  getGtdCompletedTasks: (limit?: number) => ipcRenderer.invoke("gtd:completed-tasks", limit),
+  getGtdProjectTasks: (projectId: number) => ipcRenderer.invoke("gtd:project-tasks", projectId),
+  getGtdProjects: (archived: boolean) => ipcRenderer.invoke("gtd:projects", archived),
+  addGtdTask: (title: string, projectId?: number | null, scheduledDate?: string | null) =>
+    ipcRenderer.invoke("gtd:add-task", title, projectId ?? null, scheduledDate ?? null),
+  updateGtdTask: (id: number, patch: GtdTaskPatch) => ipcRenderer.invoke("gtd:update-task", id, patch),
+  completeGtdTask: (id: number) => ipcRenderer.invoke("gtd:complete-task", id),
+  reopenGtdTask: (id: number) => ipcRenderer.invoke("gtd:reopen-task", id),
+  deleteGtdTask: (id: number) => ipcRenderer.invoke("gtd:delete-task", id),
+  clearCompletedGtdTasks: () => ipcRenderer.invoke("gtd:clear-completed"),
+  reorderGtdProjectTasks: (projectId: number, orderedIds: number[]) =>
+    ipcRenderer.invoke("gtd:reorder-project-tasks", projectId, orderedIds),
+  addGtdProject: (title: string) => ipcRenderer.invoke("gtd:add-project", title),
+  updateGtdProject: (id: number, patch: { title?: string; description?: string; color?: string }) =>
+    ipcRenderer.invoke("gtd:update-project", id, patch),
+  setGtdProjectArchived: (id: number, archived: boolean) => ipcRenderer.invoke("gtd:archive-project", id, archived),
+  deleteGtdProject: (id: number) => ipcRenderer.invoke("gtd:delete-project", id),
+  getGtdProjectDocs: (projectId: number) =>
+    ipcRenderer.invoke("gtd:project-docs", projectId) as Promise<GtdProjectDocsPayload>,
+  getGtdProjectsForFile: (filePath: string) =>
+    ipcRenderer.invoke("gtd:projects-for-file", filePath) as Promise<GtdProject[]>,
+  ensureGtdProjectFolder: (projectId: number) =>
+    ipcRenderer.invoke("gtd:ensure-project-folder", projectId) as Promise<GtdProjectFolder>,
+  openGtdProjectFolder: (projectId: number) =>
+    ipcRenderer.invoke("gtd:open-project-folder", projectId),
+  createGtdProjectFile: (projectId: number, kind: GtdProjectLinkKind, templateJson?: string) =>
+    ipcRenderer.invoke("gtd:create-project-file", projectId, kind, templateJson) as Promise<GtdProjectLink>,
+  setGtdProjectLink: (
+    projectId: number,
+    kind: GtdProjectLinkKind,
+    filePath: string,
+    title: string,
+  ) => ipcRenderer.invoke("gtd:set-project-link", projectId, kind, filePath, title) as Promise<GtdProjectLink>,
+  removeGtdProjectLink: (linkId: number) => ipcRenderer.invoke("gtd:remove-project-link", linkId),
 
-  // Favorite / recent notes
-  toggleFavoriteNote: (notePath: string, title: string) => ipcRenderer.invoke("notes:toggle-favorite", notePath, title),
-  getFavoriteNotes: () => ipcRenderer.invoke("notes:favorites"),
-  getFavoriteStatus: (notePaths: string[]) => ipcRenderer.invoke("notes:favorite-status", notePaths),
-  getRecentNotes: (limit?: number) => ipcRenderer.invoke("notes:recents", limit),
+  // Global shortcuts
+  getGlobalShortcutStatus: () =>
+    ipcRenderer.invoke("shortcuts:get-global-status") as Promise<GlobalShortcutStatus>,
+
+  // Quick capture
+  openQuickCapture: () => ipcRenderer.invoke("quick-capture:open"),
+  closeQuickCapture: () => ipcRenderer.invoke("quick-capture:close"),
+  quickCaptureSaved: () => ipcRenderer.invoke("quick-capture:submit"),
+  onQuickCaptureSaved: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("quick-capture:saved", handler);
+    return () => { ipcRenderer.removeListener("quick-capture:saved", handler); };
+  },
 
   // Dialog
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
@@ -186,6 +217,9 @@ const api = {
   showItemInFolder: (filePath: string) => ipcRenderer.invoke("shell:show-item-in-folder", filePath),
   trashFile: (filePath: string) => ipcRenderer.invoke("shell:trash-file", filePath),
   trashFiles: (filePaths: string[]) => ipcRenderer.invoke("shell:trash-files", filePaths),
+
+  // App
+  getLaunchState: () => ipcRenderer.invoke("app:get-launch-state") as Promise<AppLaunchState>,
 
   // Window controls
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),

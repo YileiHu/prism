@@ -6,7 +6,6 @@ import {
   FileText,
   Frame,
   Globe,
-  House,
   Library,
   ListChecks,
   Minus,
@@ -18,7 +17,6 @@ import {
 import WebResources from "./components/WebResources";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
-import HomeView from "./components/home/HomeView";
 import LibraryView from "./components/library/LibraryView";
 import DocumentWorkspace from "./components/workspace/DocumentWorkspace";
 import { LibraryDataProvider } from "./components/library/LibraryDataProvider";
@@ -33,23 +31,24 @@ import TabStrip from "./components/TabStrip";
 import ThemeQuickMenu from "./components/ThemeQuickMenu";
 import { useContextMenu } from "./lib/useContextMenu";
 import { useGlobalShortcuts } from "./lib/useShortcuts";
+import { QUICK_CAPTURE_EVENT } from "./shared/shortcuts";
 import { useVaultLock } from "./lib/vaultLock";
 import { ToastProvider } from "./lib/toast";
 import { useT } from "./i18n";
 import type { Translation } from "./i18n/zh";
 import { useWorkspace } from "./lib/workspace/WorkspaceProvider";
 import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState";
-import { makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
+import { makeCanvasDoc, makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
 import { usePdfDocuments } from "./components/pdf/PdfDocumentsProvider";
 import { type VaultEntry } from "./types";
 import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
+import type { GtdProjectLink } from "./shared/models";
 import { type MenuItem } from "./components/ContextMenu";
 import "./lib/api";
 
-const MODULES: { id: ModuleId; icon: typeof House; labelKey: keyof Translation }[] = [
-  { id: "home", icon: House, labelKey: "nav.home" },
-  { id: "library", icon: Library, labelKey: "nav.library" },
+const MODULES: { id: ModuleId; icon: typeof ListChecks; labelKey: keyof Translation }[] = [
   { id: "gtd", icon: ListChecks, labelKey: "nav.gtd" },
+  { id: "library", icon: Library, labelKey: "nav.library" },
   { id: "resources", icon: Globe, labelKey: "nav.resources" },
 ];
 
@@ -93,6 +92,17 @@ export default function App() {
     window.prism.isMaximized().then(setMaximized);
     return window.prism.onMaximizeChange(setMaximized);
   }, []);
+
+  useEffect(() => {
+    const open = () => { void window.prism.openQuickCapture(); };
+    window.addEventListener(QUICK_CAPTURE_EVENT, open);
+    return () => window.removeEventListener(QUICK_CAPTURE_EVENT, open);
+  }, []);
+
+  // A task saved from the separate capture window refreshes the hidden GTD pane.
+  useEffect(() => window.prism.onQuickCaptureSaved(() => {
+    window.dispatchEvent(new Event("gtd-changed"));
+  }), []);
 
   // A vault lock closes its document tabs — the files are unreadable again.
   useEffect(() => {
@@ -193,6 +203,36 @@ export default function App() {
     setGtdFocus({ ...request, seq: Date.now() });
     showModule("gtd");
   };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: number; archived?: boolean }>).detail;
+      if (typeof detail?.projectId !== "number") return;
+      handleNavigateToGtd({
+        view: "project",
+        projectId: detail.projectId,
+        archived: detail.archived,
+      });
+    };
+    window.addEventListener("prism:open-project", handler);
+    return () => window.removeEventListener("prism:open-project", handler);
+  }, []);
+
+  const openProjectLink = useCallback((link: GtdProjectLink) => {
+    if (link.missing) return;
+    const target = vaultsRef.current.find(
+      (vault) => normalizePath(vault.path) === normalizePath(link.vaultPath),
+    );
+    if (!target) return;
+    const doc = link.kind === "note"
+      ? makeNoteDoc(target.path, link.filePath, link.title)
+      : makeCanvasDoc(target.path, link.filePath, link.title);
+    if (vaultLock.isLocked(target.path)) {
+      vaultLock.requestUnlock(target.path, () => openDoc(doc));
+    } else {
+      openDoc(doc);
+    }
+  }, [openDoc, vaultLock]);
 
   const openLinkedNote = useCallback((detail: { path: string; title?: string }) => {
     const target = vaultsRef.current.find((vault) => {
@@ -379,30 +419,26 @@ export default function App() {
               <AppToolbar
                 scopeKey={toolbarScope}
                 fallback={fallbackToolbar}
-                sidebar={workspaceActive
-                  || state.module === "library"
-                  || state.module === "resources"
-                  || state.module === "gtd"
-                  || state.module === "settings"
-                  ? { collapsed: sidebarCollapsed, onToggle: toggleSidebarCollapsed }
-                  : undefined}
+                sidebar={{ collapsed: sidebarCollapsed, onToggle: toggleSidebarCollapsed }}
               />
 
               <main className="flex-1 overflow-hidden relative app-main">
-                <div style={paneStyle(moduleActive === "home")} className={moduleActive === "home" ? "pane-enter" : ""}>
-                  <HomeView active={moduleActive === "home"} vaults={vaults} onNavigateToGtd={handleNavigateToGtd} />
-                </div>
                 <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
                   <WebResources active={moduleActive === "resources"} />
                 </div>
                 <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
-                  <GtdView active={moduleActive === "gtd"} focus={gtdFocus} />
+                  <GtdView
+                    active={moduleActive === "gtd"}
+                    focus={gtdFocus}
+                    vaults={vaults}
+                    onOpenProjectLink={openProjectLink}
+                  />
                 </div>
                 <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
                   <LibraryView active={moduleActive === "library"} onOpenSettings={() => showModule("settings")} />
                 </div>
                 <div style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
-                  <Settings active={moduleActive === "settings"} />
+                  <Settings active={moduleActive === "settings"} vaults={vaults} />
                 </div>
 
                 <div style={paneStyle(workspaceActive)}>

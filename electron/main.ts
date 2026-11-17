@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme, nativeImage, powerMonitor } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, net, Menu, screen, protocol, nativeTheme, nativeImage, powerMonitor, globalShortcut, Tray } from "electron";
 import path from "path";
 import fs from "fs";
 import { isPathInside, pathKey as normalizePathKey } from "./paths";
@@ -29,31 +29,33 @@ import {
   setTagColor,
   renameTag,
   deleteTag,
-  addGtdItem,
-  getGtdItems,
-  getGtdCounts,
-  setGtdItemStatus,
-  setGtdItemArchived,
-  renameGtdItem,
-  setGtdItemDescription,
-  setGtdItemColor,
-  setGtdItemDueDate,
-  deleteGtdItem,
-  setGtdItemNext,
-  getGtdActions,
-  addGtdAction,
-  renameGtdAction,
-  toggleGtdAction,
-  reorderGtdActions,
-  deleteGtdAction,
-  setGtdActionNext,
-  setGtdActionDueDate,
-  getGtdNextList,
-  toggleFavoriteNote,
-  getFavoriteNotes,
-  getFavoriteStatus,
-  getRecentNotes,
-  recordRecentOpen,
+  addGtdTask,
+  getGtdOpenTasks,
+  getGtdCompletedTasks,
+  getGtdProjectTasks,
+  getGtdProjects,
+  updateGtdTask,
+  completeGtdTask,
+  reopenGtdTask,
+  deleteGtdTask,
+  clearCompletedGtdTasks,
+  reorderGtdProjectTasks,
+  addGtdProject,
+  updateGtdProject,
+  setGtdProjectArchived,
+  deleteGtdProject,
+  getGtdProject,
+  getGtdProjectFolder,
+  getGtdProjectFolders,
+  setGtdProjectFolder,
+  getGtdProjectLinks,
+  getGtdProjectsForFilePath,
+  setGtdProjectLink,
+  removeGtdProjectLink,
+  renameGtdProjectLinkPath,
+  type GtdProjectFolderRow,
+  type GtdProjectLinkRow,
+  type VaultNote,
   renameNoteEntry,
   purgeVaultNotes,
   listPdfDocuments,
@@ -69,7 +71,33 @@ import {
   deletePdfDocuments,
   type PdfUpsertRow,
 } from "./database";
-import type { CanvasFile, CanvasSaveResult, GtdStatus, NoteBrief } from "../src/shared/models";
+import type {
+  AppLaunchState,
+  CanvasFile,
+  CanvasSaveResult,
+  GlobalShortcutStatus,
+  GtdProjectDocsPayload,
+  GtdProjectFolder,
+  GtdProjectLink,
+  GtdProjectLinkKind,
+  GtdTaskPatch,
+  NoteBrief,
+} from "../src/shared/models";
+import {
+  DEFAULT_SHORTCUTS,
+  GLOBAL_SHORTCUT_ACTIONS,
+  normalizeShortcuts,
+  type GlobalShortcutAction,
+  type ShortcutMap,
+} from "../src/shared/shortcuts";
+import {
+  DEFAULT_SETTINGS,
+  decodeSetting,
+  type AppSettings,
+  type SettingKey,
+} from "../src/shared/settings";
+import zh from "../src/i18n/zh";
+import en from "../src/i18n/en";
 import {
   changeVaultPassword,
   dropSession,
@@ -96,6 +124,277 @@ import {
 import { readSidecar, writeSidecar } from "./sidecar";
 
 let mainWindow: BrowserWindow | null = null;
+let quickCaptureWindow: BrowserWindow | null = null;
+let quickCaptureReady = false;
+
+// OS-level registration state, surfaced to the shortcuts settings page.
+let registeredGlobalShortcuts: GlobalShortcutStatus = {
+  quickCapture: { shortcut: "", registered: false },
+  showMain: { shortcut: "", registered: false },
+};
+
+function readShortcutMap(): ShortcutMap {
+  try {
+    const raw = getSetting("shortcuts");
+    return raw ? normalizeShortcuts(JSON.parse(raw)) : { ...DEFAULT_SHORTCUTS };
+  } catch {
+    return { ...DEFAULT_SHORTCUTS };
+  }
+}
+
+// ---- Tray, close behavior & launch at login ----
+
+let tray: Tray | null = null;
+let isQuitting = false;
+// Set by the login item args (`--hidden`): start with no main window at all,
+// so the background instance never spawns a renderer.
+const startedHidden = process.argv.includes("--hidden");
+let pdfRepoRestored = false;
+
+function readAppSetting<K extends SettingKey>(key: K): AppSettings[K] {
+  try {
+    return decodeSetting(key, getSetting(key));
+  } catch {
+    return DEFAULT_SETTINGS[key];
+  }
+}
+
+function loginItemSupported(): boolean {
+  return process.platform === "win32" || process.platform === "darwin";
+}
+
+// Hiding the window at boot is Windows-only: it relies on login-item `args`,
+// while macOS's `openAsHidden` is deprecated in current Electron.
+function hiddenStartSupported(): boolean {
+  return process.platform === "win32";
+}
+
+// Native menus cannot use the renderer's useT(); the labels come from the same
+// zh/en sources, picked by system locale (anything non-English falls back to
+// the app's default language).
+function nativeLabels() {
+  return app.getLocale().toLowerCase().startsWith("en") ? en : zh;
+}
+
+function trayNeeded(): boolean {
+  return startedHidden
+    || readAppSetting("close_behavior") === "tray"
+    || (readAppSetting("auto_launch") && readAppSetting("auto_launch_hidden"));
+}
+
+function trayIcon() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, "../public/icon-16.png"));
+  const large = nativeImage.createFromPath(path.join(__dirname, "../public/icon-32.png"));
+  if (icon.isEmpty()) return nativeImage.createFromPath(path.join(__dirname, "../public/icon.png"));
+  // A 2x representation keeps the tray icon crisp on scaled displays.
+  if (!large.isEmpty()) icon.addRepresentation({ scaleFactor: 2, dataURL: large.toDataURL() });
+  return icon;
+}
+
+function trayMenu(): Menu {
+  const labels = nativeLabels();
+  return Menu.buildFromTemplate([
+    { label: labels["tray.show"], click: () => revealMainWindow() },
+    { label: labels["tray.quickCapture"], click: () => showQuickCaptureWindow() },
+    { type: "separator" },
+    { label: labels["tray.quit"], click: () => { isQuitting = true; app.quit(); } },
+  ]);
+}
+
+function ensureTray(): void {
+  if (tray) {
+    tray.setContextMenu(trayMenu());
+    return;
+  }
+  try {
+    const created = new Tray(trayIcon());
+    created.setToolTip("Prism");
+    created.setContextMenu(trayMenu());
+    if (process.platform !== "darwin") {
+      // macOS shows the context menu on click; Windows/Linux toggle the window.
+      created.on("click", () => {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
+        else revealMainWindow();
+      });
+      created.on("double-click", () => revealMainWindow());
+    }
+    tray = created;
+  } catch (error) {
+    console.error("tray: failed to create", error);
+    tray = null;
+  }
+}
+
+function destroyTray(): void {
+  tray?.destroy();
+  tray = null;
+}
+
+function syncTray(): void {
+  if (trayNeeded()) {
+    ensureTray();
+    return;
+  }
+  if (!tray) return;
+  // Defensive: never remove the only way back to a hidden window.
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) revealMainWindow();
+  destroyTray();
+}
+
+// Writes (or removes) the OS login item. Only packaged builds touch the system
+// startup entry — in development this would register electron.exe instead.
+// Called once at startup to heal the path/args after a reinstall and again
+// whenever the related settings change.
+function applyAutoLaunch(): void {
+  if (!loginItemSupported() || !app.isPackaged) return;
+  const openAtLogin = readAppSetting("auto_launch");
+  const hidden = readAppSetting("auto_launch_hidden");
+  try {
+    if (process.platform === "win32") {
+      app.setLoginItemSettings({ openAtLogin, args: hidden ? ["--hidden"] : [] });
+    } else if (process.platform === "darwin") {
+      app.setLoginItemSettings({ openAtLogin });
+    }
+  } catch (error) {
+    console.error("auto launch: failed to update login item", error);
+  }
+}
+
+function revealMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  // A monitor may have been unplugged while the window sat in the tray.
+  if (!isVisibleOnSomeDisplay(mainWindow.getBounds())) mainWindow.center();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// The PDF library is restored lazily: a tray-only background instance must not
+// scan the PDF folder at login. First main window creation does it once.
+function ensurePdfRepoRestored(): void {
+  if (pdfRepoRestored) return;
+  pdfRepoRestored = true;
+  void applyPdfRepo(getSetting("pdf_repo_path") ?? "").catch(() => { /* state surfaces in the UI */ });
+}
+
+function launchState(): AppLaunchState {
+  return {
+    packaged: app.isPackaged,
+    loginItemSupported: loginItemSupported(),
+    hiddenStartSupported: hiddenStartSupported(),
+  };
+}
+
+function closeQuickCaptureWindow(): void {
+  const win = quickCaptureWindow;
+  quickCaptureWindow = null;
+  quickCaptureReady = false;
+  if (win && !win.isDestroyed()) win.close();
+}
+
+// The global shortcut must not show the main window. It opens a small,
+// frameless, always-on-top capture popup instead; closing/saving it leaves the
+// main app exactly where it was.
+function showQuickCaptureWindow(): void {
+  if (quickCaptureWindow && !quickCaptureWindow.isDestroyed()) {
+    if (!quickCaptureReady) return;
+    quickCaptureWindow.show();
+    quickCaptureWindow.focus();
+    return;
+  }
+
+  const colorMode = resolveColorScheme(getSetting("color_mode"));
+  const dark = colorMode === "dark"
+    || (colorMode === "system" && nativeTheme.shouldUseDarkColors);
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const width = 560;
+  const height = 200;
+  const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
+  const y = Math.round(display.workArea.y + (display.workArea.height - height) / 2);
+
+  const win = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    title: "Prism Quick Capture",
+    frame: false,
+    show: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    backgroundColor: dark ? DARK_BG : LIGHT_BG,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  quickCaptureWindow = win;
+  quickCaptureReady = false;
+  win.setAlwaysOnTop(true, "floating");
+
+  win.on("blur", () => {
+    if (quickCaptureWindow === win) closeQuickCaptureWindow();
+  });
+  win.on("closed", () => {
+    if (quickCaptureWindow !== win) return;
+    quickCaptureWindow = null;
+    quickCaptureReady = false;
+  });
+  win.once("ready-to-show", () => {
+    if (quickCaptureWindow !== win || win.isDestroyed()) return;
+    quickCaptureReady = true;
+    win.show();
+    win.focus();
+  });
+
+  const mode = dark ? "dark" : "light";
+  if (process.env.NODE_ENV === "development" || process.argv.includes("--dev")) {
+    void win.loadURL(`http://localhost:5173/quick-capture.html?mode=${mode}`);
+  } else {
+    void win.loadFile(path.join(__dirname, "../dist/quick-capture.html"), { query: { mode } });
+  }
+}
+
+// Global actions register with the OS so they also work while Prism is
+// unfocused or only lives in the tray. Everything else stays renderer-side.
+const GLOBAL_SHORTCUT_HANDLERS: Record<GlobalShortcutAction, () => void> = {
+  quickCapture: () => showQuickCaptureWindow(),
+  showMain: () => revealMainWindow(),
+};
+
+// Registers the OS-level shortcuts. Called once at startup (the app may have no
+// main window when it was launched hidden) and again whenever the `shortcuts`
+// setting changes.
+function applyGlobalShortcuts(): void {
+  const accelerators = readShortcutMap();
+  // Release every previous registration before acquiring new ones: combos can
+  // be swapped between actions, and registering before releasing would fail.
+  for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+    const previous = registeredGlobalShortcuts[action].shortcut;
+    if (previous) globalShortcut.unregister(previous);
+  }
+  for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+    const accelerator = accelerators[action];
+    let registered = false;
+    if (accelerator) {
+      try {
+        registered = globalShortcut.register(accelerator, GLOBAL_SHORTCUT_HANDLERS[action]);
+      } catch (error) {
+        console.error(`global shortcut: failed to register ${action}`, error);
+      }
+    }
+    registeredGlobalShortcuts[action] = { shortcut: accelerator, registered };
+  }
+}
 
 // Must run before app ready — lets <img src="prism-file://..."> work from the
 // renderer for markdown note images (the renderer can't fetch file:// directly)
@@ -178,6 +477,9 @@ function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Hidden-to-tray windows stay alive; Chromium's throttling keeps their
+      // timers idle instead of burning CPU in the background.
+      backgroundThrottling: true,
     },
   };
   if (saved && isVisibleOnSomeDisplay(saved)) {
@@ -186,12 +488,24 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow(options);
-  if (saved?.maximized) mainWindow.maximize();
+  const win = mainWindow;
+  if (saved?.maximized) win.maximize();
 
   // Must be registered here — mainWindow is still null while registerIpcHandlers runs
-  mainWindow.on("maximize", () => mainWindow?.webContents.send("window:maximize-change", true));
-  mainWindow.on("unmaximize", () => mainWindow?.webContents.send("window:maximize-change", false));
-  mainWindow.on("closed", () => { mainWindow = null; });
+  win.on("maximize", () => win.webContents.send("window:maximize-change", true));
+  win.on("unmaximize", () => win.webContents.send("window:maximize-change", false));
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+    if (isQuitting || process.platform === "darwin") return;
+    // "关闭即退出" must win even when a tray exists for hidden login startup.
+    if (readAppSetting("close_behavior") === "quit") app.quit();
+  });
+  // Windows logoff/shutdown must never be blocked by the close-to-tray handler.
+  win.on("query-session-end", () => { isQuitting = true; });
+  win.on("session-end", () => { isQuitting = true; });
+  win.once("ready-to-show", () => {
+    if (mainWindow === win && !win.isDestroyed()) win.focus();
+  });
 
   // Persist bounds (debounced; always store the non-maximized rect so restore works)
   let boundsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -204,19 +518,25 @@ function createWindow(): void {
     if (boundsTimer) clearTimeout(boundsTimer);
     boundsTimer = setTimeout(saveBounds, 500);
   };
-  mainWindow.on("resize", scheduleSave);
-  mainWindow.on("move", scheduleSave);
-  mainWindow.on("maximize", scheduleSave);
-  mainWindow.on("unmaximize", scheduleSave);
-  mainWindow.on("close", () => {
+  win.on("resize", scheduleSave);
+  win.on("move", scheduleSave);
+  win.on("maximize", scheduleSave);
+  win.on("unmaximize", scheduleSave);
+  win.on("close", (event) => {
     if (boundsTimer) clearTimeout(boundsTimer);
     saveBounds();
+    // Only hide when a tray actually exists — otherwise closing would leave an
+    // unreachable background process.
+    if (!isQuitting && tray && readAppSetting("close_behavior") === "tray") {
+      event.preventDefault();
+      if (!win.isDestroyed()) win.hide();
+    }
   });
 
   // Focus-triggered incremental scan (throttled per vault). Catches everything
   // fs.watch can silently miss: unplugged/reconnected drives, dead watchers,
   // network drives, change-buffer overflows, new dirs on Linux.
-  mainWindow.on("focus", () => {
+  win.on("focus", () => {
     const now = Date.now();
     for (const vp of watchedVaults) {
       const interval = vaultWatchers.has(vp) ? FOCUS_SAFETY_INTERVAL : FOCUS_SCAN_INTERVAL;
@@ -234,10 +554,14 @@ function createWindow(): void {
   });
 
   if (process.env.NODE_ENV === "development" || process.argv.includes("--dev")) {
-    mainWindow.loadURL("http://localhost:5173");
+    win.loadURL("http://localhost:5173");
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+
+  // Restored on the first main window, not at boot: a tray-only instance must
+  // not scan the PDF library.
+  ensurePdfRepoRestored();
 }
 
 // ---- Fetch page title ----
@@ -600,11 +924,6 @@ function privateVaultRoots(): string[] {
   return registeredVaultPaths().filter(isPrivateVault);
 }
 
-function isPrivateNotePath(filePath: string): boolean {
-  const owner = findOwningVault(filePath);
-  return owner !== null && isPrivateVault(owner);
-}
-
 function requireUnlocked(vaultPath: string): void {
   if (isPrivateVault(vaultPath) && !isUnlocked(vaultPath)) throw new Error("VAULT_LOCKED");
 }
@@ -962,6 +1281,21 @@ function persistPrivateAttachment(vaultPath: string, safeExt: string, data: Buff
   });
 }
 
+const PROJECT_DOCS_DIR = "Projects";
+
+function projectDocsVault(): string | null {
+  const raw = getSetting("project_vault_path");
+  if (!raw) return null;
+  const match = registeredVaultPaths().find(
+    (vaultPath) => normalizePathKey(vaultPath) === normalizePathKey(raw),
+  );
+  return match ?? null;
+}
+
+function isGtdProjectFolderPath(filePath: string): boolean {
+  return getGtdProjectFolders().some((folder) => isPathInside(folder.folder_path, filePath));
+}
+
 // Mind-map documents live in a vault-relative folder (default "canvases") as
 // plain JSON. The same sanitizing rules as attachments keep a bad setting from
 // escaping the vault.
@@ -984,21 +1318,39 @@ function assertCanvasFile(filePath: string): string {
   const vaultPath = findOwningVault(filePath);
   if (!vaultPath) throw new Error("CANVAS_OUTSIDE_VAULT");
   if (!filePath.toLowerCase().endsWith(".json")) throw new Error("CANVAS_INVALID");
-  if (!isPathInside(resolveCanvasDir(vaultPath), filePath)) throw new Error("CANVAS_OUTSIDE_VAULT");
+  // Canvas files normally live in canvas_dir. Project folders are the one
+  // deliberate exception so a project can keep notes and its flow canvas together.
+  if (
+    !isPathInside(resolveCanvasDir(vaultPath), filePath) &&
+    !isGtdProjectFolderPath(filePath)
+  ) {
+    throw new Error("CANVAS_OUTSIDE_VAULT");
+  }
   return vaultPath;
 }
 
 function listCanvasFiles(vaultPath: string): CanvasFile[] {
-  const dir = resolveCanvasDir(vaultPath);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
-    .map((entry) => {
+  const files = new Map<string, CanvasFile>();
+  const addDir = (dir: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue;
       const filePath = path.join(dir, entry.name);
-      const stat = fs.statSync(filePath);
-      return { path: filePath, title: canvasTitle(filePath), modifiedAt: stat.mtimeMs };
-    })
-    .sort((a, b) => b.modifiedAt - a.modifiedAt);
+      files.set(normalizePathKey(filePath), {
+        path: filePath,
+        title: canvasTitle(filePath),
+        modifiedAt: fs.statSync(filePath).mtimeMs,
+      });
+    }
+  };
+
+  addDir(resolveCanvasDir(vaultPath));
+  for (const folder of getGtdProjectFolders()) {
+    if (normalizePathKey(folder.vault_path) === normalizePathKey(vaultPath)) {
+      addDir(folder.folder_path);
+    }
+  }
+  return Array.from(files.values()).sort((a, b) => b.modifiedAt - a.modifiedAt);
 }
 
 function uniqueCanvasName(dir: string, title: string): { path: string; title: string } {
@@ -1046,6 +1398,168 @@ async function ensureVaultIndex(vaultPath: string): Promise<number> {
   } finally {
     vaultScanInFlight.delete(key);
   }
+}
+
+async function createNoteFile(
+  vaultPath: string,
+  targetDir: string,
+  title: string,
+): Promise<VaultNote> {
+  const isPrivate = isPrivateVault(vaultPath);
+  if (isPrivate) requireUnlocked(vaultPath);
+  if (!isPathInside(vaultPath, targetDir)) throw new Error("NOTE_OUTSIDE_VAULT");
+  const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  let fileName = `${safeName}.md`;
+  let filePath = path.join(targetDir, fileName);
+  let counter = 1;
+  while (fs.existsSync(filePath)) {
+    fileName = `${safeName} ${counter}.md`;
+    filePath = path.join(targetDir, fileName);
+    counter++;
+  }
+  const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
+  const content = `# ${finalTitle}\n\n`;
+  if (isPrivate) {
+    markPrivateWrite(vaultPath);
+    return withVaultKey(vaultPath, async (dek) => {
+      const { modified_at } = await writeEncryptedFile(filePath, dek, content);
+      return {
+        id: syntheticNoteId(filePath),
+        vault_path: vaultPath,
+        path: filePath,
+        title: finalTitle,
+        content,
+        tags: "",
+        modified_at,
+      };
+    });
+  }
+  const now = new Date().toISOString();
+  fs.writeFileSync(filePath, content, "utf-8");
+  const tags = Array.from(extractTags(content)).join(" ");
+  const note = insertNote({
+    vault_path: vaultPath,
+    path: filePath,
+    title: finalTitle,
+    content,
+    tags,
+    modified_at: now,
+  });
+  // The note library is frequently mounted (hidden) while another module creates
+  // a note (project docs, link creation). Without this push its cached list stays
+  // stale until the folder is rescanned.
+  const upserted = getNoteBriefsByPaths(vaultPath, [note.path]);
+  if (upserted.length > 0) {
+    mainWindow?.webContents.send("vault:updated", vaultPath, { upserted, deleted: [] });
+  }
+  return note;
+}
+
+async function createCanvasFile(
+  vaultPath: string,
+  dir: string,
+  title: string,
+  templateJson: string,
+): Promise<CanvasFile> {
+  if (!isPathInside(vaultPath, dir)) throw new Error("CANVAS_OUTSIDE_VAULT");
+  if (isPrivateVault(vaultPath)) {
+    requireUnlocked(vaultPath);
+    markPrivateWrite(vaultPath);
+    return withVaultKey(vaultPath, async (dek) => {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const target = uniqueCanvasName(dir, title);
+      const { mtimeMs } = await writeEncryptedFile(target.path, dek, templateJson);
+      return { path: target.path, title: target.title, modifiedAt: mtimeMs };
+    });
+  }
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const target = uniqueCanvasName(dir, title);
+  fs.writeFileSync(target.path, templateJson, "utf-8");
+  const stat = fs.statSync(target.path);
+  return { path: target.path, title: target.title, modifiedAt: stat.mtimeMs };
+}
+
+function toGtdProjectFolder(row: GtdProjectFolderRow): GtdProjectFolder {
+  const owner = findOwningVault(row.folder_path);
+  return {
+    projectId: row.project_id,
+    vaultPath: row.vault_path,
+    folderPath: row.folder_path,
+    missing: !fs.existsSync(row.folder_path) || !owner || !isPathInside(row.vault_path, row.folder_path),
+  };
+}
+
+function ensureGtdProjectFolder(projectId: number): GtdProjectFolderRow {
+  const project = getGtdProject(projectId);
+  if (project.archivedAt) throw new Error("GTD project is archived");
+
+  const existing = getGtdProjectFolder(projectId);
+  if (existing && fs.existsSync(existing.folder_path)) {
+    const owner = findOwningVault(existing.folder_path);
+    if (owner && isPathInside(owner, existing.folder_path)) return existing;
+  }
+  if (existing) {
+    // Keep the existing folder location when its vault is still registered;
+    // only fall back to the configured project vault when it is gone.
+    const owner = findOwningVault(existing.folder_path);
+    if (owner) {
+      if (isPrivateVault(owner)) requireUnlocked(owner);
+      fs.mkdirSync(existing.folder_path, { recursive: true });
+      return setGtdProjectFolder(projectId, owner, existing.folder_path);
+    }
+  }
+
+  const vault = projectDocsVault();
+  if (!vault) throw new Error("PROJECT_VAULT_NOT_SET");
+  if (isPrivateVault(vault)) requireUnlocked(vault);
+  const root = path.join(vault, PROJECT_DOCS_DIR);
+  fs.mkdirSync(root, { recursive: true });
+  const safeName =
+    project.title
+      .trim()
+      .replace(/[<>:"/\\|?*]/g, "-")
+      .replace(/^\.+|\.+$/g, "")
+      .trim() || "Untitled";
+  const taken = new Set(
+    getGtdProjectFolders().map((folder) => normalizePathKey(folder.folder_path)),
+  );
+  let folderPath = path.join(root, safeName);
+  let counter = 1;
+  while (fs.existsSync(folderPath) || taken.has(normalizePathKey(folderPath))) {
+    folderPath = path.join(root, `${safeName} ${counter}`);
+    counter++;
+  }
+  fs.mkdirSync(folderPath, { recursive: true });
+  return setGtdProjectFolder(projectId, vault, folderPath);
+}
+
+function toGtdProjectLink(row: GtdProjectLinkRow): GtdProjectLink {
+  const owner = findOwningVault(row.file_path);
+  const exists = fs.existsSync(row.file_path);
+  const validKind =
+    row.kind === "note"
+      ? row.file_path.toLowerCase().endsWith(".md")
+      : row.file_path.toLowerCase().endsWith(".json") &&
+        !!owner &&
+        (isPathInside(resolveCanvasDir(owner), row.file_path) ||
+          isGtdProjectFolderPath(row.file_path));
+  return {
+    id: row.id,
+    kind: row.kind,
+    vaultPath: owner ?? row.vault_path,
+    filePath: row.file_path,
+    title: row.title,
+    missing: !exists || !owner || !validKind,
+  };
+}
+
+function getGtdProjectDocsPayload(projectId: number): GtdProjectDocsPayload {
+  const folderRow = getGtdProjectFolder(projectId);
+  return {
+    folder: folderRow ? toGtdProjectFolder(folderRow) : null,
+    links: getGtdProjectLinks(projectId).map(toGtdProjectLink),
+  };
 }
 
 function registerIpcHandlers(): void {
@@ -1118,43 +1632,9 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("vault:create-note", async (_e, vaultPath: string, title: string) => {
-    const isPrivate = isPrivateVault(vaultPath);
-    if (isPrivate) requireUnlocked(vaultPath);
-    const safeName = title.trim().replace(/[<>:"/\\|?*]/g, "-") || "Untitled";
     const defaultDir = getSetting("default_notes_dir") || "";
     const targetDir = defaultDir ? path.join(vaultPath, defaultDir) : vaultPath;
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-    let fileName = `${safeName}.md`;
-    let filePath = path.join(targetDir, fileName);
-    let counter = 1;
-    while (fs.existsSync(filePath)) {
-      fileName = `${safeName} ${counter}.md`;
-      filePath = path.join(targetDir, fileName);
-      counter++;
-    }
-    const finalTitle = counter > 1 ? `${safeName} ${counter - 1}` : safeName;
-    const content = `# ${finalTitle}\n\n`;
-    if (isPrivate) {
-      markPrivateWrite(vaultPath);
-      return withVaultKey(vaultPath, async (dek) => {
-        const { modified_at } = await writeEncryptedFile(filePath, dek, content);
-        return {
-          id: syntheticNoteId(filePath),
-          vault_path: vaultPath,
-          path: filePath,
-          title: finalTitle,
-          content,
-          tags: "",
-          modified_at,
-        };
-      });
-    }
-    const now = new Date().toISOString();
-    fs.writeFileSync(filePath, content, "utf-8");
-    const tags = Array.from(extractTags(content)).join(" ");
-    return insertNote({ vault_path: vaultPath, path: filePath, title: finalTitle, content, tags, modified_at: now });
+    return createNoteFile(vaultPath, targetDir, title);
   });
 
   ipcMain.handle("vault:rename-note", async (_e, vaultPath: string, oldPath: string, newTitle: string) => {
@@ -1173,7 +1653,7 @@ function registerIpcHandlers(): void {
       fs.renameSync(oldPath, newPath);
     }
     if (isPrivate) {
-      // Not indexed, but favorites may point at this path — keep them in sync.
+      // Not indexed, but project links may point at this path — keep them in sync.
       markPrivateWrite(vaultPath);
       renameNoteEntry(oldPath, newPath, finalTitle);
       const stat = await fs.promises.stat(newPath);
@@ -1212,7 +1692,6 @@ function registerIpcHandlers(): void {
         };
       });
     }
-    recordRecentOpen(filePath);
     const content = await fs.promises.readFile(filePath, "utf-8");
     const stat = await fs.promises.stat(filePath);
     return {
@@ -1343,23 +1822,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("canvas:create", async (_e, vaultPath: string, title: string, templateJson: string) => {
     if (!findOwningVault(vaultPath)) throw new Error("CANVAS_OUTSIDE_VAULT");
-    if (isPrivateVault(vaultPath)) {
-      requireUnlocked(vaultPath);
-      markPrivateWrite(vaultPath);
-      return withVaultKey(vaultPath, async (dek) => {
-        const dir = resolveCanvasDir(vaultPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const target = uniqueCanvasName(dir, title);
-        const { mtimeMs } = await writeEncryptedFile(target.path, dek, templateJson);
-        return { path: target.path, title: target.title, modifiedAt: mtimeMs };
-      });
-    }
-    const dir = resolveCanvasDir(vaultPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const target = uniqueCanvasName(dir, title);
-    fs.writeFileSync(target.path, templateJson, "utf-8");
-    const stat = fs.statSync(target.path);
-    return { path: target.path, title: target.title, modifiedAt: stat.mtimeMs };
+    return createCanvasFile(vaultPath, resolveCanvasDir(vaultPath), title, templateJson);
   });
 
   ipcMain.handle("canvas:rename", (_e, canvasPath: string, newTitle: string) => {
@@ -1376,6 +1839,7 @@ function registerIpcHandlers(): void {
     if (!isSamePath(newPath, canvasPath)) {
       fs.renameSync(canvasPath, newPath);
     }
+    renameGtdProjectLinkPath(canvasPath, newPath, finalTitle);
     const stat = fs.statSync(newPath);
     return { path: newPath, title: finalTitle, modifiedAt: stat.mtimeMs };
   });
@@ -1401,8 +1865,12 @@ function registerIpcHandlers(): void {
       void applyPdfRepo(value).catch(() => { /* surfaced via pdf:get-state */ });
     }
     if (key === "private_lock_minutes") refreshIdleTimers();
+    if (key === "shortcuts") applyGlobalShortcuts();
+    if (key === "auto_launch" || key === "auto_launch_hidden") applyAutoLaunch();
+    if (key === "close_behavior" || key === "auto_launch" || key === "auto_launch_hidden") syncTray();
   });
   ipcMain.handle("settings:get-all", () => getAllSettings());
+  ipcMain.handle("app:get-launch-state", (): AppLaunchState => launchState());
   ipcMain.handle("app:set-color-mode", (_e, mode: string) => applyNativeColorMode(mode));
   nativeTheme.on("updated", () => {
     if (resolveColorScheme(getSetting("color_mode")) === "system") applyNativeColorMode("system");
@@ -1416,40 +1884,111 @@ function registerIpcHandlers(): void {
   ipcMain.handle("tags:delete", (_e, name: string) => deleteTag(name));
 
   // GTD
-  ipcMain.handle("gtd:add", (_e, title: string) => addGtdItem(title));
-  ipcMain.handle("gtd:list", (_e, status: GtdStatus) => getGtdItems(status));
-  ipcMain.handle("gtd:counts", () => getGtdCounts());
-  ipcMain.handle("gtd:set-status", (_e, id: number, status: GtdStatus) => setGtdItemStatus(id, status));
-  ipcMain.handle("gtd:set-archived", (_e, id: number, archived: boolean) => setGtdItemArchived(id, archived));
-  ipcMain.handle("gtd:rename", (_e, id: number, title: string) => renameGtdItem(id, title));
-  ipcMain.handle("gtd:set-description", (_e, id: number, description: string) => setGtdItemDescription(id, description));
-  ipcMain.handle("gtd:set-color", (_e, id: number, color: string) => setGtdItemColor(id, color));
-  ipcMain.handle("gtd:set-due-date", (_e, id: number, dueDate: string | null) => setGtdItemDueDate(id, dueDate));
-  ipcMain.handle("gtd:delete", (_e, id: number) => deleteGtdItem(id));
-  ipcMain.handle("gtd:set-next", (_e, id: number, isNext: boolean) => setGtdItemNext(id, isNext));
-  ipcMain.handle("gtd:list-actions", (_e, projectId: number) => getGtdActions(projectId));
-  ipcMain.handle("gtd:add-action", (_e, projectId: number, title: string) => addGtdAction(projectId, title));
-  ipcMain.handle("gtd:rename-action", (_e, id: number, title: string) => renameGtdAction(id, title));
-  ipcMain.handle("gtd:toggle-action", (_e, id: number) => toggleGtdAction(id));
-  ipcMain.handle("gtd:reorder-actions", (_e, projectId: number, orderedIds: number[]) => reorderGtdActions(projectId, orderedIds));
-  ipcMain.handle("gtd:delete-action", (_e, id: number) => deleteGtdAction(id));
-  ipcMain.handle("gtd:set-action-next", (_e, projectId: number, actionId: number | null) => setGtdActionNext(projectId, actionId));
-  ipcMain.handle("gtd:set-action-due-date", (_e, id: number, dueDate: string | null) => setGtdActionDueDate(id, dueDate));
-  ipcMain.handle("gtd:next-list", () => getGtdNextList());
+  ipcMain.handle("gtd:open-tasks", () => getGtdOpenTasks());
+  ipcMain.handle("gtd:completed-tasks", (_e, limit?: number) => getGtdCompletedTasks(limit ?? 200));
+  ipcMain.handle("gtd:project-tasks", (_e, projectId: number) => getGtdProjectTasks(projectId));
+  ipcMain.handle("gtd:projects", (_e, archived: boolean) => getGtdProjects(archived));
+  ipcMain.handle(
+    "gtd:add-task",
+    (_e, title: string, projectId: number | null = null, scheduledDate: string | null = null) =>
+      addGtdTask(title, projectId, scheduledDate),
+  );
+  ipcMain.handle("gtd:update-task", (_e, id: number, patch: GtdTaskPatch) => updateGtdTask(id, patch));
+  ipcMain.handle("gtd:complete-task", (_e, id: number) => completeGtdTask(id));
+  ipcMain.handle("gtd:reopen-task", (_e, id: number) => reopenGtdTask(id));
+  ipcMain.handle("gtd:delete-task", (_e, id: number) => deleteGtdTask(id));
+  ipcMain.handle("gtd:clear-completed", () => clearCompletedGtdTasks());
+  ipcMain.handle("gtd:reorder-project-tasks", (_e, projectId: number, orderedIds: number[]) => reorderGtdProjectTasks(projectId, orderedIds));
+  ipcMain.handle("gtd:add-project", (_e, title: string) => addGtdProject(title));
+  ipcMain.handle("gtd:update-project", (_e, id: number, patch: { title?: string; description?: string; color?: string }) => updateGtdProject(id, patch));
+  ipcMain.handle("gtd:archive-project", (_e, id: number, archived: boolean) => setGtdProjectArchived(id, archived));
+  ipcMain.handle("gtd:delete-project", (_e, id: number) => deleteGtdProject(id));
 
-  // Favorite / recent notes. Private-vault favorites keep working: titles are
-  // filename-derived (filenames stay plaintext by design) and the home list
-  // gates opening through the unlock modal. Recents still exclude private
-  // notes so that opening one never advertises it afterwards.
-  ipcMain.handle("notes:toggle-favorite", (_e, notePath: string, title: string) =>
-    toggleFavoriteNote(notePath, title));
-  ipcMain.handle("notes:favorites", () =>
-    getFavoriteNotes().map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
-  ipcMain.handle("notes:favorite-status", (_e, paths: string[]) => getFavoriteStatus(paths));
-  ipcMain.handle("notes:recents", (_e, limit?: number) =>
-    getRecentNotes(limit)
-      .filter((n) => !isPrivateNotePath(n.path))
-      .map((n) => ({ ...n, missing: !fs.existsSync(n.path) })));
+  ipcMain.handle("gtd:project-docs", (_e, projectId: number) => getGtdProjectDocsPayload(projectId));
+  ipcMain.handle("gtd:projects-for-file", (_e, filePath: string) =>
+    getGtdProjectsForFilePath(String(filePath ?? "")),
+  );
+
+  ipcMain.handle("gtd:ensure-project-folder", (_e, projectId: number) =>
+    toGtdProjectFolder(ensureGtdProjectFolder(projectId)),
+  );
+
+  ipcMain.handle("gtd:open-project-folder", async (_e, projectId: number) => {
+    const row = getGtdProjectFolder(projectId);
+    if (!row) throw new Error("PROJECT_FOLDER_NOT_FOUND");
+    const folder = toGtdProjectFolder(row);
+    if (folder.missing) throw new Error("PROJECT_FOLDER_MISSING");
+    const error = await shell.openPath(row.folder_path);
+    if (error) throw new Error(error);
+  });
+
+  ipcMain.handle(
+    "gtd:create-project-file",
+    async (_e, projectId: number, kind: GtdProjectLinkKind, templateJson?: string) => {
+      if (kind !== "note" && kind !== "canvas") throw new Error("INVALID_PROJECT_LINK_KIND");
+      const project = getGtdProject(projectId);
+      if (project.archivedAt) throw new Error("GTD project is archived");
+      const folder = ensureGtdProjectFolder(projectId);
+      const title = kind === "note" ? `${project.title} 文档` : `${project.title} 白板`;
+      if (kind === "note") {
+        const note = await createNoteFile(folder.vault_path, folder.folder_path, title);
+        return toGtdProjectLink(
+          setGtdProjectLink(projectId, "note", folder.vault_path, note.path, note.title),
+        );
+      }
+      if (!templateJson) throw new Error("CANVAS_TEMPLATE_REQUIRED");
+      const canvas = await createCanvasFile(
+        folder.vault_path,
+        folder.folder_path,
+        title,
+        templateJson,
+      );
+      return toGtdProjectLink(
+        setGtdProjectLink(projectId, "canvas", folder.vault_path, canvas.path, canvas.title),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "gtd:set-project-link",
+    (_e, projectId: number, kind: GtdProjectLinkKind, filePath: string, title: string) => {
+      if (kind !== "note" && kind !== "canvas") throw new Error("INVALID_PROJECT_LINK_KIND");
+      const project = getGtdProject(projectId);
+      if (project.archivedAt) throw new Error("GTD project is archived");
+      const vaultPath = findOwningVault(filePath);
+      if (!vaultPath) throw new Error("FILE_OUTSIDE_VAULT");
+      if (!fs.existsSync(filePath)) throw new Error("FILE_MISSING");
+      if (kind === "note") {
+        if (!filePath.toLowerCase().endsWith(".md")) throw new Error("INVALID_NOTE_FILE");
+      } else {
+        assertCanvasFile(filePath);
+      }
+      const cleanTitle = title?.trim() || path.basename(filePath, path.extname(filePath));
+      return toGtdProjectLink(
+        setGtdProjectLink(projectId, kind, vaultPath, filePath, cleanTitle),
+      );
+    },
+  );
+
+  ipcMain.handle("gtd:remove-project-link", (_e, linkId: number) => removeGtdProjectLink(linkId));
+
+  // Global shortcuts: registration state feeds the "could not register"
+  // warning in the shortcuts settings. The capture popup itself is opened by
+  // the OS shortcut or by the renderer fallback below.
+  ipcMain.handle("shortcuts:get-global-status", (): GlobalShortcutStatus => ({
+    ...registeredGlobalShortcuts,
+  }));
+  ipcMain.handle("quick-capture:open", () => showQuickCaptureWindow());
+  // Let the invoke reply reach the popup before destroying its window.
+  ipcMain.handle("quick-capture:close", () => {
+    setImmediate(() => closeQuickCaptureWindow());
+  });
+  ipcMain.handle("quick-capture:submit", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("quick-capture:saved");
+    }
+    setImmediate(() => closeQuickCaptureWindow());
+  });
 
   // Private vaults
   ipcMain.handle("vault:privacy-statuses", () => privacyStatuses());
@@ -1949,35 +2488,69 @@ function registerPdfjsAssetProtocol(): void {
   });
 }
 
-app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
-  initDatabase();
-  setIdleMinutesProvider(() => Number(getSetting("private_lock_minutes")) || 10);
-  setLockListener((vaultPath) => mainWindow?.webContents.send("vault:locked", vaultPath));
-  setUnlockListener((vaultPath) => mainWindow?.webContents.send("vault:unlocked", vaultPath));
-  // Walking away or suspending must not leave decrypted content on screen.
-  powerMonitor.on("lock-screen", () => { void lockAllVaults(); });
-  powerMonitor.on("suspend", () => { void lockAllVaults(); });
-  registerAssetProtocol();
-  registerCoverProtocol();
-  registerPdfProtocol();
-  registerPdfjsAssetProtocol();
-  registerIpcHandlers();
-  createWindow();
-  void applyPdfRepo(getSetting("pdf_repo_path") ?? "").catch(() => { /* state surfaces in the UI */ });
+// ---- App lifecycle ----
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// A packaged app can be started twice (login item + manual launch). One
+// instance owns the tray and global shortcut; the second one reports back and
+// quits. Development is exempt so `electron:dev` never fights the installed
+// build over the lock.
+const hasSingleInstanceLock = app.isPackaged ? app.requestSingleInstanceLock() : true;
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  if (app.isPackaged) {
+    app.on("second-instance", (_event, argv) => {
+      // A hidden login-start relaunch must not steal focus.
+      if (argv.includes("--hidden")) return;
+      revealMainWindow();
+    });
+  }
+
+  app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
+    initDatabase();
+    setIdleMinutesProvider(() => Number(getSetting("private_lock_minutes")) || 10);
+    setLockListener((vaultPath) => mainWindow?.webContents.send("vault:locked", vaultPath));
+    setUnlockListener((vaultPath) => mainWindow?.webContents.send("vault:unlocked", vaultPath));
+    // Walking away or suspending must not leave decrypted content on screen.
+    powerMonitor.on("lock-screen", () => { void lockAllVaults(); });
+    powerMonitor.on("suspend", () => { void lockAllVaults(); });
+    // Never let the close-to-tray handler block an OS shutdown/logoff.
+    powerMonitor.on("shutdown", () => { isQuitting = true; });
+    registerAssetProtocol();
+    registerCoverProtocol();
+    registerPdfProtocol();
+    registerPdfjsAssetProtocol();
+    registerIpcHandlers();
+    // Heal the login item (path/args) so a reinstalled/moved build keeps
+    // starting at login exactly as the settings say.
+    applyAutoLaunch();
+    // Hidden startup deliberately creates no window: no renderer, no vault
+    // watchers, no PDF scan. The tray and hotkey bring it back on demand.
+    if (!startedHidden) createWindow();
+    syncTray();
+    applyGlobalShortcuts();
+
+    app.on("activate", () => revealMainWindow());
   });
-});
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.on("before-quit", () => { isQuitting = true; });
 
-app.on("will-quit", () => {
-  for (const vaultPath of Array.from(watchedVaults)) unwatchVault(vaultPath);
-  unwatchPdfRepo();
-  // Zero every session key (process memory disappears right after anyway).
-  void lockAllVaults();
-});
+  // Closing the capture popup is the last window in a tray-only session; that
+  // must keep the app (and its hotkey) alive.
+  app.on("window-all-closed", () => {
+    if (isQuitting || process.platform === "darwin") return;
+    if (tray || startedHidden) return;
+    app.quit();
+  });
+
+  app.on("will-quit", () => {
+    destroyTray();
+    globalShortcut.unregisterAll();
+    for (const vaultPath of Array.from(watchedVaults)) unwatchVault(vaultPath);
+    unwatchPdfRepo();
+    // Zero every session key (process memory disappears right after anyway).
+    void lockAllVaults();
+  });
+}

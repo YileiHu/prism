@@ -29,7 +29,7 @@ import {
 
 const WORKSPACE_KEY = "workspace_v1";
 const RESTORE_KEY = "restore_note_tabs";
-const MODULE_IDS: ReadonlySet<string> = new Set(["home", "resources", "gtd", "library", "settings"]);
+const MODULE_IDS: ReadonlySet<string> = new Set(["resources", "gtd", "library", "settings"]);
 
 interface PersistedWorkspace {
   version?: number;
@@ -216,7 +216,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       let tabs: DocTab[] = [];
       let restoredActiveId: string | null = null;
-      let restoredModule: ModuleId = "home";
+      let restoredModule: ModuleId = "gtd";
       let restoredLibrary = defaultLibrary(vaults, pdfRepoPath);
 
       if (restore && parsed && parsed.version === 1) {
@@ -228,7 +228,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         restoredActiveId = tabs.some((tab) => tab.id === parsed?.activeId)
           ? (parsed.activeId as string)
           : tabs[0]?.id ?? null;
-        restoredModule = isModuleId(parsed.module) ? parsed.module : "home";
+        restoredModule = isModuleId(parsed.module) ? parsed.module : "gtd";
         restoredLibrary =
           validLibrary(parsed.library, vaults, pdfRepoPath) ?? defaultLibrary(vaults, pdfRepoPath);
       } else if (restore) {

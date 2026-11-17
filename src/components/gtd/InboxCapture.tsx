@@ -9,9 +9,24 @@ interface Props {
   rows?: number;
   /** Stretch to the container instead of growing with the content. */
   fill?: boolean;
+  /** When set, new tasks are added straight into this project. */
+  projectId?: number | null;
+  /** When set, the new task is created on this date in one IPC call. */
+  scheduledDate?: string | null;
+  placeholder?: string;
+  onSaved?: () => void;
 }
 
-export default function InboxCapture({ className = "", autoFocus, rows = 1, fill = false }: Props) {
+export default function InboxCapture({
+  className = "",
+  autoFocus,
+  rows = 1,
+  fill = false,
+  projectId = null,
+  scheduledDate = null,
+  placeholder,
+  onSaved,
+}: Props) {
   const { t } = useT();
   const showToast = useToast();
   const [draft, setDraft] = useState("");
@@ -27,7 +42,7 @@ export default function InboxCapture({ className = "", autoFocus, rows = 1, fill
     const title = draft.trim();
     if (!title) return;
     try {
-      await window.prism.addGtdItem(title);
+      await window.prism.addGtdTask(title, projectId, scheduledDate);
     } catch {
       showToast(t["common.saveFailed"], "error");
       return;
@@ -37,6 +52,7 @@ export default function InboxCapture({ className = "", autoFocus, rows = 1, fill
       inputRef.current.style.height = "";
       inputRef.current.focus();
     }
+    onSaved?.();
     window.dispatchEvent(new Event("gtd-changed"));
   };
 
@@ -55,7 +71,7 @@ export default function InboxCapture({ className = "", autoFocus, rows = 1, fill
           submit();
         }
       }}
-      placeholder={t["gtd.quickAdd"]}
+      placeholder={placeholder ?? t["gtd.quickAdd"]}
       autoFocus={autoFocus}
       className={`w-full resize-none overflow-y-auto ${fill ? "" : "max-h-24"} ${className}`}
     />

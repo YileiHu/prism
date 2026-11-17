@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Database, Keyboard, LayoutGrid, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
+import { Database, Keyboard, LayoutGrid, ListChecks, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
 import { useSettings } from "../lib/settings";
@@ -18,13 +18,15 @@ import ExternalSection from "./settings/ExternalSection";
 import ShortcutsSection from "./settings/ShortcutsSection";
 import PdfSection from "./settings/PdfSection";
 import CanvasSection from "./settings/CanvasSection";
+import GtdSection from "./settings/GtdSection";
+import type { VaultEntry } from "../types";
 
-type SettingsCategory = "general" | "vaults" | "editor" | "canvas" | "appearance" | "search" | "external" | "shortcuts";
+type SettingsCategory = "general" | "vaults" | "editor" | "canvas" | "gtd" | "appearance" | "search" | "external" | "shortcuts";
 
 const CATEGORY_KEY = "prism_settings_category";
-const CATEGORIES: SettingsCategory[] = ["general", "vaults", "editor", "canvas", "appearance", "search", "external", "shortcuts"];
+const CATEGORIES: SettingsCategory[] = ["general", "vaults", "editor", "canvas", "gtd", "appearance", "search", "external", "shortcuts"];
 
-export default function Settings({ active }: { active: boolean }) {
+export default function Settings({ active, vaults }: { active: boolean; vaults: VaultEntry[] }) {
   const { t, setLang } = useT();
   const { setTheme, setMode } = useTheme();
   const { reset } = useSettings();
@@ -71,6 +73,7 @@ export default function Settings({ active }: { active: boolean }) {
     { key: "vaults", label: t["settings.catLibrary"], icon: Database },
     { key: "editor", label: t["settings.catEditor"], icon: SquarePen },
     { key: "canvas", label: t["settings.catCanvas"], icon: LayoutGrid },
+    { key: "gtd", label: t["settings.catGtd"], icon: ListChecks },
     { key: "appearance", label: t["settings.catAppearance"], icon: Palette },
     { key: "search", label: t["settings.catSearch"], icon: Search },
     { key: "shortcuts", label: t["settings.catShortcuts"], icon: Keyboard },
@@ -135,6 +138,7 @@ export default function Settings({ active }: { active: boolean }) {
           )}
           {category === "editor" && <EditorSection />}
           {category === "canvas" && <CanvasSection />}
+          {category === "gtd" && <GtdSection vaults={vaults} />}
           {category === "appearance" && <AppearanceSection />}
           {category === "search" && <SearchSection />}
           {category === "shortcuts" && <ShortcutsSection />}

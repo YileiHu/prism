@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Personal knowledge management desktop app",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -9,6 +9,10 @@
     "electron:dev": "vite",
     "electron:build": "vite build && electron-builder",
     "lint": "tsc --noEmit",
+    "docs": "node scripts/ai/gen-reference.mjs",
+    "docs:check": "node scripts/ai/check-docs.mjs",
+    "verify": "npm run lint && npm run docs:check",
+    "release:win": "npm run verify && npm run electron:build",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "preview": "vite preview",
     "generate-icons": "electron scripts/generate-icons.mjs"
@@ -26,7 +30,7 @@
       "output": "release"
     },
     "win": {
-      "icon": "public/icon.png",
+      "icon": "public/icon.ico",
       "target": "nsis"
     },
     "nsis": {

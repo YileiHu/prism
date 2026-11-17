@@ -128,7 +128,6 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     searchScope,
     changeSearchScope,
     selectCollection,
-    favorites,
     reload,
     collectionColorByName,
     collections,
@@ -264,9 +263,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         }))
       : [{ label: t["collections.none"], onClick: () => {} }];
 
-    const items: MenuItem[] = noteBaseMenuItems(note, favorites.has(note.path), {
-      favorite: t["menu.favorite"],
-      unfavorite: t["menu.unfavorite"],
+    const items: MenuItem[] = noteBaseMenuItems(note, {
       showInExplorer: t["menu.showInExplorer"],
     });
 

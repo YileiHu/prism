@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSettings } from "./settings";
 import {
+  QUICK_CAPTURE_EVENT,
   SHORTCUT_ACTIONS,
   SHORTCUT_EVENT,
   shortcutFromEvent,
@@ -28,10 +29,24 @@ export function useGlobalShortcuts(activeTab: string, isVaultTab: boolean) {
       // not toggle modes or steal focus mid-edit).
       if (e.target instanceof Element && e.target.closest("[data-prism-subeditor]")) return;
       if (overlayOpen()) return;
+      // The settings recorder owns the keyboard while it is listening.
+      if (e.target instanceof Element && e.target.closest("[data-prism-shortcut-recorder]")) return;
       const combo = shortcutFromEvent(e);
       if (!combo) return;
       const action = SHORTCUT_ACTIONS.find((candidate) => shortcuts[candidate] === combo);
       if (!action) return;
+      // Bringing the main window forward only matters while Prism is unfocused;
+      // main's OS-level registration owns that. Leave the in-app key untouched.
+      if (action === "showMain") return;
+      // Quick capture is app-wide, not vault-scoped. The OS-level shortcut in
+      // main is the primary path; this in-app fallback keeps it working when
+      // that registration was unavailable.
+      if (action === "quickCapture") {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new Event(QUICK_CAPTURE_EVENT));
+        return;
+      }
       // Non-vault tabs have no target for these actions; leave the event
       // untouched so the settings recorder still receives it.
       if (!isVaultTab) return;

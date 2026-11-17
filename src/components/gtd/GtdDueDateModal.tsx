@@ -10,11 +10,12 @@ interface Props {
   open: boolean;
   title: string;
   value: string | null;
+  kind?: "scheduled" | "due";
   onClose: () => void;
   onSave: (date: string | null) => void;
 }
 
-export default function GtdDueDateModal({ open, title, value, onClose, onSave }: Props) {
+export default function GtdDueDateModal({ open, title, value, kind = "scheduled", onClose, onSave }: Props) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
 
@@ -34,7 +35,7 @@ export default function GtdDueDateModal({ open, title, value, onClose, onSave }:
     <Modal
       open={open}
       onClose={onClose}
-      title={t["gtd.dueDate.title"]}
+      title={kind === "due" ? t["gtd.dueDate.title"] : t["gtd.scheduledDate"]}
       icon={CalendarDays}
       size="sm"
       footer={

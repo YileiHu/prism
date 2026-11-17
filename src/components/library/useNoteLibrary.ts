@@ -43,7 +43,6 @@ export function useNoteLibrary(vaultPath: string) {
   );
   const debouncedQuery = useDebouncedValue(searchQuery);
   const [notesLoading, setNotesLoading] = useState(false);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   // Which vault the current `notes` / `collections` state belongs to. Writes to
   // collections.json are gated on this matching the live vaultPath — switching
   // vaults must never let stale data be saved under the new vault.
@@ -116,7 +115,6 @@ export function useNoteLibrary(vaultPath: string) {
         setNotes([]);
         setCollections([]);
         setSelectedCollectionId(null);
-        setFavorites(new Set());
         setShownVaultPath("");
       }
     }
@@ -124,7 +122,6 @@ export function useNoteLibrary(vaultPath: string) {
       setNotes([]);
       setCollections([]);
       setSelectedCollectionId(null);
-      setFavorites(new Set());
       setScanning(false);
       setInitialLoading(false);
       setSwitching(false);
@@ -205,25 +202,6 @@ export function useNoteLibrary(vaultPath: string) {
   const collectionsApi = useCollections({ vaultPath: viewVaultPath, dataVaultPath, notes, loadNotes, searching: debouncedQuery.trim() !== "" });
   const { setCollections, setSelectedCollectionId } = collectionsApi;
 
-  const refreshFavorites = useCallback(async () => {
-    if (notes.length === 0) {
-      setFavorites(new Set());
-      return;
-    }
-    const paths = await window.prism.getFavoriteStatus(notes.map((note) => note.path));
-    setFavorites(new Set(paths));
-  }, [notes]);
-
-  useEffect(() => {
-    void refreshFavorites();
-  }, [refreshFavorites]);
-
-  useEffect(() => {
-    const handler = () => { void refreshFavorites(); };
-    window.addEventListener("favorites-changed", handler);
-    return () => window.removeEventListener("favorites-changed", handler);
-  }, [refreshFavorites]);
-
   useEffect(() => {
     return window.prism.onVaultUpdated((changedPath, changes) => {
       if (normalizePath(changedPath) !== normalizePath(vaultPath) || scanning || locked) return;
@@ -298,7 +276,6 @@ export function useNoteLibrary(vaultPath: string) {
     selectCollection,
     selectCanvasView,
     findCollectionForNote,
-    favorites,
     loadNotes,
     reload: () => setReloadKey((key) => key + 1),
     collectionColorByName,

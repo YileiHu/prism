@@ -42,17 +42,26 @@ export function SettingBlock({
   );
 }
 
-export function Toggle({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+export function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       data-on={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`switch-track relative w-9 h-5 rounded-full transition-colors ${
         checked ? "bg-[var(--accent)]" : "bg-[var(--inset-bg)]"
-      }`}
+      } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
     >
       <span
         className={`switch-thumb absolute top-0.5 w-4 h-4 rounded-full transition-transform ${

@@ -10,6 +10,7 @@ import { useSettings } from "../../lib/settings";
 import { useAutosaveTimer } from "../../lib/useAutosave";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
+import ProjectJumpButton from "../gtd/ProjectJumpButton";
 import { type MenuItem } from "../ContextMenu";
 import Button from "../Button";
 import Input from "../Input";
@@ -1045,6 +1046,7 @@ export default function NoteEditor({
     ),
     actions: (
       <>
+        <ProjectJumpButton filePath={notePath} />
         <Button variant="ghost" size="icon-sm" onClick={openInsert} title={t["insert.title"]}>
           <Plus size={15} />
         </Button>

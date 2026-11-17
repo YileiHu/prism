@@ -30,6 +30,10 @@ export type CanvasMinimapPosition =
 
 export type CanvasBackground = "dots" | "lines" | "cross" | "none";
 
+// What the title-bar close button (and Alt+F4) does. "tray" hides the window
+// and keeps the app running so the global capture shortcut stays available.
+export type CloseBehavior = "quit" | "tray";
+
 // Card style presets dragged from the canvas slot bar. Only style and size are
 // kept — text, notes and targets belong to the card instance.
 export interface CanvasPreset {
@@ -48,12 +52,15 @@ export const MAX_CANVAS_PRESETS = 8;
 
 export interface AppSettings {
   color_mode: ColorMode;
-  clock_format: "24" | "12";
-  home_recents_count: number;
   restore_note_tabs: boolean;
+  close_behavior: CloseBehavior;
+  auto_launch: boolean;
+  // Only meaningful with auto_launch: start with no main window, tray only.
+  auto_launch_hidden: boolean;
   private_lock_minutes: number;
   attachments_dir: string;
   canvas_dir: string;
+  project_vault_path: string;
   autosave_delay: number;
   default_view: "read" | "edit";
   indent_width: number;
@@ -91,12 +98,14 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   color_mode: "dark",
-  clock_format: "24",
-  home_recents_count: 10,
   restore_note_tabs: true,
+  close_behavior: "quit",
+  auto_launch: false,
+  auto_launch_hidden: true,
   private_lock_minutes: 10,
   attachments_dir: "attachments",
   canvas_dir: "canvases",
+  project_vault_path: "",
   autosave_delay: 1000,
   default_view: "read",
   indent_width: 4,
@@ -151,12 +160,14 @@ function isHexColor(value: string): boolean {
 
 export const SETTING_META: Record<SettingKey, SettingMeta> = {
   color_mode: { kind: "enum", options: ["dark", "light", "system"] },
-  clock_format: { kind: "enum", options: ["24", "12"] },
-  home_recents_count: { kind: "number", range: { min: 5, max: 30, step: 1 } },
   restore_note_tabs: { kind: "boolean" },
+  close_behavior: { kind: "enum", options: ["quit", "tray"] },
+  auto_launch: { kind: "boolean" },
+  auto_launch_hidden: { kind: "boolean" },
   private_lock_minutes: { kind: "number", range: { min: 1, max: 120, step: 1 } },
   attachments_dir: { kind: "string" },
   canvas_dir: { kind: "string" },
+  project_vault_path: { kind: "string" },
   autosave_delay: { kind: "number", range: { min: 300, max: 3000, step: 100 } },
   default_view: { kind: "enum", options: ["read", "edit"] },
   indent_width: { kind: "number", range: { min: 2, max: 8, step: 2 } },

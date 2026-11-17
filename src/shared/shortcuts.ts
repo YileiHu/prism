@@ -1,15 +1,26 @@
-export type ShortcutAction = "focusSearch" | "toggleReadEdit";
+export type ShortcutAction = "focusSearch" | "toggleReadEdit" | "quickCapture" | "showMain";
 
 export type ShortcutMap = Record<ShortcutAction, string>;
 
-export const SHORTCUT_ACTIONS = ["focusSearch", "toggleReadEdit"] as const;
+export const SHORTCUT_ACTIONS = ["focusSearch", "toggleReadEdit", "quickCapture", "showMain"] as const;
+
+// Actions registered with the OS (they work while Prism is unfocused or only
+// lives in the tray). Everything else is handled by the renderer keydown.
+export const GLOBAL_SHORTCUT_ACTIONS = ["quickCapture", "showMain"] as const;
+
+export type GlobalShortcutAction = (typeof GLOBAL_SHORTCUT_ACTIONS)[number];
 
 export const DEFAULT_SHORTCUTS: ShortcutMap = {
   focusSearch: "Ctrl+F",
   toggleReadEdit: "Ctrl+E",
+  quickCapture: "Ctrl+Shift+N",
+  showMain: "Ctrl+Shift+M",
 };
 
 export const SHORTCUT_EVENT = "prism:shortcut";
+
+/** Renderer-only fallback used when the OS-level global shortcut is unavailable. */
+export const QUICK_CAPTURE_EVENT = "prism:quick-capture-open";
 
 export interface ShortcutEventDetail {
   action: ShortcutAction;

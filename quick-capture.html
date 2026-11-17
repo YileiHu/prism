@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prism Quick Capture</title>
+    <script>
+      // The main process passes the resolved theme so the small window paints in
+      // the right palette before React mounts. ThemeProvider still reads the DB.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var mode = params.get("mode") === "light" ? "light" : "dark";
+        document.documentElement.dataset.mode = mode;
+        document.documentElement.style.colorScheme = mode;
+      })();
+    </script>
+  </head>
+  <body class="text-primary bg-base">
+    <div id="root"></div>
+    <script type="module" src="/src/quickCapture.tsx"></script>
+  </body>
+</html>

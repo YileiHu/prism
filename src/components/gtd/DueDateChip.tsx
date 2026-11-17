@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Flag } from "lucide-react";
 import { useT } from "../../i18n";
 import { daysUntil, parseDateKey } from "../../lib/dates";
 
@@ -6,9 +6,10 @@ interface Props {
   dueDate: string | null;
   onClick?: () => void;
   className?: string;
+  kind?: "scheduled" | "due";
 }
 
-export default function DueDateChip({ dueDate, onClick, className = "" }: Props) {
+export default function DueDateChip({ dueDate, onClick, className = "", kind = "scheduled" }: Props) {
   const { t, lang } = useT();
   if (!dueDate) return null;
 
@@ -19,8 +20,17 @@ export default function DueDateChip({ dueDate, onClick, className = "" }: Props)
   let label: string;
   let tone: string;
   if (diff < 0) {
-    label = t["gtd.dueDate.overdue"].replace("{count}", String(-diff));
-    tone = "text-danger";
+    if (kind === "due") {
+      label = t["gtd.dueDate.overdue"].replace("{count}", String(-diff));
+      tone = "text-danger";
+    } else {
+      // A past start date is normal for a range that is still active.
+      label = date.toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      tone = "text-faint";
+    }
   } else if (diff === 0) {
     label = t["gtd.dueDate.today"];
     tone = "text-[var(--accent-text)]";
@@ -38,7 +48,7 @@ export default function DueDateChip({ dueDate, onClick, className = "" }: Props)
   const className2 = `inline-flex flex-shrink-0 items-center gap-1 text-caption ${tone} ${className}`;
   const content = (
     <>
-      <CalendarDays size={11} />
+      {kind === "due" ? <Flag size={11} /> : <CalendarDays size={11} />}
       <span className="truncate">{label}</span>
     </>
   );

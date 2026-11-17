@@ -1,16 +1,15 @@
 import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
 import { app } from "electron";
 import type {
-  FavoriteNote,
-  GtdAction,
-  GtdItem,
-  GtdNextList,
-  GtdStatus,
+  GtdProject,
+  GtdProjectLinkKind,
+  GtdTask,
+  GtdTaskPatch,
   NoteBrief,
   NoteContentHit,
   PdfDocument,
-  RecentNote,
   Resource,
   TagInfo,
 } from "../src/shared/models";
@@ -78,44 +77,54 @@ export function initDatabase(): void {
       value TEXT NOT NULL DEFAULT ''
     );
 
-    CREATE TABLE IF NOT EXISTS gtd_items (
+    CREATE TABLE IF NOT EXISTS gtd_projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'inbox',
-      is_next INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT '',
-      due_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       archived_at TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_gtd_items_status ON gtd_items(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_gtd_projects_archived ON gtd_projects(archived_at, created_at DESC);
 
-    CREATE TABLE IF NOT EXISTS gtd_actions (
+    CREATE TABLE IF NOT EXISTS gtd_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      project_id INTEGER,
+      scheduled_date TEXT,
+      due_date TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_gtd_tasks_project ON gtd_tasks(project_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_gtd_tasks_scheduled ON gtd_tasks(scheduled_date) WHERE scheduled_date IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_gtd_tasks_due ON gtd_tasks(due_date) WHERE due_date IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_gtd_tasks_completed ON gtd_tasks(completed_at) WHERE completed_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS gtd_project_folders (
+      project_id INTEGER PRIMARY KEY,
+      vault_path TEXT NOT NULL,
+      folder_path TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS gtd_project_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('note','canvas')),
+      vault_path TEXT NOT NULL,
+      file_path TEXT NOT NULL,
       title TEXT NOT NULL,
-      is_done INTEGER NOT NULL DEFAULT 0,
-      is_next INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      due_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      done_at TEXT,
-      FOREIGN KEY (project_id) REFERENCES gtd_items(id) ON DELETE CASCADE
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (project_id, file_path),
+      FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_gtd_actions_project ON gtd_actions(project_id, sort_order);
-
-    CREATE TABLE IF NOT EXISTS favorite_notes (
-      path TEXT PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-    );
-
-    CREATE TABLE IF NOT EXISTS recent_notes (
-      path TEXT PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT '',
-      opened_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-    );
+    CREATE INDEX IF NOT EXISTS idx_gtd_project_links_project ON gtd_project_links(project_id, sort_order);
 
     CREATE TABLE IF NOT EXISTS pdf_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,31 +170,38 @@ export function initDatabase(): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_notes_vault ON notes(vault_path)");
 
-  // Migration: project descriptions were added after gtd_items shipped
+  // Migration: the Home module is gone, so its app-managed metadata tables are
+  // no longer read or written. Note files are untouched.
+  db.exec("DROP TABLE IF EXISTS favorite_notes");
+  db.exec("DROP TABLE IF EXISTS recent_notes");
+
+  // ---- GTD v2: tasks + projects -------------------------------------------
+  // Legacy installs still carry gtd_items/gtd_actions. Normalize their last
+  // legacy columns, copy everything into the new tables once, then drop the
+  // old tables. New installs skip all of this.
   const gtdItemCols = db.prepare("PRAGMA table_info(gtd_items)").all() as { name: string }[];
-  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "description")) {
-    db.exec("ALTER TABLE gtd_items ADD COLUMN description TEXT NOT NULL DEFAULT ''");
-  }
-  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "color")) {
-    db.exec("ALTER TABLE gtd_items ADD COLUMN color TEXT NOT NULL DEFAULT ''");
-  }
-  if (gtdItemCols.length > 0 && !gtdItemCols.some((c) => c.name === "due_date")) {
-    db.exec("ALTER TABLE gtd_items ADD COLUMN due_date TEXT");
-  }
-  // Projects now end up archived instead of done, so reuse the timestamp as
-  // the archive time and re-label existing completed rows.
-  if (gtdItemCols.length > 0 && gtdItemCols.some((c) => c.name === "done_at") && !gtdItemCols.some((c) => c.name === "archived_at")) {
-    db.exec("ALTER TABLE gtd_items RENAME COLUMN done_at TO archived_at");
-  }
-  db.exec("UPDATE gtd_items SET status = 'archived' WHERE status = 'done'");
   const gtdActionCols = db.prepare("PRAGMA table_info(gtd_actions)").all() as { name: string }[];
+  if (gtdItemCols.length > 0) {
+    if (!gtdItemCols.some((c) => c.name === "description")) {
+      db.exec("ALTER TABLE gtd_items ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+    }
+    if (!gtdItemCols.some((c) => c.name === "color")) {
+      db.exec("ALTER TABLE gtd_items ADD COLUMN color TEXT NOT NULL DEFAULT ''");
+    }
+    if (!gtdItemCols.some((c) => c.name === "due_date")) {
+      db.exec("ALTER TABLE gtd_items ADD COLUMN due_date TEXT");
+    }
+    // Projects now end up archived instead of done, so reuse the timestamp as
+    // the archive time and re-label existing completed rows.
+    if (gtdItemCols.some((c) => c.name === "done_at") && !gtdItemCols.some((c) => c.name === "archived_at")) {
+      db.exec("ALTER TABLE gtd_items RENAME COLUMN done_at TO archived_at");
+    }
+    db.exec("UPDATE gtd_items SET status = 'archived' WHERE status = 'done'");
+  }
   if (gtdActionCols.length > 0 && !gtdActionCols.some((c) => c.name === "due_date")) {
     db.exec("ALTER TABLE gtd_actions ADD COLUMN due_date TEXT");
   }
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_gtd_items_due ON gtd_items(due_date) WHERE due_date IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_gtd_actions_due ON gtd_actions(due_date) WHERE due_date IS NOT NULL;
-  `);
+  migrateGtdV2(dbPath, gtdItemCols.length > 0, gtdActionCols.length > 0);
 
   // Migration: resource ordering was added after resources shipped — seed it
   // from id so the existing newest-first display order is preserved.
@@ -217,6 +233,71 @@ export function initDatabase(): void {
     db.exec("ALTER TABLE tags ADD COLUMN color TEXT NOT NULL DEFAULT ''");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_tags_sort ON tags(sort_order)");
+}
+
+/**
+ * One-time GTD v2 migration: copy the legacy items/actions into the new
+ * task/project tables, then drop the old tables. A marker in `settings` makes
+ * repeat launches no-ops; a pre-migration backup is kept next to the DB.
+ */
+function migrateGtdV2(dbPath: string, hasItems: boolean, hasActions: boolean): void {
+  if (getSetting("gtd_v2_migrated") === "1") return;
+  if (!hasItems && !hasActions) {
+    setSetting("gtd_v2_migrated", "1");
+    return;
+  }
+
+  const backupPath = `${dbPath}.pre-gtd-v2.bak`;
+  try {
+    if (!fs.existsSync(backupPath)) {
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      fs.copyFileSync(dbPath, backupPath);
+    }
+  } catch (error) {
+    console.error("GTD v2: failed to back up the database before migrating", error);
+  }
+
+  db.transaction(() => {
+    if (hasItems) {
+      db.exec(`
+        INSERT INTO gtd_projects (id, title, description, color, created_at, archived_at)
+        SELECT id, title, description, color, created_at,
+          CASE WHEN status = 'archived' THEN COALESCE(archived_at, datetime('now')) ELSE NULL END
+        FROM gtd_items
+        WHERE status IN ('project', 'archived');
+
+        INSERT INTO gtd_tasks (title, notes, project_id, scheduled_date, due_date, completed_at, created_at, sort_order)
+        SELECT title, description, NULL, NULL, due_date, NULL, created_at, 0
+        FROM gtd_items
+        WHERE COALESCE(status, 'inbox') NOT IN ('project', 'archived');
+      `);
+    }
+    if (hasActions) {
+      db.exec(`
+        INSERT INTO gtd_tasks (title, notes, project_id, scheduled_date, due_date, completed_at, created_at, sort_order)
+        SELECT a.title, '',
+          CASE WHEN p.id IS NULL THEN NULL ELSE a.project_id END,
+          NULL, a.due_date,
+          CASE WHEN a.is_done = 1 THEN COALESCE(a.done_at, a.created_at) ELSE NULL END,
+          a.created_at, a.sort_order
+        FROM gtd_actions a
+        LEFT JOIN gtd_projects p ON p.id = a.project_id;
+      `);
+    }
+    setSetting("gtd_v2_migrated", "1");
+    db.exec(`
+      DROP TABLE IF EXISTS gtd_actions;
+      DROP TABLE IF EXISTS gtd_items;
+      DROP TABLE IF EXISTS gtd_items_fts;
+      DROP TRIGGER IF EXISTS gtd_items_ai;
+      DROP TRIGGER IF EXISTS gtd_items_ad;
+      DROP TRIGGER IF EXISTS gtd_items_au;
+      DROP INDEX IF EXISTS idx_gtd_items_status;
+      DROP INDEX IF EXISTS idx_gtd_actions_project;
+      DROP INDEX IF EXISTS idx_gtd_items_due;
+      DROP INDEX IF EXISTS idx_gtd_actions_due;
+    `);
+  })();
 }
 
 // ---- Resource operations ----
@@ -529,21 +610,14 @@ export function deleteNotesByPaths(paths: string[]): void {
       const chunk = paths.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => "?").join(",");
       db.prepare(`DELETE FROM notes WHERE path IN (${placeholders})`).run(...chunk);
-      db.prepare(`DELETE FROM favorite_notes WHERE path IN (${placeholders})`).run(...chunk);
-      db.prepare(`DELETE FROM recent_notes WHERE path IN (${placeholders})`).run(...chunk);
     }
   })();
 }
 
-// Forget everything indexed for a vault that just became private: note rows,
-// plus any favorite/recent entries that point inside its folder.
+// Forget everything indexed for a vault that just became private: note rows.
 export function purgeVaultNotes(vaultPath: string): void {
-  const prefix = vaultPath.replace(/[\\/]+$/, "") + path.sep;
   db.transaction(() => {
     db.prepare("DELETE FROM notes WHERE vault_path = ?").run(vaultPath);
-    for (const table of ["favorite_notes", "recent_notes"]) {
-      db.prepare(`DELETE FROM ${table} WHERE instr(lower(path), lower(?)) = 1`).run(prefix);
-    }
   })();
 }
 
@@ -790,363 +864,440 @@ export function deleteTag(name: string): void {
   db.prepare("DELETE FROM tags WHERE name = ?").run(name);
 }
 
-// ---- GTD operations ----
+// ---- GTD (tasks + projects) ----
 
-interface GtdItemRow {
+interface GtdTaskRow {
   id: number;
   title: string;
-  status: GtdStatus;
-  is_next: number;
+  notes: string;
+  project_id: number | null;
+  scheduled_date: string | null;
+  due_date: string | null;
+  completed_at: string | null;
+  created_at: string;
+  sort_order: number;
+  project_title: string | null;
+  project_color: string | null;
+  project_archived_at: string | null;
+}
+
+interface GtdProjectRow {
+  id: number;
+  title: string;
   description: string;
   color: string;
-  due_date: string | null;
   created_at: string;
   archived_at: string | null;
-  action_count: number;
-  done_action_count: number;
+  task_count: number;
+  done_task_count: number;
 }
 
-interface GtdActionRow {
+export interface GtdProjectFolderRow {
+  project_id: number;
+  vault_path: string;
+  folder_path: string;
+}
+
+export interface GtdProjectLinkRow {
   id: number;
   project_id: number;
+  kind: GtdProjectLinkKind;
+  vault_path: string;
+  file_path: string;
   title: string;
-  is_done: number;
-  is_next: number;
   sort_order: number;
-  due_date: string | null;
-  created_at: string;
-  done_at: string | null;
 }
 
-function toGtdItem(row: GtdItemRow): GtdItem {
+function toGtdTask(row: GtdTaskRow): GtdTask {
   return {
     id: row.id,
     title: row.title,
-    status: row.status,
-    isNext: row.is_next === 1,
+    notes: row.notes,
+    project: row.project_id === null
+      ? null
+      : {
+          id: row.project_id,
+          title: row.project_title ?? "",
+          color: row.project_color ?? "",
+          archived: row.project_archived_at !== null,
+        },
+    scheduledDate: row.scheduled_date,
+    dueDate: row.due_date,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    sortOrder: row.sort_order,
+  };
+}
+
+function toGtdProject(row: GtdProjectRow): GtdProject {
+  return {
+    id: row.id,
+    title: row.title,
     description: row.description,
     color: row.color,
-    dueDate: row.due_date,
     createdAt: row.created_at,
     archivedAt: row.archived_at,
-    actionCount: row.action_count,
-    doneActionCount: row.done_action_count,
+    taskCount: row.task_count,
+    doneTaskCount: row.done_task_count,
   };
 }
 
-function toGtdAction(row: GtdActionRow): GtdAction {
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    title: row.title,
-    isDone: row.is_done === 1,
-    isNext: row.is_next === 1,
-    sortOrder: row.sort_order,
-    dueDate: row.due_date,
-    createdAt: row.created_at,
-    doneAt: row.done_at,
-  };
-}
+const GTD_TASK_SELECT = `
+  SELECT t.*,
+    p.title AS project_title,
+    p.color AS project_color,
+    p.archived_at AS project_archived_at
+  FROM gtd_tasks t
+  LEFT JOIN gtd_projects p ON p.id = t.project_id
+`;
 
-const GTD_STATUSES: GtdStatus[] = ["inbox", "someday", "waiting", "project", "archived"];
+const GTD_PROJECT_SELECT = `
+  SELECT p.*,
+    COUNT(t.id) AS task_count,
+    COALESCE(SUM(CASE WHEN t.completed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS done_task_count
+  FROM gtd_projects p
+  LEFT JOIN gtd_tasks t ON t.project_id = p.id
+`;
 
 const DATE_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function assertDateKey(value: string | null): void {
   if (value === null) return;
   const match = DATE_KEY_RE.exec(value);
-  if (!match) throw new Error(`Invalid due date: ${value}`);
+  if (!match) throw new Error(`Invalid date: ${value}`);
   const year = Number(match[1]);
   const month = Number(match[2]) - 1;
   const day = Number(match[3]);
   const date = new Date(year, month, day);
   if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-    throw new Error(`Invalid due date: ${value}`);
+    throw new Error(`Invalid date: ${value}`);
   }
 }
 
-const GTD_ITEM_SELECT = `
-  SELECT i.*, COALESCE(a.total, 0) AS action_count, COALESCE(a.done_count, 0) AS done_action_count
-  FROM gtd_items i
-  LEFT JOIN (
-    SELECT project_id, COUNT(*) AS total, SUM(is_done) AS done_count
-    FROM gtd_actions
-    GROUP BY project_id
-  ) a ON a.project_id = i.id
-`;
-
-export function addGtdItem(title: string): GtdItem {
-  const id = db.prepare("INSERT INTO gtd_items (title) VALUES (?)").run(title).lastInsertRowid as number;
-  return getGtdItem(id)!;
+function normalizeGtdTitle(value: string): string {
+  const title = value.trim();
+  if (!title) throw new Error("GTD title cannot be empty");
+  return title;
 }
 
-export function getGtdItem(id: number): GtdItem | null {
-  const row = db.prepare(`${GTD_ITEM_SELECT} WHERE i.id = ?`).get(id) as GtdItemRow | undefined;
-  return row ? toGtdItem(row) : null;
+function getGtdTaskRow(id: number): GtdTaskRow | undefined {
+  return db.prepare(`${GTD_TASK_SELECT} WHERE t.id = ?`).get(id) as GtdTaskRow | undefined;
 }
 
-export function getGtdItems(status: GtdStatus): GtdItem[] {
-  const rows = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = ? ORDER BY COALESCE(i.archived_at, i.created_at) DESC`).all(status) as GtdItemRow[];
-  return rows.map(toGtdItem);
+function getGtdTaskOrThrow(id: number): GtdTask {
+  const row = getGtdTaskRow(id);
+  if (!row) throw new Error(`GTD task not found: ${id}`);
+  return toGtdTask(row);
 }
 
-export function getGtdCounts(): Record<GtdStatus, number> {
-  const rows = db.prepare("SELECT status, COUNT(*) AS count FROM gtd_items GROUP BY status").all() as { status: GtdStatus; count: number }[];
-  const counts = Object.fromEntries(GTD_STATUSES.map((s) => [s, 0])) as Record<GtdStatus, number>;
-  for (const row of rows) counts[row.status] = row.count;
-  return counts;
+function getWritableGtdTaskRow(id: number): GtdTaskRow {
+  const row = getGtdTaskRow(id);
+  if (!row) throw new Error(`GTD task not found: ${id}`);
+  if (row.project_archived_at !== null) throw new Error("GTD project is archived");
+  return row;
 }
 
-export function setGtdItemStatus(id: number, status: GtdStatus): void {
-  if (!GTD_STATUSES.includes(status)) throw new Error(`Invalid GTD status: ${status}`);
-  db.prepare(`
-    UPDATE gtd_items SET status = ?,
-      archived_at = CASE WHEN ? = 'archived' THEN datetime('now') ELSE NULL END,
-      is_next = CASE WHEN ? = 'waiting' THEN is_next ELSE 0 END,
-      due_date = CASE WHEN ? = 'waiting' THEN due_date ELSE NULL END
-    WHERE id = ?
-  `).run(status, status, status, status, id);
+function assertGtdProjectWritable(projectId: number): void {
+  const row = db.prepare("SELECT archived_at FROM gtd_projects WHERE id = ?").get(projectId) as
+    { archived_at: string | null } | undefined;
+  if (!row) throw new Error(`GTD project not found: ${projectId}`);
+  if (row.archived_at !== null) throw new Error("GTD project is archived");
 }
 
-// Archiving leaves actions untouched so unarchiving restores the project
-// exactly as it was.
-export function setGtdItemArchived(id: number, archived: boolean): void {
-  if (archived) {
-    db.prepare("UPDATE gtd_items SET status = 'archived', archived_at = datetime('now') WHERE id = ? AND status = 'project'").run(id);
-  } else {
-    db.prepare("UPDATE gtd_items SET status = 'project', archived_at = NULL WHERE id = ? AND status = 'archived'").run(id);
-  }
+function getGtdProjectOrThrow(id: number): GtdProject {
+  const row = db.prepare(`${GTD_PROJECT_SELECT} WHERE p.id = ? GROUP BY p.id`).get(id) as
+    GtdProjectRow | undefined;
+  if (!row) throw new Error(`GTD project not found: ${id}`);
+  return toGtdProject(row);
 }
 
-export function renameGtdItem(id: number, title: string): void {
-  db.prepare("UPDATE gtd_items SET title = ? WHERE id = ?").run(title, id);
+export function getGtdProject(id: number): GtdProject {
+  return getGtdProjectOrThrow(id);
 }
 
-export function setGtdItemDescription(id: number, description: string): void {
-  db.prepare("UPDATE gtd_items SET description = ? WHERE id = ?").run(description, id);
+function nextGtdTaskSortOrder(projectId: number): number {
+  const row = db.prepare(
+    "SELECT COALESCE(MAX(sort_order) + 1, 0) AS next FROM gtd_tasks WHERE project_id = ?",
+  ).get(projectId) as { next: number };
+  return row.next;
 }
 
-export function setGtdItemColor(id: number, color: string): void {
-  db.prepare("UPDATE gtd_items SET color = ? WHERE id = ?").run(color, id);
-}
-
-export function setGtdItemDueDate(id: number, dueDate: string | null): void {
-  assertDateKey(dueDate);
-  db.prepare("UPDATE gtd_items SET due_date = ? WHERE id = ? AND status = 'waiting'").run(dueDate, id);
-}
-
-export function deleteGtdItem(id: number): boolean {
-  return db.prepare("DELETE FROM gtd_items WHERE id = ?").run(id).changes > 0;
-}
-
-export function setGtdItemNext(id: number, isNext: boolean): void {
-  db.prepare("UPDATE gtd_items SET is_next = ? WHERE id = ? AND status = 'waiting'").run(isNext ? 1 : 0, id);
-}
-
-export function getGtdActions(projectId: number): GtdAction[] {
-  const rows = db.prepare("SELECT * FROM gtd_actions WHERE project_id = ? ORDER BY sort_order ASC, id ASC").all(projectId) as GtdActionRow[];
-  return rows.map(toGtdAction);
-}
-
-export function getGtdAction(id: number): GtdAction | null {
-  const row = db.prepare("SELECT * FROM gtd_actions WHERE id = ?").get(id) as GtdActionRow | undefined;
-  return row ? toGtdAction(row) : null;
-}
-
-export function addGtdAction(projectId: number, title: string): GtdAction {
-  const id = db.prepare(`
-    INSERT INTO gtd_actions (project_id, title, sort_order)
-    VALUES (?, ?, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM gtd_actions WHERE project_id = ?))
-  `).run(projectId, title, projectId).lastInsertRowid as number;
-  return getGtdAction(id)!;
-}
-
-export function renameGtdAction(id: number, title: string): void {
-  db.prepare("UPDATE gtd_actions SET title = ? WHERE id = ?").run(title, id);
-}
-
-export function setGtdActionDueDate(id: number, dueDate: string | null): void {
-  assertDateKey(dueDate);
-  db.prepare("UPDATE gtd_actions SET due_date = ? WHERE id = ?").run(dueDate, id);
-}
-
-function promoteFrontmostAction(projectId: number): void {
-  const first = db.prepare(
-    "SELECT id FROM gtd_actions WHERE project_id = ? AND is_done = 0 ORDER BY sort_order ASC, id ASC LIMIT 1"
-  ).get(projectId) as { id: number } | undefined;
-  db.prepare("UPDATE gtd_actions SET is_next = 0 WHERE project_id = ?").run(projectId);
-  if (first) db.prepare("UPDATE gtd_actions SET is_next = 1 WHERE id = ?").run(first.id);
-}
-
-export function toggleGtdAction(id: number): void {
-  db.transaction(() => {
-    const row = db.prepare("SELECT project_id, is_done FROM gtd_actions WHERE id = ?").get(id) as
-      { project_id: number; is_done: number } | undefined;
-    if (!row) return;
-    // SET expressions read the pre-update is_done, so all three stay consistent
-    db.prepare(`
-      UPDATE gtd_actions SET
-        is_done = 1 - is_done,
-        done_at = CASE WHEN is_done = 0 THEN datetime('now') ELSE NULL END,
-        is_next = CASE WHEN is_done = 0 THEN 0 ELSE is_next END
-      WHERE id = ?
-    `).run(id);
-    // Newly completed → hand "next" to the frontmost remaining action
-    if (row.is_done === 0) promoteFrontmostAction(row.project_id);
-  })();
-}
-
-export function reorderGtdActions(projectId: number, orderedIds: number[]): void {
-  db.transaction(() => {
-    const update = db.prepare("UPDATE gtd_actions SET sort_order = ? WHERE id = ? AND project_id = ?");
-    orderedIds.forEach((actionId, index) => update.run(index, actionId, projectId));
-  })();
-}
-
-export function deleteGtdAction(id: number): void {
-  db.prepare("DELETE FROM gtd_actions WHERE id = ?").run(id);
-}
-
-export function setGtdActionNext(projectId: number, actionId: number | null): void {
-  db.transaction(() => {
-    db.prepare("UPDATE gtd_actions SET is_next = 0 WHERE project_id = ?").run(projectId);
-    if (actionId !== null) {
-      db.prepare("UPDATE gtd_actions SET is_next = 1 WHERE id = ? AND project_id = ? AND is_done = 0").run(actionId, projectId);
-    }
-  })();
-}
-
-interface GtdNextProjectRow {
-  id: number;
-  title: string;
-  status: GtdStatus;
-  is_next: number;
-  description: string;
-  color: string;
-  due_date: string | null;
-  created_at: string;
-  archived_at: string | null;
-  action_count: number;
-  done_action_count: number;
-  action_id: number;
-  action_title: string;
-  action_is_done: number;
-  action_is_next: number;
-  action_sort_order: number;
-  action_due_date: string | null;
-  action_created_at: string;
-  action_done_at: string | null;
-}
-
-export function getGtdNextList(): GtdNextList {
-  const waitingRows = db.prepare(`${GTD_ITEM_SELECT} WHERE i.status = 'waiting' AND i.is_next = 1 ORDER BY i.created_at DESC`).all() as GtdItemRow[];
+export function getGtdOpenTasks(): GtdTask[] {
   const rows = db.prepare(`
-    SELECT p.*,
-      COALESCE(c.total, 0) AS action_count, COALESCE(c.done_count, 0) AS done_action_count,
-      a.id AS action_id, a.title AS action_title, a.is_done AS action_is_done, a.is_next AS action_is_next,
-      a.sort_order AS action_sort_order, a.due_date AS action_due_date,
-      a.created_at AS action_created_at, a.done_at AS action_done_at
-    FROM gtd_items p
-    JOIN (
-      SELECT *, ROW_NUMBER() OVER (
-        PARTITION BY project_id ORDER BY is_next DESC, sort_order ASC, id ASC
-      ) AS rn
-      FROM gtd_actions
-      WHERE is_done = 0
-    ) a ON a.project_id = p.id AND a.rn = 1
-    LEFT JOIN (
-      SELECT project_id, COUNT(*) AS total, SUM(is_done) AS done_count
-      FROM gtd_actions
-      GROUP BY project_id
-    ) c ON c.project_id = p.id
-    WHERE p.status = 'project'
-    ORDER BY p.created_at DESC
-  `).all() as GtdNextProjectRow[];
-  return {
-    waiting: waitingRows.map(toGtdItem),
-    projects: rows.map((row) => ({
-      project: toGtdItem({
-        id: row.id,
-        title: row.title,
-        status: row.status,
-        is_next: row.is_next,
-        description: row.description,
-        color: row.color,
-        due_date: row.due_date,
-        created_at: row.created_at,
-        archived_at: row.archived_at,
-        action_count: row.action_count,
-        done_action_count: row.done_action_count,
-      }),
-      action: toGtdAction({
-        id: row.action_id,
-        project_id: row.id,
-        title: row.action_title,
-        is_done: row.action_is_done,
-        is_next: row.action_is_next,
-        sort_order: row.action_sort_order,
-        due_date: row.action_due_date,
-        created_at: row.action_created_at,
-        done_at: row.action_done_at,
-      }),
-    })),
-  };
+    ${GTD_TASK_SELECT}
+    WHERE t.completed_at IS NULL
+      AND (t.project_id IS NULL OR p.archived_at IS NULL)
+    ORDER BY t.created_at DESC, t.id DESC
+  `).all() as GtdTaskRow[];
+  return rows.map(toGtdTask);
 }
 
-// ---- Favorite / recent notes ----
+export function getGtdCompletedTasks(limit = 200): GtdTask[] {
+  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
+  const rows = db.prepare(`
+    ${GTD_TASK_SELECT}
+    WHERE t.completed_at IS NOT NULL
+    ORDER BY t.completed_at DESC, t.id DESC
+    LIMIT ?
+  `).all(safeLimit) as GtdTaskRow[];
+  return rows.map(toGtdTask);
+}
 
-export function toggleFavoriteNote(notePath: string, title: string): boolean {
-  const existing = db.prepare("SELECT path FROM favorite_notes WHERE path = ?").get(notePath);
-  if (existing) {
-    db.prepare("DELETE FROM favorite_notes WHERE path = ?").run(notePath);
-    return false;
+export function getGtdProjectTasks(projectId: number): GtdTask[] {
+  const rows = db.prepare(`
+    ${GTD_TASK_SELECT}
+    WHERE t.project_id = ?
+    ORDER BY (t.completed_at IS NOT NULL), t.sort_order ASC, t.id ASC
+  `).all(projectId) as GtdTaskRow[];
+  return rows.map(toGtdTask);
+}
+
+export function getGtdProjects(archived: boolean): GtdProject[] {
+  const where = archived ? "p.archived_at IS NOT NULL" : "p.archived_at IS NULL";
+  const order = archived ? "p.archived_at DESC, p.id DESC" : "p.created_at DESC, p.id DESC";
+  const rows = db.prepare(`
+    ${GTD_PROJECT_SELECT}
+    WHERE ${where}
+    GROUP BY p.id
+    ORDER BY ${order}
+  `).all() as GtdProjectRow[];
+  return rows.map(toGtdProject);
+}
+
+export function addGtdTask(
+  title: string,
+  projectId: number | null = null,
+  scheduledDate: string | null = null,
+): GtdTask {
+  const clean = normalizeGtdTitle(title);
+  assertDateKey(scheduledDate);
+  let sortOrder = 0;
+  if (projectId !== null) {
+    assertGtdProjectWritable(projectId);
+    sortOrder = nextGtdTaskSortOrder(projectId);
   }
-  db.prepare("INSERT INTO favorite_notes (path, title) VALUES (?, ?)").run(notePath, title);
-  return true;
+  const id = db.prepare(
+    "INSERT INTO gtd_tasks (title, project_id, scheduled_date, sort_order) VALUES (?, ?, ?, ?)",
+  ).run(clean, projectId, scheduledDate, sortOrder).lastInsertRowid as number;
+  return getGtdTaskOrThrow(id);
 }
 
-export function getFavoriteNotes(): FavoriteNote[] {
-  const rows = db.prepare("SELECT * FROM favorite_notes ORDER BY created_at DESC").all() as
-    { path: string; title: string; created_at: string }[];
-  return rows.map((row) => ({ path: row.path, title: row.title, createdAt: row.created_at }));
-}
+export function updateGtdTask(id: number, patch: GtdTaskPatch): GtdTask {
+  const row = getWritableGtdTaskRow(id);
+  const sets: string[] = [];
+  const values: (string | number | null)[] = [];
 
-export function getFavoriteStatus(paths: string[]): string[] {
-  if (paths.length === 0) return [];
-  const CHUNK = 500;
-  const found: string[] = [];
-  for (let i = 0; i < paths.length; i += CHUNK) {
-    const chunk = paths.slice(i, i + CHUNK);
-    const rows = db
-      .prepare(`SELECT path FROM favorite_notes WHERE path IN (${chunk.map(() => "?").join(",")})`)
-      .all(...chunk) as { path: string }[];
-    for (const r of rows) found.push(r.path);
+  if (patch.title !== undefined) {
+    sets.push("title = ?");
+    values.push(normalizeGtdTitle(patch.title));
   }
-  return found;
+  if (patch.notes !== undefined) {
+    sets.push("notes = ?");
+    values.push(patch.notes);
+  }
+  if (patch.scheduledDate !== undefined) {
+    assertDateKey(patch.scheduledDate);
+    sets.push("scheduled_date = ?");
+    values.push(patch.scheduledDate);
+  }
+  if (patch.dueDate !== undefined) {
+    assertDateKey(patch.dueDate);
+    sets.push("due_date = ?");
+    values.push(patch.dueDate);
+  }
+  if (patch.projectId !== undefined) {
+    if (patch.projectId === null) {
+      sets.push("project_id = ?");
+      values.push(null);
+    } else {
+      assertGtdProjectWritable(patch.projectId);
+      sets.push("project_id = ?");
+      values.push(patch.projectId);
+      // Moving into another project joins the end of that project's list.
+      if (patch.projectId !== row.project_id) {
+        sets.push("sort_order = ?");
+        values.push(nextGtdTaskSortOrder(patch.projectId));
+      }
+    }
+  }
+
+  if (sets.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE gtd_tasks SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  }
+  return getGtdTaskOrThrow(id);
 }
 
-const RECENT_KEEP = 100;
+export function completeGtdTask(id: number): void {
+  const row = getWritableGtdTaskRow(id);
+  if (row.completed_at !== null) return;
+  db.prepare("UPDATE gtd_tasks SET completed_at = datetime('now') WHERE id = ?").run(id);
+}
 
-export function recordRecentOpen(notePath: string): void {
-  const row = db.prepare("SELECT title FROM notes WHERE path = ?").get(notePath) as { title: string } | undefined;
-  const title = row?.title ?? path.basename(notePath, path.extname(notePath));
+export function reopenGtdTask(id: number): void {
+  const row = getWritableGtdTaskRow(id);
+  if (row.completed_at === null) return;
+  db.prepare("UPDATE gtd_tasks SET completed_at = NULL WHERE id = ?").run(id);
+}
+
+export function deleteGtdTask(id: number): void {
+  getWritableGtdTaskRow(id);
+  db.prepare("DELETE FROM gtd_tasks WHERE id = ?").run(id);
+}
+
+export function clearCompletedGtdTasks(): void {
+  db.prepare(`
+    DELETE FROM gtd_tasks
+    WHERE completed_at IS NOT NULL
+      AND (project_id IS NULL OR project_id IN (SELECT id FROM gtd_projects WHERE archived_at IS NULL))
+  `).run();
+}
+
+export function reorderGtdProjectTasks(projectId: number, orderedIds: number[]): void {
+  assertGtdProjectWritable(projectId);
   db.transaction(() => {
-    db.prepare("INSERT OR REPLACE INTO recent_notes (path, title, opened_at) VALUES (?, ?, datetime('now', 'localtime'))").run(notePath, title);
-    db.prepare("DELETE FROM recent_notes WHERE rowid IN (SELECT rowid FROM recent_notes ORDER BY opened_at DESC LIMIT -1 OFFSET ?)").run(RECENT_KEEP);
+    const update = db.prepare("UPDATE gtd_tasks SET sort_order = ? WHERE id = ? AND project_id = ?");
+    orderedIds.forEach((taskId, index) => update.run(index, taskId, projectId));
   })();
 }
 
-export function getRecentNotes(limit = 20): RecentNote[] {
-  const rows = db.prepare("SELECT * FROM recent_notes ORDER BY opened_at DESC LIMIT ?").all(limit) as
-    { path: string; title: string; opened_at: string }[];
-  return rows.map((row) => ({ path: row.path, title: row.title, openedAt: row.opened_at }));
+export function addGtdProject(title: string): GtdProject {
+  const clean = normalizeGtdTitle(title);
+  const id = db.prepare("INSERT INTO gtd_projects (title) VALUES (?)").run(clean).lastInsertRowid as number;
+  return getGtdProjectOrThrow(id);
 }
 
-// Keep favorites/recents pointing at the right file after a rename, even when
-// the note wasn't indexed (renameNoteInDb returns null for those).
+export function updateGtdProject(
+  id: number,
+  patch: { title?: string; description?: string; color?: string },
+): GtdProject {
+  assertGtdProjectWritable(id);
+  const sets: string[] = [];
+  const values: (string | number)[] = [];
+  if (patch.title !== undefined) {
+    sets.push("title = ?");
+    values.push(normalizeGtdTitle(patch.title));
+  }
+  if (patch.description !== undefined) {
+    sets.push("description = ?");
+    values.push(patch.description);
+  }
+  if (patch.color !== undefined) {
+    sets.push("color = ?");
+    values.push(patch.color);
+  }
+  if (sets.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE gtd_projects SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  }
+  return getGtdProjectOrThrow(id);
+}
+
+export function setGtdProjectArchived(id: number, archived: boolean): void {
+  if (archived) {
+    db.prepare("UPDATE gtd_projects SET archived_at = datetime('now') WHERE id = ? AND archived_at IS NULL").run(id);
+  } else {
+    db.prepare("UPDATE gtd_projects SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL").run(id);
+  }
+}
+
+export function deleteGtdProject(id: number): void {
+  db.transaction(() => {
+    db.prepare("UPDATE gtd_tasks SET project_id = NULL WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM gtd_projects WHERE id = ?").run(id);
+  })();
+}
+
+// ---- Project docs (a per-project folder + linked notes/canvases) ----
+
+export function getGtdProjectFolder(projectId: number): GtdProjectFolderRow | null {
+  const row = db.prepare(
+    "SELECT project_id, vault_path, folder_path FROM gtd_project_folders WHERE project_id = ?",
+  ).get(projectId) as GtdProjectFolderRow | undefined;
+  return row ?? null;
+}
+
+export function getGtdProjectFolders(): GtdProjectFolderRow[] {
+  return db.prepare(
+    "SELECT project_id, vault_path, folder_path FROM gtd_project_folders ORDER BY project_id",
+  ).all() as GtdProjectFolderRow[];
+}
+
+export function setGtdProjectFolder(
+  projectId: number,
+  vaultPath: string,
+  folderPath: string,
+): GtdProjectFolderRow {
+  db.prepare(`
+    INSERT INTO gtd_project_folders (project_id, vault_path, folder_path)
+    VALUES (?, ?, ?)
+    ON CONFLICT(project_id) DO UPDATE SET
+      vault_path = excluded.vault_path,
+      folder_path = excluded.folder_path
+  `).run(projectId, vaultPath, folderPath);
+  const row = getGtdProjectFolder(projectId);
+  if (!row) throw new Error(`GTD project folder not found: ${projectId}`);
+  return row;
+}
+
+export function getGtdProjectsForFilePath(filePath: string): GtdProject[] {
+  const rows = db.prepare(
+    "SELECT DISTINCT project_id FROM gtd_project_links WHERE file_path = ? ORDER BY project_id",
+  ).all(filePath) as { project_id: number }[];
+  return rows.map((row) => getGtdProjectOrThrow(row.project_id));
+}
+
+export function getGtdProjectLinks(projectId: number): GtdProjectLinkRow[] {
+  return db.prepare(
+    "SELECT id, project_id, kind, vault_path, file_path, title, sort_order FROM gtd_project_links WHERE project_id = ? ORDER BY sort_order, id",
+  ).all(projectId) as GtdProjectLinkRow[];
+}
+
+export function setGtdProjectLink(
+  projectId: number,
+  kind: GtdProjectLinkKind,
+  vaultPath: string,
+  filePath: string,
+  title: string,
+): GtdProjectLinkRow {
+  assertGtdProjectWritable(projectId);
+  const cleanTitle = normalizeGtdTitle(title);
+  const next = db.prepare(
+    "SELECT COALESCE(MAX(sort_order) + 1, 0) AS next FROM gtd_project_links WHERE project_id = ?",
+  ).get(projectId) as { next: number };
+  db.prepare(`
+    INSERT INTO gtd_project_links (project_id, kind, vault_path, file_path, title, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(project_id, file_path) DO UPDATE SET
+      kind = excluded.kind,
+      vault_path = excluded.vault_path,
+      title = excluded.title
+  `).run(projectId, kind, vaultPath, filePath, cleanTitle, next.next);
+  const row = db.prepare(
+    "SELECT id, project_id, kind, vault_path, file_path, title, sort_order FROM gtd_project_links WHERE project_id = ? AND file_path = ?",
+  ).get(projectId, filePath) as GtdProjectLinkRow | undefined;
+  if (!row) throw new Error("GTD project link not found after write");
+  return row;
+}
+
+export function removeGtdProjectLink(linkId: number): void {
+  const row = db.prepare("SELECT project_id FROM gtd_project_links WHERE id = ?").get(linkId) as
+    { project_id: number } | undefined;
+  if (!row) return;
+  assertGtdProjectWritable(row.project_id);
+  db.prepare("DELETE FROM gtd_project_links WHERE id = ?").run(linkId);
+}
+
+export function renameGtdProjectLinkPath(oldPath: string, newPath: string, title: string): void {
+  db.prepare(
+    "UPDATE gtd_project_links SET file_path = ?, title = ? WHERE file_path = ?",
+  ).run(newPath, title, oldPath);
+}
+
+// Keep project links pointing at the right file after a rename, even when the
+// note wasn't indexed (renameNoteInDb returns null for those).
 export function renameNoteEntry(oldPath: string, newPath: string, newTitle: string): void {
   db.transaction(() => {
-    db.prepare("UPDATE favorite_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath);
-    db.prepare("UPDATE recent_notes SET path = ?, title = ? WHERE path = ?").run(newPath, newTitle, oldPath);
+    db.prepare("UPDATE gtd_project_links SET file_path = ?, title = ? WHERE file_path = ?").run(newPath, newTitle, oldPath);
   })();
 }
