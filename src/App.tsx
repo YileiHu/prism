@@ -46,6 +46,11 @@ import type { GtdProjectLink } from "./shared/models";
 import { type MenuItem } from "./components/ContextMenu";
 import "./lib/api";
 
+// The main process appends this when it recreates the window from the tray:
+// that is a "resume", not a cold start, so the last workspace comes back.
+const RESUME_WORKSPACE =
+  new URLSearchParams(window.location.search).get("restore-workspace") === "1";
+
 const MODULES: { id: ModuleId; icon: typeof ListChecks; labelKey: keyof Translation }[] = [
   { id: "gtd", icon: ListChecks, labelKey: "nav.gtd" },
   { id: "library", icon: Library, labelKey: "nav.library" },
@@ -133,7 +138,7 @@ export default function App() {
       if (cancelled) return;
       setVaults(parsed);
       try {
-        await hydrate(parsed);
+        await hydrate(parsed, RESUME_WORKSPACE);
       } finally {
         if (!cancelled) dismissSplash();
       }
@@ -179,6 +184,17 @@ export default function App() {
       window.removeEventListener("vaults-changed", syncVaults);
     };
   }, [syncVaults]);
+
+  // The vault drag reorder applies optimistically; this event carries the new
+  // array before the `vault_paths` IPC round-trip finishes.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const next = (event as CustomEvent<VaultEntry[]>).detail;
+      if (Array.isArray(next)) setVaults(next);
+    };
+    window.addEventListener("vaults-order-changed", handler);
+    return () => window.removeEventListener("vaults-order-changed", handler);
+  }, []);
 
   // A repository switch invalidates every PDF tab from the previous library.
   useEffect(() => {

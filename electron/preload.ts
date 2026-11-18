@@ -6,9 +6,8 @@ import type {
   CanvasGroupsFile,
   CanvasSaveResult,
   GlobalShortcutStatus,
-  GtdProject,
+  GtdFileProjectRef,
   GtdProjectDocsPayload,
-  GtdProjectFolder,
   GtdProjectLink,
   GtdProjectLinkKind,
   GtdTaskPatch,
@@ -135,6 +134,10 @@ const api = {
   clearCompletedGtdTasks: () => ipcRenderer.invoke("gtd:clear-completed"),
   reorderGtdProjectTasks: (projectId: number, orderedIds: number[]) =>
     ipcRenderer.invoke("gtd:reorder-project-tasks", projectId, orderedIds),
+  reorderGtdInboxTasks: (orderedIds: number[]) =>
+    ipcRenderer.invoke("gtd:reorder-inbox", orderedIds),
+  reorderGtdProjects: (orderedIds: number[]) =>
+    ipcRenderer.invoke("gtd:reorder-projects", orderedIds),
   addGtdProject: (title: string) => ipcRenderer.invoke("gtd:add-project", title),
   updateGtdProject: (id: number, patch: { title?: string; description?: string; color?: string }) =>
     ipcRenderer.invoke("gtd:update-project", id, patch),
@@ -142,14 +145,8 @@ const api = {
   deleteGtdProject: (id: number) => ipcRenderer.invoke("gtd:delete-project", id),
   getGtdProjectDocs: (projectId: number) =>
     ipcRenderer.invoke("gtd:project-docs", projectId) as Promise<GtdProjectDocsPayload>,
-  getGtdProjectsForFile: (filePath: string) =>
-    ipcRenderer.invoke("gtd:projects-for-file", filePath) as Promise<GtdProject[]>,
-  ensureGtdProjectFolder: (projectId: number) =>
-    ipcRenderer.invoke("gtd:ensure-project-folder", projectId) as Promise<GtdProjectFolder>,
-  openGtdProjectFolder: (projectId: number) =>
-    ipcRenderer.invoke("gtd:open-project-folder", projectId),
-  createGtdProjectFile: (projectId: number, kind: GtdProjectLinkKind, templateJson?: string) =>
-    ipcRenderer.invoke("gtd:create-project-file", projectId, kind, templateJson) as Promise<GtdProjectLink>,
+  getGtdProjectLinkIndex: () =>
+    ipcRenderer.invoke("gtd:project-link-index") as Promise<GtdFileProjectRef[]>,
   setGtdProjectLink: (
     projectId: number,
     kind: GtdProjectLinkKind,

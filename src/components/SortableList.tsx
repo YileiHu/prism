@@ -13,6 +13,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useDragClickGuard } from "../lib/useDragClickGuard";
+import DragPreview from "./DragPreview";
 
 interface Props<T> {
   items: T[];
@@ -84,9 +85,9 @@ export default function SortableList<T>({ items, itemId, onReorder, renderItem, 
       {createPortal(
         <DragOverlay>
           {activeItem !== undefined && (
-            <div className="rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+            <DragPreview>
               {renderOverlay(activeItem)}
-            </div>
+            </DragPreview>
           )}
         </DragOverlay>,
         document.body,

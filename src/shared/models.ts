@@ -72,6 +72,8 @@ export interface GtdTask {
   createdAt: string;
   /** Manual order inside a project. */
   sortOrder: number;
+  /** Manual order inside the inbox. */
+  inboxOrder: number;
 }
 
 export interface GtdTaskPatch {
@@ -106,16 +108,17 @@ export interface GtdProjectLink {
   missing: boolean;
 }
 
-export interface GtdProjectFolder {
-  projectId: number;
-  vaultPath: string;
-  folderPath: string;
-  missing: boolean;
+export interface GtdProjectDocsPayload {
+  links: GtdProjectLink[];
 }
 
-export interface GtdProjectDocsPayload {
-  folder: GtdProjectFolder | null;
-  links: GtdProjectLink[];
+/** Project binding summary keyed by file path, used by list markers. */
+export interface GtdFileProjectRef {
+  filePath: string;
+  projectId: number;
+  title: string;
+  color: string;
+  archived: boolean;
 }
 
 export interface GlobalShortcutState {

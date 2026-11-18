@@ -105,6 +105,7 @@ export default function CanvasLibraryContent() {
       const next = await canvas.rename(target, title);
       const newRel = relativePathInsideVault(next.path, vaultPath);
       if (oldRel && newRel) renamePath(oldRel, newRel);
+      window.dispatchEvent(new Event("gtd-project-links-changed"));
       const openTab = state.tabs.find(
         (tab) => tab.kind === "canvas" && normalizePath(tab.path) === normalizePath(target.path),
       );

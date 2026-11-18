@@ -6,8 +6,8 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 
 ## 总览
 
-- Renderer 方法：**105**（invoke 97 / event 8）
-- main 处理器：**97**
+- Renderer 方法：**104**（invoke 96 / event 8）
+- main 处理器：**96**
 - main 推送事件：**8**
 
 源码：[preload.ts](../../electron/preload.ts) · [main.ts](../../electron/main.ts)
@@ -106,15 +106,14 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 | `deleteGtdTask` | `gtd:delete-task` | renderer → main | id: number | ✓ |
 | `clearCompletedGtdTasks` | `gtd:clear-completed` | renderer → main | — | ✓ |
 | `reorderGtdProjectTasks` | `gtd:reorder-project-tasks` | renderer → main | projectId: number, orderedIds: number[] | ✓ |
+| `reorderGtdInboxTasks` | `gtd:reorder-inbox` | renderer → main | orderedIds: number[] | ✓ |
+| `reorderGtdProjects` | `gtd:reorder-projects` | renderer → main | orderedIds: number[] | ✓ |
 | `addGtdProject` | `gtd:add-project` | renderer → main | title: string | ✓ |
 | `updateGtdProject` | `gtd:update-project` | renderer → main | id: number, patch: { title?: string; description?: string; color?: string } | ✓ |
 | `setGtdProjectArchived` | `gtd:archive-project` | renderer → main | id: number, archived: boolean | ✓ |
 | `deleteGtdProject` | `gtd:delete-project` | renderer → main | id: number | ✓ |
 | `getGtdProjectDocs` | `gtd:project-docs` | renderer → main | projectId: number | ✓ |
-| `getGtdProjectsForFile` | `gtd:projects-for-file` | renderer → main | filePath: string | ✓ |
-| `ensureGtdProjectFolder` | `gtd:ensure-project-folder` | renderer → main | projectId: number | ✓ |
-| `openGtdProjectFolder` | `gtd:open-project-folder` | renderer → main | projectId: number | ✓ |
-| `createGtdProjectFile` | `gtd:create-project-file` | renderer → main | projectId: number, kind: GtdProjectLinkKind, templateJson?: string | ✓ |
+| `getGtdProjectLinkIndex` | `gtd:project-link-index` | renderer → main | — | ✓ |
 | `setGtdProjectLink` | `gtd:set-project-link` | renderer → main | projectId: number, kind: GtdProjectLinkKind, filePath: string, title: string, | ✓ |
 | `removeGtdProjectLink` | `gtd:remove-project-link` | renderer → main | linkId: number | ✓ |
 

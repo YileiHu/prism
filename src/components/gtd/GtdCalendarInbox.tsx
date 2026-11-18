@@ -1,6 +1,7 @@
 import { Inbox } from "lucide-react";
 import { useT } from "../../i18n";
 import EmptyState from "../EmptyState";
+import SortableList from "../SortableList";
 import GtdTaskRow from "./GtdTaskRow";
 import InboxCapture from "./InboxCapture";
 import type { GtdProject, GtdTask } from "./types";
@@ -11,6 +12,7 @@ interface Props {
   onOpenTask: (task: GtdTask) => void;
   onRequestDate: (task: GtdTask, kind: "scheduled" | "due") => void;
   onRequestDelete: (task: GtdTask) => void;
+  onReorder: (from: number, to: number) => void;
   onChanged: () => void;
 }
 
@@ -21,9 +23,21 @@ export default function GtdCalendarInbox({
   onOpenTask,
   onRequestDate,
   onRequestDelete,
+  onReorder,
   onChanged,
 }: Props) {
   const { t } = useT();
+
+  const renderTask = (task: GtdTask) => (
+    <GtdTaskRow
+      task={task}
+      projects={projects}
+      onOpen={onOpenTask}
+      onRequestDate={onRequestDate}
+      onRequestDelete={onRequestDelete}
+      onChanged={onChanged}
+    />
+  );
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-strong/50 bg-surface">
@@ -41,17 +55,17 @@ export default function GtdCalendarInbox({
         {tasks.length === 0 ? (
           <EmptyState size="card" text={t["gtd.emptyInbox"]} />
         ) : (
-          tasks.map((task) => (
-            <GtdTaskRow
-              key={task.id}
-              task={task}
-              projects={projects}
-              onOpen={onOpenTask}
-              onRequestDate={onRequestDate}
-              onRequestDelete={onRequestDelete}
-              onChanged={onChanged}
-            />
-          ))
+          <SortableList
+            items={tasks}
+            itemId={(task) => String(task.id)}
+            onReorder={onReorder}
+            renderItem={(task) => renderTask(task)}
+            renderOverlay={(task) => (
+              <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
+                <span className="truncate">{task.title}</span>
+              </div>
+            )}
+          />
         )}
       </div>
     </div>

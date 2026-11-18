@@ -8,13 +8,23 @@ import SelectButton from "./SelectButton";
 interface Props {
   vaultPath: string;
   collections: CollectionData[];
+  /** Preselects a collection so a note created while browsing a collection lands there. */
+  defaultCollectionId?: string;
   onCreated: (note: { id: number; path: string; title: string }, collectionId?: string, groupId?: string) => void;
   onClose: () => void;
 }
 
-export default function CreateNoteModal({ vaultPath, collections, onCreated, onClose }: Props) {
+export default function CreateNoteModal({
+  vaultPath,
+  collections,
+  defaultCollectionId,
+  onCreated,
+  onClose,
+}: Props) {
   const { t } = useT();
-  const [collectionId, setCollectionId] = useState("");
+  const [collectionId, setCollectionId] = useState(() =>
+    defaultCollectionId && collections.some((c) => c.id === defaultCollectionId) ? defaultCollectionId : "",
+  );
   const [groupId, setGroupId] = useState("");
   const [creating, setCreating] = useState(false);
 

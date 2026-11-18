@@ -28,7 +28,7 @@ LibraryDataProvider
 
 - `SettingsProvider` 启动时 `getAllSettings()` 一次性载入并解码；`set()` 立即更新内存、异步写回，失败不回滚（下次编辑重试）。
 - `VaultLockProvider` 轮询/订阅私密仓库状态，维护锁定态与解锁请求队列；锁定事件会让 `App` 关闭该库标签。
-- `WorkspaceProvider` 负责标签/分屏/当前模块/资料库的单一状态源与 `workspace_v1` 持久化。
+- `WorkspaceProvider` 负责标签/分屏/当前模块/资料库的单一状态源；`workspace_v1` 保存完整现场（标签、激活文档、分屏、模块、资料库），冷启动只取标签与资料库，托盘重建窗口时取全部。
 - `LibraryDataProvider` 只在 `App` 内，聚合笔记库、PDF 库、白板库数据；不要把它的 hook 挪到 Provider 链更外层。
 
 ## App 外壳
@@ -79,14 +79,15 @@ LibraryDataProvider
 
 - `openDoc` 去重后追加/替换；分屏存在时，若文档不在任一窗格，则替换聚焦窗格。
 - `activateDoc` 在分屏中会同步 `focused`；关闭窗格内文档会拆掉分屏并把幸存者设为激活。
-- `hydrate(vaults)`：
+- `hydrate(vaults, resume)`：
   1. 读取 `workspace_v1`；
   2. 合并旧版 `note_tabs_<vault>` / `pdf_tabs_<repo>`；
   3. 用当前笔记/PDF/白板列表校验标题与存在性，删掉找不到文件的标签；
-  4. 校验分屏两端的 id 都存在且不同；
-  5. 校验当前 `library` 仍指向存在的库；
-  6. 把合并结果写回状态，标记 `hydrated`。
-- 持久化：`hydrated` 后 150ms 去抖写 `workspace_v1`；切换库/标签/分屏都会触发。
+  4. 校验上次 `library` 仍指向存在的库；
+  5. 把标签与库写回状态，标记 `hydrated`；`resume=false`（冷启动）时固定 `module = "gtd"`、`activeId = null`、`split = null`，所以每次都落在事务-日历；
+  6. `resume=true`（主进程重建窗口时 URL 带 `?restore-workspace=1`）时按 `workspace_v1` 恢复 `module` / `activeId` / `split`；`activeId` 为 `null` 表示用户当时在模块页，保持模块页而不是回退到第一个标签，也不恢复被模块页遮住的分屏。
+- hydration 前由深链打开的文档在两种模式下都优先；已有窗口的托盘恢复、第二实例和 `app:activate` 只 `show()`，不重新 hydrate，现场原样保留。
+- 持久化：`hydrated` 后 150ms 去抖写 `workspace_v1`；切换库/标签/分屏/模块都会触发。
 - 激活文档会把 `library` 切到它所属的库；用户手动切换库后，直到下次激活文档才覆盖。
 - `DocumentWorkspace` 维护分屏比例（默认 50%，最小 25%），拖动时直接改 DOM 宽度，不 setState 每一帧；模块页隐藏工作区但不卸载，阅读位置/缩放得以保留。
 

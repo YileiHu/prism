@@ -31,6 +31,9 @@ const WORKSPACE_KEY = "workspace_v1";
 const RESTORE_KEY = "restore_note_tabs";
 const MODULE_IDS: ReadonlySet<string> = new Set(["resources", "gtd", "library", "settings"]);
 
+// The workspace remembers the full session so a window recreated from the tray
+// can resume it. A cold start deliberately ignores the active document, split
+// and module: every launch lands on the calendar.
 interface PersistedWorkspace {
   version?: number;
   module?: string;
@@ -42,7 +45,7 @@ interface PersistedWorkspace {
 
 interface WorkspaceContextValue {
   state: WorkspaceState;
-  hydrate: (vaults: VaultEntry[]) => Promise<void>;
+  hydrate: (vaults: VaultEntry[], resume?: boolean) => Promise<void>;
   showModule: (module: ModuleId) => void;
   setLibrary: (library: LibraryRef) => void;
   openDoc: (tab: DocTab) => void;
@@ -149,7 +152,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const hydratedRef = useRef(false);
   const hydratingRef = useRef(false);
 
-  const hydrate = useCallback(async (vaults: VaultEntry[]) => {
+  const hydrate = useCallback(async (vaults: VaultEntry[], resume = false) => {
     if (hydratedRef.current || hydratingRef.current) return;
     hydratingRef.current = true;
     try {
@@ -217,6 +220,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       let tabs: DocTab[] = [];
       let restoredActiveId: string | null = null;
       let restoredModule: ModuleId = "gtd";
+      let restoredSplit: SplitState | null = null;
       let restoredLibrary = defaultLibrary(vaults, pdfRepoPath);
 
       if (restore && parsed && parsed.version === 1) {
@@ -225,10 +229,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             .map((raw) => resolvePersistedTab(raw, noteMaps, canvasMaps, pdfRepoPath, pdfTitles))
             .filter((tab): tab is DocTab => tab !== null),
         );
-        restoredActiveId = tabs.some((tab) => tab.id === parsed?.activeId)
-          ? (parsed.activeId as string)
-          : tabs[0]?.id ?? null;
-        restoredModule = isModuleId(parsed.module) ? parsed.module : "gtd";
+        if (resume) {
+          const activeId = typeof parsed.activeId === "string" ? parsed.activeId : null;
+          if (activeId) {
+            // A null activeId means the user was on a module page; keep it.
+            restoredActiveId = tabs.some((tab) => tab.id === activeId)
+              ? activeId
+              : tabs[0]?.id ?? null;
+          }
+          restoredModule = isModuleId(parsed.module) ? parsed.module : "gtd";
+          // A split with no active document was hidden behind a module page;
+          // restoring it would mount editors the user cannot see.
+          restoredSplit = restoredActiveId ? validSplit(parsed.split, tabs) : null;
+        }
         restoredLibrary =
           validLibrary(parsed.library, vaults, pdfRepoPath) ?? defaultLibrary(vaults, pdfRepoPath);
       } else if (restore) {
@@ -248,7 +261,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (!title) continue;
             const doc = makeNoteDoc(vault.path, rawPath, title);
             tabs.push(doc);
-            if (!restoredActiveId && legacy?.active === rawPath) restoredActiveId = doc.id;
+            if (resume && !restoredActiveId && legacy?.active === rawPath) {
+              restoredActiveId = doc.id;
+            }
           }
         }
         if (pdfRepoPath) {
@@ -265,34 +280,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (!title) continue;
             const doc = makePdfDoc(pdfRepoPath, rawPath, title);
             tabs.push(doc);
-            if (!restoredActiveId && typeof legacy?.active === "string" && relKey(legacy.active) === relKey(rawPath)) {
+            if (resume && !restoredActiveId && typeof legacy?.active === "string"
+              && relKey(legacy.active) === relKey(rawPath)) {
               restoredActiveId = doc.id;
             }
           }
         }
         tabs = dedupeTabs(tabs);
-        restoredActiveId = tabs.some((tab) => tab.id === restoredActiveId)
-          ? restoredActiveId
-          : tabs[0]?.id ?? null;
-      }
-
-      const restoredSplit = validSplit(parsed?.split, tabs);
-      const initialSplit = restoredSplit ?? null;
-      if (initialSplit) {
-        restoredActiveId =
-          initialSplit.focused === "left" ? initialSplit.leftId : initialSplit.rightId;
       }
 
       setState((prev) => {
         const merged = dedupeTabs([...tabs, ...prev.tabs]);
         const byId = new Map(merged.map((tab) => [tab.id, tab]));
-        let activeId =
-          prev.activeId && byId.has(prev.activeId) ? prev.activeId : restoredActiveId;
-        let split = validSplit(prev.split, merged) ?? validSplit(restoredSplit, merged);
-        if (split) {
+        // A document opened before hydration (deep link) wins in both modes.
+        const linkedId = prev.activeId && byId.has(prev.activeId) ? prev.activeId : null;
+        let activeId = linkedId
+          ?? (resume && restoredActiveId && byId.has(restoredActiveId) ? restoredActiveId : null);
+        let split = linkedId ? null : (resume ? validSplit(restoredSplit, merged) : null);
+        if (split && activeId && activeId !== split.leftId && activeId !== split.rightId) {
           activeId = split.focused === "left" ? split.leftId : split.rightId;
-        } else if (activeId && !byId.has(activeId)) {
-          activeId = merged[0]?.id ?? null;
         }
         const prevLibrarySet = prev.library.kind === "pdf"
           ? prev.library.repoPath !== ""
@@ -301,9 +307,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ? validLibrary(prev.library, vaults, pdfRepoPath) ?? restoredLibrary
           : restoredLibrary;
         return {
-          module: prev.activeId ? prev.module : restoredModule,
+          module: linkedId ? prev.module : (resume ? restoredModule : "gtd"),
           tabs: merged,
-          activeId: activeId ?? null,
+          activeId,
           split,
           library,
           hydrated: true,

@@ -6,7 +6,7 @@
 
 ## `electron/`
 
-- `database.ts` — `GtdProjectFolderRow`, `GtdProjectLinkRow`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGtdProject`, `addGtdTask`, `addResource`, `clearCompletedGtdTasks`, `completeGtdTask`, `deleteGtdProject`, `deleteGtdTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteTag`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getAllTags`, `getGtdCompletedTasks`, `getGtdOpenTasks`, `getGtdProject`, `getGtdProjectFolder`, `getGtdProjectFolders`, `getGtdProjectLinks`, `getGtdProjectTasks`, `getGtdProjects`, `getGtdProjectsForFilePath`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResources`, `getSetting`, `initDatabase`, `insertNote`, `listPdfDocuments`, `purgeVaultNotes`, `removeGtdProjectLink`, `renameGtdProjectLinkPath`, `renameNoteEntry`, `renameNoteInDb`, `renameTag`, `reopenGtdTask`, `reorderGtdProjectTasks`, `reorderResources`, `reorderTags`, `resetPdfCover`, `searchNoteContents`, `searchNotes`, `searchResources`, `setGtdProjectArchived`, `setGtdProjectFolder`, `setGtdProjectLink`, `setPdfCustomCover`, `setPdfPageCount`, `setSetting`, `setTagColor`, `syncPdfDocuments`, `syncVaultNotes`, `updateGtdProject`, `updateGtdTask`, `updatePdfCover`, `updateResource`
+- `database.ts` — `GtdProjectLinkRow`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGtdProject`, `addGtdTask`, `addResource`, `clearCompletedGtdTasks`, `completeGtdTask`, `deleteGtdProject`, `deleteGtdTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteTag`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getAllTags`, `getGtdCompletedTasks`, `getGtdOpenTasks`, `getGtdProject`, `getGtdProjectLinkIndex`, `getGtdProjectLinks`, `getGtdProjectTasks`, `getGtdProjects`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResources`, `getSetting`, `initDatabase`, `insertNote`, `listPdfDocuments`, `purgeVaultNotes`, `removeGtdProjectLink`, `renameGtdProjectLinkPath`, `renameNoteEntry`, `renameNoteInDb`, `renameTag`, `reopenGtdTask`, `reorderGtdInboxTasks`, `reorderGtdProjectTasks`, `reorderGtdProjects`, `reorderResources`, `reorderTags`, `resetPdfCover`, `searchNoteContents`, `searchNotes`, `searchResources`, `setGtdProjectArchived`, `setGtdProjectLink`, `setPdfCustomCover`, `setPdfPageCount`, `setSetting`, `setTagColor`, `syncPdfDocuments`, `syncVaultNotes`, `updateGtdProject`, `updateGtdTask`, `updatePdfCover`, `updateResource`
 - `main.ts`
 - `paths.ts` — `isPathInside`, `pathKey`
 - `preload.ts` — `PrismAPI`
@@ -56,6 +56,7 @@
 - `CreateCollectionModal.tsx` — `CreateCollectionModal`
 - `CreateGroupModal.tsx` — `CreateGroupModal`
 - `CreateNoteModal.tsx` — `CreateNoteModal`
+- `DragPreview.tsx` — `DragPreview`
 - `DropdownMenu.tsx` — `DropdownMenu`, `DropdownMenuDivider`, `DropdownMenuItem`
 - `EmptyState.tsx` — `EmptyState`
 - `ErrorBoundary.tsx`
@@ -63,6 +64,7 @@
 - `ItemRow.tsx` — `ItemRow`, `ItemRowHoverAction`
 - `Modal.tsx` — `Modal`
 - `NavItem.tsx` — `NavItem`
+- `ProjectLinkMarker.tsx` — `ProjectLinkMarker`
 - `PromptModal.tsx` — `PromptModal`
 - `RenameModal.tsx` — `RenameModal`
 - `SearchInput.tsx` — `SearchInput`
@@ -169,6 +171,7 @@
 - `GtdProgressRing.tsx` — `GtdProgressRing`
 - `GtdProjectCreateModal.tsx` — `GtdProjectCreateModal`
 - `GtdProjectDetail.tsx` — `GtdProjectDetail`
+- `GtdProjectDocCreateModal.tsx` — `GtdProjectDocCreateModal`
 - `GtdProjectDocs.tsx` — `GtdProjectDocs`, `GtdProjectDocsHandle`
 - `GtdProjectLinkPickerModal.tsx` — `GtdProjectLinkPickerModal`
 - `GtdProjectList.tsx` — `GtdProjectList`
@@ -184,6 +187,7 @@
 ## `src/components/library/`
 
 - `CanvasLibraryContent.tsx` — `CanvasLibraryContent`
+- `CollectionDragPreview.tsx` — `CollectionDragPreview`
 - `LibraryDataProvider.tsx` — `LibraryDataProvider`, `useLibraryData`
 - `LibrarySidebar.tsx` — `LibrarySidebar`
 - `LibraryView.tsx` — `LibraryView`
@@ -191,6 +195,7 @@
 - `PdfLibraryContent.tsx` — `PdfLibraryContent`
 - `useCanvasGroups.ts` — `collectUngrouped`, `useCanvasGroups`
 - `useNoteLibrary.ts` — `CANVAS_VIEW_ID`, `NoteLibrary`, `useNoteLibrary`
+- `VaultDragPreview.tsx` — `VaultDragPreview`
 
 ## `src/components/pdf/`
 
@@ -256,6 +261,7 @@
 - `gtd.ts` — `GtdGroupedTasks`, `GtdTaskRange`, `compareTasksByDeadline`, `groupGtdTasks`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange`
 - `noteMenu.tsx` — `noteBaseMenuItems`
 - `paths.ts` — `normalizePath`, `noteKey`, `relativePathInsideVault`, `toRelativePath`
+- `projectLinks.tsx` — `ProjectLinksProvider`, `jumpToProject`, `useProjectLinks`
 - `settings.tsx` — `SettingsProvider`, `useSettings`
 - `sidebarState.ts` — `setSidebarCollapsed`, `toggleSidebarCollapsed`, `useSidebarCollapsed`
 - `toast.tsx` — `ToastAction`, `ToastOptions`, `ToastProvider`, `ToastType`, `useToast`
@@ -269,6 +275,7 @@
 - `useToggleSet.ts` — `useSetToggle`
 - `vaultIcons.tsx` — `VAULT_ICON_PRESETS`, `VaultIcon`
 - `vaultLock.tsx` — `VaultLockProvider`, `useVaultLock`
+- `vaultOrder.ts` — `persistVaultOrder`
 
 ## `src/lib/canvas/`
 
@@ -287,7 +294,7 @@
 
 ## `src/shared/`
 
-- `models.ts` — `AppLaunchState`, `CanvasContent`, `CanvasFile`, `CanvasGroup`, `CanvasGroupsFile`, `CanvasSaveResult`, `GlobalShortcutState`, `GlobalShortcutStatus`, `GtdProject`, `GtdProjectDocsPayload`, `GtdProjectFolder`, `GtdProjectLink`, `GtdProjectLinkKind`, `GtdTask`, `GtdTaskPatch`, `GtdTaskProjectRef`, `GtdViewKey`, `NoteBrief`, `NoteCollectionData`, `NoteCollectionsFile`, `NoteContentHit`, `NoteGroupData`, `NoteListChanges`, `NoteRef`, `PdfDocument`, `PdfListChanges`, `Resource`, `TagInfo`, `VaultLibrarySummary`, `VaultMigrationProgress`, `VaultMigrationResult`, `VaultPrivacyStatus`
+- `models.ts` — `AppLaunchState`, `CanvasContent`, `CanvasFile`, `CanvasGroup`, `CanvasGroupsFile`, `CanvasSaveResult`, `GlobalShortcutState`, `GlobalShortcutStatus`, `GtdFileProjectRef`, `GtdProject`, `GtdProjectDocsPayload`, `GtdProjectLink`, `GtdProjectLinkKind`, `GtdTask`, `GtdTaskPatch`, `GtdTaskProjectRef`, `GtdViewKey`, `NoteBrief`, `NoteCollectionData`, `NoteCollectionsFile`, `NoteContentHit`, `NoteGroupData`, `NoteListChanges`, `NoteRef`, `PdfDocument`, `PdfListChanges`, `Resource`, `TagInfo`, `VaultLibrarySummary`, `VaultMigrationProgress`, `VaultMigrationResult`, `VaultPrivacyStatus`
 - `settings.ts` — `AppSettings`, `CanvasBackground`, `CanvasMinimapPosition`, `CanvasPreset`, `CloseBehavior`, `ColorMode`, `DEFAULT_SETTINGS`, `MAX_CANVAS_PRESETS`, `NumberRange`, `SETTING_KEYS`, `SETTING_META`, `SettingKey`, `SettingMeta`, `decodeSetting`, `normalizeCanvasPresets`, `normalizeSetting`, `serializeSetting`
 - `shortcuts.ts` — `DEFAULT_SHORTCUTS`, `GLOBAL_SHORTCUT_ACTIONS`, `GlobalShortcutAction`, `QUICK_CAPTURE_EVENT`, `SHORTCUT_ACTIONS`, `SHORTCUT_EVENT`, `ShortcutAction`, `ShortcutEventDetail`, `ShortcutMap`, `formatShortcut`, `isReservedShortcut`, `isValidShortcut`, `normalizeShortcuts`, `shortcutFromEvent`
 

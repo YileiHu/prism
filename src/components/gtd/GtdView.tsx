@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   Archive,
   CalendarRange,
@@ -68,6 +69,17 @@ export default function GtdView({ active, focus, vaults, onOpenProjectLink }: Pr
 
   const handleChanged = useCallback(() => setVersion((value) => value + 1), []);
 
+  const reorderProjects = useCallback(async (from: number, to: number) => {
+    const next = arrayMove(projects, from, to);
+    setProjects(next);
+    try {
+      await window.prism.reorderGtdProjects(next.map((project) => project.id));
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      handleChanged();
+    }
+  }, [projects, showToast, t, handleChanged]);
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([
@@ -123,6 +135,21 @@ export default function GtdView({ active, focus, vaults, onOpenProjectLink }: Pr
   const selectedArchived = archivedProjects.find((project) => project.id === selectedArchivedId) ?? archivedProjects[0] ?? null;
 
   const grouped = useMemo(() => groupGtdTasks(openTasks), [openTasks]);
+
+  const reorderInbox = useCallback(async (from: number, to: number) => {
+    const next = arrayMove(grouped.inbox, from, to);
+    const orders = new Map(next.map((task, index) => [task.id, index]));
+    setOpenTasks((prev) => prev.map((task) => {
+      const order = orders.get(task.id);
+      return order === undefined ? task : { ...task, inboxOrder: order };
+    }));
+    try {
+      await window.prism.reorderGtdInboxTasks(next.map((task) => task.id));
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+      handleChanged();
+    }
+  }, [grouped.inbox, showToast, t, handleChanged]);
 
   const focusSeq = activeFocus?.seq;
 
@@ -204,6 +231,7 @@ export default function GtdView({ active, focus, vaults, onOpenProjectLink }: Pr
                 selectedId={list === opts.key ? opts.selectedId : null}
                 onSelect={opts.select}
                 onChanged={handleChanged}
+                onReorder={opts.key === "project" ? reorderProjects : undefined}
               />
             )}
             {opts.key === "project" && (
@@ -310,6 +338,7 @@ export default function GtdView({ active, focus, vaults, onOpenProjectLink }: Pr
             onOpenTask={setSelectedTask}
             onRequestDate={requestDate}
             onRequestDelete={setDeleting}
+            onReorderInbox={reorderInbox}
             onChanged={handleChanged}
           />
         ) : list === "completed" ? (

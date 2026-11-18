@@ -966,6 +966,7 @@ export default function NoteEditor({
       try {
         const result = await window.prism.renameNote(vaultPath, notePath, nextTitle);
         onNoteRenamed(result.path, result.title);
+        window.dispatchEvent(new Event("gtd-project-links-changed"));
         showToast(t["vault.renamed"].replace("{name}", result.title));
       } catch {
         showToast(t["vault.renameFailed"], "error");

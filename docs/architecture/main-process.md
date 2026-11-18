@@ -119,7 +119,7 @@
 - 原生托盘文案没有 `useT()`：主进程从 `src/i18n/zh.ts` / `en.ts` 取 `tray.*`，按 `app.getLocale()` 选择（非英文回落中文），双份对齐仍由 `docs:check` 保证。
 - 全局快捷键由 `applyGlobalShortcuts` 统一注册（`GLOBAL_SHORTCUT_ACTIONS`）：`quickCapture` 打开快速记录小窗，`showMain` 调 `revealMainWindow()`（无主窗口时按需创建）。注册结果经 `shortcuts:get-global-status` 给设置页做「注册失败」提示；`shortcuts` 设置变化时整体重新注册。渲染层只兜底 `quickCapture`（`QUICK_CAPTURE_EVENT`），`showMain` 是纯主进程行为。
 - 开机启动：`applyAutoLaunch` 调 `app.setLoginItemSettings`；只在 `app.isPackaged` 时写系统启动项（开发模式会注册 electron.exe），每次启动自愈路径/参数。`auto_launch_hidden` 仅在 Windows 生效，通过登录项 `args: ["--hidden"]` 传入。
-- `--hidden` 启动**不创建主窗口**：没有渲染进程、没有 vault watcher、不扫 PDF 库；vault watcher 本来就由渲染层 `vault:set-path` 触发，PDF 库由 `ensurePdfRepoRestored` 在第一次创建主窗口时恢复。主窗口由托盘 / 第二实例 / `app:activate` 经 `revealMainWindow` 按需创建。
+- `--hidden` 启动**不创建主窗口**：没有渲染进程、没有 vault watcher、不扫 PDF 库；vault watcher 本来就由渲染层 `vault:set-path` 触发，PDF 库由 `ensurePdfRepoRestored` 在第一次创建主窗口时恢复。主窗口由托盘 / 第二实例 / `app:activate` 经 `revealMainWindow` 按需创建；此时 `createWindow(true)` 在 URL 上带 `?restore-workspace=1`，渲染层恢复上次工作区；正常冷启动不带该参数，固定进入事务-日历。
 - `window-all-closed` 只在「没有托盘且不是隐藏启动」时退出：否则关闭快速记录小窗会把仅托盘驻留的实例一起关掉。
 - 「关闭即退出」优先于托盘存在：主窗口 `closed` 且 `close_behavior === "quit"` 时直接 `app.quit()`（macOS 保持关窗不退出）。`powerMonitor` 的 `shutdown`、窗口 `query-session-end` / `session-end` 会先置 `isQuitting`，避免关机被托盘逻辑拦住。
 - 单实例：仅打包版 `app.requestSingleInstanceLock()`；第二实例带 `--hidden` 忽略，否则 `revealMainWindow()`。开发模式跳过，避免 `electron:dev` 与已安装版抢锁。

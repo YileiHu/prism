@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { BookOpen, ChevronDown, ChevronRight, Layers, Frame, Lock, LockOpen, Palette, Pencil, Trash2 } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -70,37 +70,67 @@ function SectionHeader({
   );
 }
 
-function LibraryRow({
-  icon,
-  label,
-  active,
-  trailing,
-  onClick,
-  onContextMenu,
-}: {
+const LibraryRow = forwardRef<HTMLDivElement, {
   icon: React.ReactNode;
   label: string;
   active: boolean;
   trailing?: React.ReactNode;
   onClick: () => void;
   onContextMenu?: (event: React.MouseEvent) => void;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>>(function LibraryRow(
+  { icon, label, active, trailing, onClick, onContextMenu, className = "", ...props },
+  ref,
+) {
   return (
     <div
+      ref={ref}
+      {...props}
       onClick={onClick}
       onContextMenu={onContextMenu}
       className={`w-full flex items-center gap-1.5 px-3 py-2 text-body transition-colors rounded-control cursor-pointer ${
         active
           ? "bg-[var(--sidebar-item-active)] text-primary font-medium"
           : "text-secondary hover:text-primary hover:bg-[var(--sidebar-item-hover)]"
-      }`}
+      } ${className}`}
     >
       <span className={`flex-shrink-0 ${active ? "text-[var(--accent-text)]" : "text-muted"}`}>{icon}</span>
       <span className="flex-1 min-w-0 text-body truncate text-left">{label}</span>
       {trailing !== undefined && <span className="text-caption text-faint flex-shrink-0">{trailing}</span>}
     </div>
   );
+});
+
+function SortableVaultRow(props: {
+  vault: VaultEntry;
+  icon: React.ReactNode;
+  active: boolean;
+  trailing?: React.ReactNode;
+  onClick: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
+}) {
+  const { vault, ...row } = props;
+  const sortable = useSortable({
+    id: `vault-${vault.path}`,
+    data: { kind: "vault", id: vault.path },
+  });
+  const clickGuard = useDragClickGuard(sortable.isDragging);
+  return (
+    <LibraryRow
+      ref={sortable.setNodeRef}
+      label={vault.name}
+      style={{
+        transform: CSS.Transform.toString(sortable.transform),
+        transition: sortable.transition,
+        opacity: sortable.isDragging ? 0.4 : 1,
+      }}
+      {...sortable.attributes}
+      {...sortable.listeners}
+      {...clickGuard}
+      {...row}
+    />
+  );
 }
+
 
 function CollectionNavRow({
   name,
@@ -314,6 +344,10 @@ export default function LibrarySidebar({
     () => pdfCols.collections.map((collection) => `pdfcoll-${collection.id}`),
     [pdfCols.collections],
   );
+  const vaultIds = useMemo(
+    () => vaults.map((vault) => `vault-${vault.path}`),
+    [vaults],
+  );
 
   // Restore the vault's last view: whiteboards or a collection.
   const openVault = async (vault: VaultEntry) => {
@@ -348,49 +382,51 @@ export default function LibrarySidebar({
         <div className="flex-shrink-0 max-h-[17rem] overflow-y-auto pr-0.5">
           {vaults.length === 0 && <EmptyState size="card" text={t["library.emptyVaults"]} />}
           <div className="sidebar-group">
-            {vaults.map((vault) => {
-              const privateVault = vaultLock.isPrivate(vault.path);
-              const locked = vaultLock.isLocked(vault.path);
-              const menuItems: MenuItem[] = [];
-              if (privateVault) {
-                menuItems.push(locked
-                  ? {
-                      label: t["private.unlock"],
-                      icon: <LockOpen size={14} />,
-                      onClick: () => { void openVault(vault); },
-                    }
-                  : {
-                      label: t["private.lockNow"],
-                      icon: <Lock size={14} />,
-                      onClick: () => { void vaultLock.lock(vault.path); },
-                    });
-              }
-              menuItems.push({
-                label: t["library.vaultIcon"],
-                icon: <Palette size={14} />,
-                onClick: () => setIconTarget(vault),
-              });
-              return (
-                <LibraryRow
-                  key={vault.path}
-                  icon={<VaultIcon name={vault.icon} size={14} />}
-                  label={vault.name}
-                  active={(library.kind === "note" || library.kind === "canvas")
-                    && normalizePath(library.vaultPath) === normalizePath(vault.path)}
-                  trailing={privateVault
-                    ? (
-                      <span title={locked ? t["private.lockedBadge"] : t["private.unlock"]}>
-                        {locked ? <Lock size={11} /> : <LockOpen size={11} />}
-                      </span>
-                    )
-                    : undefined}
-                  // Locked vaults still open here — the content pane renders
-                  // the unlock card.
-                  onClick={() => { void openVault(vault); }}
-                  onContextMenu={(event) => onContextMenu(event, menuItems)}
-                />
-              );
-            })}
+            <SortableContext items={vaultIds} strategy={verticalListSortingStrategy}>
+              {vaults.map((vault) => {
+                const privateVault = vaultLock.isPrivate(vault.path);
+                const locked = vaultLock.isLocked(vault.path);
+                const menuItems: MenuItem[] = [];
+                if (privateVault) {
+                  menuItems.push(locked
+                    ? {
+                        label: t["private.unlock"],
+                        icon: <LockOpen size={14} />,
+                        onClick: () => { void openVault(vault); },
+                      }
+                    : {
+                        label: t["private.lockNow"],
+                        icon: <Lock size={14} />,
+                        onClick: () => { void vaultLock.lock(vault.path); },
+                      });
+                }
+                menuItems.push({
+                  label: t["library.vaultIcon"],
+                  icon: <Palette size={14} />,
+                  onClick: () => setIconTarget(vault),
+                });
+                return (
+                  <SortableVaultRow
+                    key={vault.path}
+                    vault={vault}
+                    icon={<VaultIcon name={vault.icon} size={14} />}
+                    active={(library.kind === "note" || library.kind === "canvas")
+                      && normalizePath(library.vaultPath) === normalizePath(vault.path)}
+                    trailing={privateVault
+                      ? (
+                        <span title={locked ? t["private.lockedBadge"] : t["private.unlock"]}>
+                          {locked ? <Lock size={11} /> : <LockOpen size={11} />}
+                        </span>
+                      )
+                      : undefined}
+                    // Locked vaults still open here — the content pane renders
+                    // the unlock card.
+                    onClick={() => { void openVault(vault); }}
+                    onContextMenu={(event) => onContextMenu(event, menuItems)}
+                  />
+                );
+              })}
+            </SortableContext>
             <LibraryRow
               icon={<BookOpen size={14} />}
               label={t["library.pdfLibrary"]}

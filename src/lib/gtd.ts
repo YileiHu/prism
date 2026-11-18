@@ -85,6 +85,10 @@ export function groupGtdTasks(tasks: GtdTask[]): GtdGroupedTasks {
 
   overdue.sort(compareTasksByDeadline);
   projectUndated.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  inbox.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  inbox.sort((a, b) =>
+    a.inboxOrder !== b.inboxOrder
+      ? a.inboxOrder - b.inboxOrder
+      : (a.createdAt < b.createdAt ? 1 : -1)
+  );
   return { overdue, projectUndated, inbox };
 }

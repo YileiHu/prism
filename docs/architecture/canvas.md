@@ -16,11 +16,11 @@
 
 ### 存放位置
 
-白板不是 SQLite 数据，而是笔记库里的普通 JSON 文件：默认 `<vault>/<canvas_dir>/*.json`，`canvas_dir` 默认 `canvases`。项目资料是唯一例外：项目文件夹（`<项目仓库>/Projects/<项目>/`）里的 `.json` 也可作为白板。
+白板不是 SQLite 数据，而是笔记库里的普通 JSON 文件：默认 `<vault>/<canvas_dir>/*.json`，`canvas_dir` 默认 `canvases`。新的项目白板也放在这里；旧项目文件夹 `<vault>/Projects/<项目>/` 中的 `.json` 仍作为历史位置兼容。
 
 - `canvas_dir` 是笔记库内相对文件夹；`resolveCanvasDir`（`electron/main.ts`）把反斜杠换成 `/`，拒绝空路径、`..` 与绝对路径（含盘符），非法时回退到 `canvases`。允许子目录，例如 `mind/canvases`。
-- `listCanvasFiles` 扫描白板目录第一层的 `*.json`，并追加该 vault 下已登记项目文件夹里的 `*.json`，按 `modifiedAt` 降序返回 `CanvasFile`；不递归项目文件夹、不写数据库索引。
-- `assertCanvasFile` 是所有读写入口的守卫：文件必须在所属 vault 内、扩展名 `.json`，且位于该 vault 的白板目录或某个已登记的 `gtd_project_folders.folder_path` 内。
+- `listCanvasFiles` 扫描白板目录第一层的 `*.json`，并追加该 vault 下 `<vault>/Projects/*/` 第一层的 `*.json`（旧项目白板兼容），按 `modifiedAt` 降序返回 `CanvasFile`；不递归子目录、不写数据库索引。
+- `assertCanvasFile` 是所有读写入口的守卫：文件必须在所属 vault 内、扩展名 `.json`，且位于该 vault 的白板目录或旧 `Projects/` 目录下（`isAllowedCanvasPath`）。
 - IPC 传绝对路径；资料库分组存 vault-relative 正斜杠路径，两者用 `relativePathInsideVault`（`src/lib/paths.ts`）转换。
 - 文件名来自标题：非法字符 `<>:"/\|?*` 替换为 `-`，空标题回退 `Untitled`，重名追加 ` 1`、` 2`；`canvasTitle` 去掉末尾 `.json`。
 - 私密笔记库中的白板仍叫 `.json`，但读写走 `withVaultKey` / `readEncryptedText` / `writeEncryptedFile` 加密；锁定后清空嵌入缓存。
@@ -156,7 +156,7 @@
 
 ## 嵌入预览
 
-笔记里用 `![[target|label|WxH]]` 嵌入白板；`InsertModal` 写入的是 vault-relative 路径（默认 `canvases/name.json`，项目白板为 `Projects/<项目>/name.json`）。`detectEmbedKind`（`src/components/embeds/model.ts`）把 `.canvas` / `.json` 目标判为 `canvas`，其余按 `note`。
+笔记里用 `![[target|label|WxH]]` 嵌入白板；`InsertModal` 写入的是 vault-relative 路径（默认 `canvases/name.json`；旧项目白板仍可能写成 `Projects/<项目>/name.json`）。`detectEmbedKind`（`src/components/embeds/model.ts`）把 `.canvas` / `.json` 目标判为 `canvas`，其余按 `note`。
 
 - `loadEmbed` → `loadCanvas`（`src/components/embeds/loader.ts`）：用缓存的 `listCanvases` 按规范化绝对路径或标题解析文件（允许省略 `.json`）；`readCanvas` 后 `parseCanvas`；返回 `loading` / `ready` / `missing` / `corrupt` / `error`。
 - 文档缓存按绝对路径键；`prism:canvas-changed` 清掉该 vault 的列表与文档，`prism:canvas-saved` 只清被保存的文档；私密库锁定调用 `clearVaultEmbedCache`，避免缓存解密内容。
@@ -172,7 +172,7 @@
 | 键 | 默认 | 作用 |
 |---|---|---|
 | `canvas_dir` | `canvases` | 白板 JSON 在 vault 内的相对目录；全局设置，所有 vault 共用；UI 在 `VaultsSection.tsx`，主进程再清洗 |
-| `project_vault_path` | `""` | 项目仓库；项目文件在 `<vault>/Projects/<项目>/`，其中的 `.json` 也按白板处理；UI 在 `GtdSection.tsx` |
+| `project_vault_path` | `""` | 默认项目资料仓库；新建/关联项目资料时默认选中，不再代表项目文件夹；UI 在 `GtdSection.tsx` |
 | `canvas_presets` | `[]` | 卡片预设 JSON 数组，`normalizeCanvasPresets` 限 8 个、名字 32 字符、尺寸/字号夹取 |
 | `canvas_minimap_position` | `bottom-right` | `off` / 四角；`off` 或详情面板可见时不渲染 MiniMap |
 | `canvas_background` | `dots` | `dots` / `lines` / `cross` / `none` |
@@ -188,7 +188,7 @@
 ## 不变量与坑
 
 1. **JSON 是唯一持久化**：白板不进 SQLite，列表靠目录扫描；不要给白板加数据库索引或假设有 `id` 主键。`listCanvasFiles` 的非递归扫描意味着更深层子目录里的 JSON 不会被发现。
-2. **路径一律 vault-relative + 正斜杠**：写进 `.prism/canvas-groups.json` 的必须是 `canvases/foo.json` 或 `Projects/<项目>/foo.json` 这种形式，不能是绝对路径；比较/去重先 `normalizePath`（小写）或 `toLowerCase`，否则 Windows 大小写会产生重复成员。
+2. **路径一律 vault-relative + 正斜杠**：写进 `.prism/canvas-groups.json` 的必须是 `canvases/foo.json` 或旧 `Projects/<项目>/foo.json` 这种形式，不能是绝对路径；比较/去重先 `normalizePath`（小写）或 `toLowerCase`，否则 Windows 大小写会产生重复成员。
 3. **两个 `CanvasGroup` 不能混用**：资料库分组有 `paths`、存在 sidecar；画布容器有坐标/锁定、存在白板 JSON。在不经过类型检查的边界（JSON、props 透传）用错会静默错。
 4. **分组不变式**：分组路径优先于根 `paths`；未分组是「全部文件 − 所有组引用」的推导结果，不是独立存储。移动前必须先 `stripFromGroups`，删除分组后成员自动回未分组。
 5. **容器是几何关系，不是父子关系**：卡片不记录所属容器；拖动时只在拖拽开始按「完全包含」计算跟随者。容器不能嵌套，`locked` 只锁容器自身，`moveContents` 只影响拖动。
@@ -223,7 +223,7 @@
 UI 手测清单：
 
 - 新建白板 → 打开标签 → 重命名 → 分组里的路径与标签标题同步；删除 → 文件进回收站、标签关闭、分组引用消失。
-- 项目页新建流程白板 → 文件落在 `Projects/<项目>/` → 白板库列表可见、可打开/保存/重命名；项目删除后文件仍在。
+- 项目页新建白板 → 文件落在 `canvas_dir` → 白板库列表可见、可打开/保存/重命名，并自动关联项目；旧 `Projects/<项目>/` 白板仍可见。
 - 打开白板改内容，等自动保存；用外部编辑器改同一文件后再改一次，应弹冲突；分别试「重新加载」和「覆盖保存」。
 - 分组：新建/重命名/换色/排序；把未分组白板拖进组、组间拖动、拖回未分组；删除分组后成员回到未分组；空组显示拖入提示。
 - 卡片/连线：双击新建、双击编辑、拖拽/缩放、右键复制、对齐/分布、围绕所选建容器；连线两端/标签拖动/线型/粗细；删除节点后相关连线消失。

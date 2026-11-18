@@ -2,7 +2,7 @@
 
 # 数据库参考
 
-SQLite 文件位于 Electron `userData/prism.db`，WAL 模式。本文件直接抽取建表语句，共 **10** 张表；语义与迁移说明见 `docs/architecture/data-model.md`。
+SQLite 文件位于 Electron `userData/prism.db`，WAL 模式。本文件直接抽取建表语句，共 **9** 张表；语义与迁移说明见 `docs/architecture/data-model.md`。
 
 源码：[database.ts](../../electron/database.ts)
 
@@ -64,6 +64,7 @@ id INTEGER PRIMARY KEY AUTOINCREMENT,
 title TEXT NOT NULL,
 description TEXT NOT NULL DEFAULT '',
 color TEXT NOT NULL DEFAULT '',
+sort_order INTEGER NOT NULL DEFAULT 0,
 created_at TEXT NOT NULL DEFAULT (datetime('now')),
 archived_at TEXT
 ```
@@ -80,17 +81,8 @@ due_date TEXT,
 completed_at TEXT,
 created_at TEXT NOT NULL DEFAULT (datetime('now')),
 sort_order INTEGER NOT NULL DEFAULT 0,
+inbox_order INTEGER NOT NULL DEFAULT 0,
 FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE SET NULL
-```
-
-### `gtd_project_folders`
-
-```sql
-project_id INTEGER PRIMARY KEY,
-vault_path TEXT NOT NULL,
-folder_path TEXT NOT NULL,
-created_at TEXT NOT NULL DEFAULT (datetime('now')),
-FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE CASCADE
 ```
 
 ### `gtd_project_links`
@@ -142,6 +134,8 @@ added_at TEXT NOT NULL DEFAULT (datetime('now'))
 | `idx_pdf_documents_repo_rel` | `pdf_documents` | repo_path, rel_path COLLATE NOCASE |
 | `idx_pdf_documents_repo_title` | `pdf_documents` | repo_path, title COLLATE NOCASE |
 | `idx_notes_vault` | `notes` | vault_path |
+| `idx_gtd_projects_sort` | `gtd_projects` | archived_at, sort_order |
+| `idx_gtd_tasks_inbox_order` | `gtd_tasks` | inbox_order |
 | `idx_resources_sort` | `resources` | sort_order |
 | `idx_tags_sort` | `tags` | sort_order |
 
@@ -154,6 +148,8 @@ added_at TEXT NOT NULL DEFAULT (datetime('now'))
 - `gtd_items | ADD COLUMN due_date TEXT")`
 - `gtd_items | RENAME COLUMN done_at TO archived_at")`
 - `gtd_actions | ADD COLUMN due_date TEXT")`
+- `gtd_projects | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
+- `gtd_tasks | ADD COLUMN inbox_order INTEGER NOT NULL DEFAULT 0")`
 - `resources | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
 - `resources | ADD COLUMN notes TEXT NOT NULL DEFAULT ''")`
 - `tags | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`

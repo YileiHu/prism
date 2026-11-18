@@ -18,9 +18,8 @@
 | `resource_tags` | 资源 ↔ 标签 | 复合主键；两边外键 CASCADE |
 | `notes` | 笔记索引（可重建） | `path` UNIQUE（原生分隔符）；`vault_path` 归属；`tags` 空格分隔；`modified_at` ISO |
 | `settings` | 键值设置 | `key` 主键；值一律字符串 |
-| `gtd_projects` | 事务项目（可选容器） | `archived_at` 为空即进行中；删除时任务 `project_id` 置空而不是级联删除 |
-| `gtd_tasks` | 事务任务 | `scheduled_date` / `due_date` 本地日期；`completed_at` 为空即未完成；`project_id` 外键 `SET NULL`；`sort_order` 仅项目内 |
-| `gtd_project_folders` | 项目资料文件夹 | `project_id` 主键；存 `vault_path` + 绝对 `folder_path`；项目删除级联删记录，文件夹保留 |
+| `gtd_projects` | 事务项目（可选容器） | `archived_at` 为空即进行中；`sort_order` 是进行中侧栏的手动顺序；删除时任务 `project_id` 置空而不是级联删除 |
+| `gtd_tasks` | 事务任务 | `scheduled_date` / `due_date` 本地日期；`completed_at` 为空即未完成；`project_id` 外键 `SET NULL`；`sort_order` 仅项目内；`inbox_order` 仅收集箱手动顺序 |
 | `gtd_project_links` | 项目关联的文档/白板 | `kind` = `note`/`canvas`；`(project_id, file_path)` UNIQUE；项目删除级联删链接，文件保留 |
 | `pdf_documents` | PDF 索引 | `path` UNIQUE；`repo_path` + `rel_path`；封面字段（`cover_path`/`cover_version`/`cover_custom`/`cover_dirty`） |
 
@@ -29,8 +28,8 @@
 - **笔记索引不是真实数据**：文件被删/改名后由扫描同步；丢失可重建。正文永远以 `.md` 为准。
 - **搜索**：`LIKE` 参数化查询标题/正文，不用 FTS5（对 CJK 更稳）；结果上限来自 `search_result_limit`。
 - **标签**：正文 `#tag` 与 frontmatter `tags` 合并；写库时用空格连接，读取时按空白拆分。
-- **GTD 模型**：任务与项目分表，没有状态枚举——`completed_at` 为空即未完成；`scheduled_date` / `due_date` 是起始/截止闭区间（只一边时视为同一天），任务在区间内每天活跃；只有超过截止日期才算逾期，起始日过去只是进行中。项目是可选的第二视角。项目归档后只读；删除项目只把任务的 `project_id` 置空，已完成任务保留在日志。
-- **项目资料**：项目可有一个项目文件夹（`Projects/<项目>/`）和多条链接；链接指向笔记库里的普通 `.md`/canvas `.json`。删除项目只删链接和文件夹记录，文件和文件夹保留；文件夹不存在时链接标记 missing。
+- **GTD 模型**：任务与项目分表，没有状态枚举——`completed_at` 为空即未完成；`scheduled_date` / `due_date` 是起始/截止闭区间（只一边时视为同一天），任务在区间内每天活跃；只有超过截止日期才算逾期，起始日过去只是进行中。项目是可选的第二视角，`gtd_projects.sort_order` 保存项目侧栏手动顺序（归档列表仍按归档时间）。收集箱另有 `gtd_tasks.inbox_order`；日历日程仍按截止时间排序。项目归档后只读；删除项目只把任务的 `project_id` 置空，已完成任务保留在日志。
+- **项目资料**：项目只有链接记录，不再有专用文件夹；链接指向任意已注册仓库里的普通 `.md`/canvas `.json`。删除项目只删链接，文件保留；旧 `Projects/<项目>/` 白板由目录扫描发现，不依赖数据库映射。
 - **PDF 封面**：文件在 `userData/pdf-covers/<id>.jpg`；DB 只存路径/版本/自定义标记；版本号用于缓存破坏。
 - **已移除的主页表**：`favorite_notes` / `recent_notes` 随主页删除，旧库启动时 `DROP TABLE IF EXISTS`；只删应用元数据，笔记文件不受影响。
 - **窗口/工作区**：也是 `settings` 行，见下文。
@@ -41,9 +40,9 @@
 
 | 键 | 值 | 用途 |
 |---|---|---|
-| `vault_paths` | JSON `VaultEntry[]`（`path`/`name`/`icon`/`private` 提示） | 笔记库列表；主进程缓存并在写入时失效 |
+| `vault_paths` | JSON `VaultEntry[]`（`path`/`name`/`icon`/`private` 提示） | 笔记库列表及侧栏顺序；主进程缓存并在写入时失效 |
 | `window_bounds` | JSON `{x,y,width,height,maximized}` | 窗口位置/大小恢复 |
-| `workspace_v1` | JSON `PersistedWorkspace` | 标签、激活标签、分屏、当前模块/资料库 |
+| `workspace_v1` | JSON `PersistedWorkspace` | 完整工作区快照（标签/激活文档/分屏/模块/资料库）；冷启动只取标签与资料库，托盘重建窗口恢复全部 |
 | `note_tabs_<vault>` | JSON | 旧版按库保存的标签，hydrate 时迁移并入 `workspace_v1` |
 | `pdf_tabs_<repo>` | JSON | 旧版 PDF 标签，同上 |
 | `last_coll_<vault>` | 收藏集 id 或 `__canvas__` | 每个笔记库上次选中的视图 |
@@ -63,7 +62,7 @@
 | `<vault>/**/*.md` | 笔记正文 | 唯一真实来源；保存时保留 CRLF 风格 |
 | `<vault>/<attachments_dir>/` | 图片/附件 | 默认 `attachments`；粘贴图片由 `saveAttachment` 落盘 |
 | `<vault>/<canvas_dir>/*.json` | 白板 | 默认 `canvases`；`CanvasDoc` v2；不进 SQLite |
-| `<项目仓库>/Projects/<项目>/*.json` | 项目白板 | 项目文件夹是 `canvas_dir` 之外的合法白板位置；链接存 `gtd_project_links` |
+| `<vault>/Projects/<项目>/*.json` | 旧项目白板 | 历史位置仍可扫描/打开/保存；新项目白板不再写入 |
 | `<vault>/.prism/collections.json` | 笔记收藏集与分组 | 每篇笔记在根 `notePaths` **XOR** 恰好一个分组 |
 | `<vault>/.prism/canvas-groups.json` | 白板库分组 | 路径为库内相对、正斜杠、大小写不敏感去重；未分组 = 全部 − 各组 |
 | `<vault>/.prism/private.json` | 私密库元数据 | 只存包裹后的 DEK；不含明文 |

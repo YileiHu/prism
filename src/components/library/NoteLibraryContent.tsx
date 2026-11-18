@@ -34,6 +34,7 @@ import SearchInput from "../SearchInput";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import ItemRow from "../ItemRow";
+import ProjectLinkMarker from "../ProjectLinkMarker";
 import BatchActionBar from "../BatchActionBar";
 import ContentSearchView from "../ContentSearchView";
 import CollectionDetail from "../CollectionDetail";
@@ -241,6 +242,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       const result = await window.prism.renameNote(vaultPath, oldPath, newTitle);
       updateNotePaths(oldRelPath, toRelativePath(result.path, vaultPath));
       updateDoc(noteDocId(oldPath), { path: result.path, title: newTitle });
+      window.dispatchEvent(new Event("gtd-project-links-changed"));
       showToast(t["vault.renamed"].replace("{name}", newTitle));
       void lib.loadNotes();
     } catch {
@@ -628,7 +630,12 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                           {isSelected && <CheckSquare size={12} className="text-on-accent" />}
                         </div>
                       ) : undefined}
-                      title={note.title}
+                      title={
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="min-w-0 truncate">{note.title}</span>
+                          {!selectMode && <ProjectLinkMarker filePath={note.path} />}
+                        </span>
+                      }
                       meta={!selectMode ? (
                         <>
                           {(() => {
@@ -725,6 +732,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         <CreateNoteModal
           vaultPath={vaultPath}
           collections={collections}
+          defaultCollectionId={selectedCollectionId ?? undefined}
           onCreated={handleCreateNote}
           onClose={() => setShowNewNoteModal(false)}
         />

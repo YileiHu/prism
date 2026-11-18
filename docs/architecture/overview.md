@@ -45,7 +45,7 @@ Renderer (React SPA, no Node)              Main Process (Node.js)
    - 注册私密仓库的空闲锁定与 locked/unlocked 推送；监听锁屏/休眠并锁定；
    - 注册四个协议 handler；
    - `registerIpcHandlers()`；
-   - `applyAutoLaunch()` 自愈登录项；非 `--hidden` 启动时 `createWindow()`（恢复窗口位置/大小/最大化状态，设置背景色避免闪白）；
+   - `applyAutoLaunch()` 自愈登录项；非 `--hidden` 启动时 `createWindow()`（冷启动，恢复窗口位置/大小/最大化状态，设置背景色避免闪白）；托盘/第二实例/`app:activate` 重建窗口时 `createWindow(true)`，渲染层 URL 带 `?restore-workspace=1`；
    - `syncTray()`：按设置决定是否创建托盘；`--hidden` 启动没有主窗口、没有渲染进程；
    - 注册全局快捷键（快速记录小窗 / 呼出主界面）；
    - PDF 库延后到第一次创建主窗口时才恢复并异步扫描。
@@ -70,13 +70,13 @@ ThemeProvider
 ```
 
 - `SettingsProvider` 启动时一次 `getAllSettings()` 批量载入；`set()` 写回 `settings:set` 并广播 `settings-saved`。
-- `App` 读取 `vault_paths` 设置、查询私密仓库状态、调用 `WorkspaceProvider.hydrate()` 恢复标签/分屏/当前库；完成前显示启动屏。
+- `App` 读取 `vault_paths` 设置、查询私密仓库状态、调用 `WorkspaceProvider.hydrate()` 恢复标签与上次资料库（托盘重建窗口时恢复完整现场）；完成前显示启动屏。
 - `App` 内部再挂 `LibraryDataProvider`（笔记/PDF/白板三模式数据）与 `ToastProvider`。
 
 ## 导航与外壳
 
-- 顶级导航是**模块**：事务、资料库、网页资源、设置；冷启动默认进入事务-日历。
-- 打开文档后进入**工作区**：笔记 / 白板 / PDF 共用一条标签栏，可左右分屏；标签与分屏由 `WorkspaceProvider` 统一管理，持久化键 `workspace_v1`。
+- 顶级导航是**模块**：事务、资料库、网页资源、设置；冷启动固定进入事务-日历，托盘恢复保留当前页面。
+- 打开文档后进入**工作区**：笔记 / 白板 / PDF 共用一条标签栏，可左右分屏；完整现场经 `workspace_v1` 持久化，冷启动只恢复标签/资料库，托盘重建窗口恢复激活文档与分屏。
 - 模块页与工作区**同时挂载**，只切换可见性；切换标签或模块不会丢编辑器/滚动状态。工作区激活时模块页用 `visibility: hidden` 隐藏，而不是卸载。
 - 每个模块的侧栏经 `ModuleSidebar` portal 到 `AppSidebarSlotProvider` 提供的全高槽位；模块内部不要自己平铺侧栏。
 - 工具栏是贡献制：模块/文档向 `ToolbarProvider` 注册当前作用域的内容，`AppToolbar` 负责渲染。
@@ -88,7 +88,7 @@ ThemeProvider
 | 网页资源、标签、GTD、笔记索引、PDF 索引、设置 | SQLite `userData/prism.db` | 表结构见 [数据库参考](../reference/database.md) |
 | 笔记正文 | `<vault>/**/*.md` | 唯一真实来源；SQLite 只是可重建索引 |
 | 笔记附件 | `<vault>/<attachments_dir>/` | 默认 `attachments` |
-| 白板 | `<vault>/<canvas_dir>/*.json` 或 `<项目仓库>/Projects/<项目>/*.json` | 默认 `canvases`；项目白板例外；不进 SQLite |
+| 白板 | `<vault>/<canvas_dir>/*.json`（旧 `<vault>/Projects/<项目>/*.json` 兼容） | 默认 `canvases`；新项目白板也在这里；不进 SQLite |
 | PDF | 用户选择的 PDF 根目录 | 只索引，不移动文件 |
 | 收藏集/分组 | `<vault>/.prism/collections.json` | 原子写；损坏时备份 `.bak` |
 | 白板库分组 | `<vault>/.prism/canvas-groups.json` | 与画布内部容器不是一回事 |

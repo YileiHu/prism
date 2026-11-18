@@ -6,10 +6,9 @@ import { SkeletonRows } from "../Skeleton";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useSettings } from "../../lib/settings";
-import { useVaultLock } from "../../lib/vaultLock";
 import { normalizePath } from "../../lib/paths";
-import { createCanvasDoc, serializeCanvas } from "../../lib/canvas/model";
-import { CANVAS_CHANGED_EVENT, notifyCanvasChanged } from "../../lib/canvas/events";
+import { CANVAS_CHANGED_EVENT } from "../../lib/canvas/events";
+import GtdProjectDocCreateModal from "./GtdProjectDocCreateModal";
 import GtdProjectLinkPickerModal from "./GtdProjectLinkPickerModal";
 import type { VaultEntry } from "../../types";
 import type { GtdProject } from "./types";
@@ -27,13 +26,11 @@ interface Props {
   embedded?: boolean;
   onOpenLink: (link: GtdProjectLink) => void;
   onChanged: () => void;
-  onStateChange?: (state: { hasFiles: boolean; canOpenFolder: boolean }) => void;
 }
 
 export interface GtdProjectDocsHandle {
   create: (kind: GtdProjectLinkKind) => void;
   link: (kind: GtdProjectLinkKind) => void;
-  openFolder: () => void;
 }
 
 const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProjectDocs({
@@ -44,22 +41,20 @@ const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProje
   embedded = false,
   onOpenLink,
   onChanged,
-  onStateChange,
 }, ref) {
   const { t } = useT();
   const showToast = useToast();
   const { values } = useSettings();
-  const vaultLock = useVaultLock();
   const [payload, setPayload] = useState<GtdProjectDocsPayload | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [pickerKind, setPickerKind] = useState<GtdProjectLinkKind | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [createKind, setCreateKind] = useState<GtdProjectLinkKind | null>(null);
 
-  const projectVaultPath = values.project_vault_path;
-  const projectVaultValid = vaults.some(
-    (vault) => normalizePath(vault.path) === normalizePath(projectVaultPath),
-  );
+  const links = payload?.links ?? [];
+  // Prefer the vault of the first linked file, then the configured default.
+  const defaultVaultPath =
+    links[0]?.vaultPath || values.project_vault_path || vaults[0]?.path || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +68,7 @@ const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProje
 
   useEffect(() => {
     const vaultsOfLinks = new Set(
-      (payload?.links ?? []).map((link) => normalizePath(link.vaultPath)),
+      links.map((item) => normalizePath(item.vaultPath)),
     );
     if (vaultsOfLinks.size === 0) return;
     const off = window.prism.onVaultUpdated((vaultPath) => {
@@ -90,68 +85,29 @@ const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProje
       off();
       window.removeEventListener(CANVAS_CHANGED_EVENT, onCanvasChanged);
     };
-  }, [payload]);
+  }, [links]);
 
-  const folder = payload?.folder ?? null;
-  const links = payload?.links ?? [];
-  const hasFiles = links.length > 0;
-  const canOpenFolder = hasFiles && !!folder && !folder.missing;
-  const folderVaultConfigured = !!folder && vaults.some(
-    (vault) => normalizePath(vault.path) === normalizePath(folder.vaultPath),
-  );
-  // Follow the folder while it is healthy; when it is missing and its old vault
-  // is gone, ensureGtdProjectFolder falls back to the configured project vault.
-  const targetVaultPath = folder && (!folder.missing || folderVaultConfigured)
-    ? folder.vaultPath
-    : projectVaultValid
-      ? projectVaultPath
-      : folder?.vaultPath || projectVaultPath;
-
-  const create = async (kind: GtdProjectLinkKind) => {
-    if (readOnly || busy) return;
-    const vaultPath = targetVaultPath;
-    if (!vaultPath || (!folder && !projectVaultValid)) {
-      showToast(
-        t[projectVaultPath ? "gtd.projectDoc.vaultUnavailable" : "gtd.projectDoc.noVault"],
-        "error",
-      );
+  const create = (kind: GtdProjectLinkKind) => {
+    if (readOnly) return;
+    if (vaults.length === 0) {
+      showToast(t["gtd.projectDoc.noVault"], "error");
       return;
     }
-    const run = async () => {
-      setBusy(true);
-      try {
-        const template = kind === "canvas" ? serializeCanvas(createCanvasDoc()) : undefined;
-        const link = await window.prism.createGtdProjectFile(project.id, kind, template);
-        if (kind === "canvas") {
-          notifyCanvasChanged(link.vaultPath, { created: link.filePath });
-        }
-        window.dispatchEvent(new Event("gtd-project-links-changed"));
-        onChanged();
-        onOpenLink(link);
-      } catch {
-        showToast(t["common.saveFailed"], "error");
-      } finally {
-        setBusy(false);
-      }
-    };
-    if (vaultLock.isLocked(vaultPath)) {
-      vaultLock.requestUnlock(vaultPath, () => { void run(); });
-    } else {
-      await run();
-    }
+    setCreateKind(kind);
   };
 
-  const openFolder = async () => {
-    try {
-      await window.prism.openGtdProjectFolder(project.id);
-    } catch {
-      showToast(t["common.saveFailed"], "error");
+  const link = (kind: GtdProjectLinkKind) => {
+    if (readOnly) return;
+    if (vaults.length === 0) {
+      showToast(t["gtd.projectDoc.noVault"], "error");
+      return;
     }
+    setPickerKind(kind);
   };
 
-  const unlink = async (link: GtdProjectLink) => {
+  const unlink = async (item: GtdProjectLink) => {
     try {
-      await window.prism.removeGtdProjectLink(link.id);
+      await window.prism.removeGtdProjectLink(item.id);
     } catch {
       showToast(t["common.deleteFailed"], "error");
       return;
@@ -161,17 +117,12 @@ const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProje
     onChanged();
   };
 
-  useEffect(() => {
-    onStateChange?.({ hasFiles, canOpenFolder });
-  }, [canOpenFolder, hasFiles, onStateChange]);
-
   useImperativeHandle(ref, () => ({
-    create: (kind) => { void create(kind); },
-    link: (kind) => setPickerKind(kind),
-    openFolder: () => { void openFolder(); },
-  }), [create, openFolder]);
+    create,
+    link,
+  }), [create, link]);
 
-  if (readOnly && !folder && links.length === 0) return null;
+  if (readOnly && links.length === 0) return null;
 
   return (
     <section className={embedded ? "mt-4 border-t border-line/30 pt-4" : "border-b border-line/30 px-4 py-3"}>
@@ -182,64 +133,75 @@ const GtdProjectDocs = forwardRef<GtdProjectDocsHandle, Props>(function GtdProje
       {!loaded && !payload ? (
         <SkeletonRows count={2} />
       ) : (
-        <>
-          <div className="sidebar-group mt-2">
-            {links.length === 0 ? (
-              <EmptyState size="card" text={t["gtd.projectDoc.empty"]} />
-            ) : (
-              links.map((link) => {
-                const menuItems = [
-                  ...(!link.missing
-                    ? [{
-                        label: t["menu.showInExplorer"],
-                        icon: <FolderOpen size={14} />,
-                        onClick: () => window.prism.showItemInFolder(link.filePath),
-                      }]
-                    : []),
-                  ...(!readOnly
-                    ? [{
-                        label: t["gtd.projectDoc.unlink"],
-                        icon: <Unlink size={14} />,
-                        onClick: () => void unlink(link),
-                      }]
-                    : []),
-                ];
-                return (
-                  <ItemRow
-                    key={link.id}
-                    variant="dense"
-                    className="mb-0.5 last:mb-0"
-                    onPrimaryClick={link.missing ? undefined : () => onOpenLink(link)}
-                    tooltip={link.filePath}
-                    menuItems={menuItems.length > 0 ? menuItems : undefined}
-                    title={
-                      link.missing
-                        ? <span className="text-muted">{link.title}</span>
-                        : link.title
-                    }
-                    meta={
-                      link.missing ? (
-                        <span className="flex items-center gap-1 text-caption text-danger">
-                          <TriangleAlert size={11} />
-                          {t["gtd.projectDoc.missing"]}
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                );
-              })
-            )}
-          </div>
-        </>
+        <div className="sidebar-group mt-2">
+          {links.length === 0 ? (
+            <EmptyState size="card" text={t["gtd.projectDoc.empty"]} />
+          ) : (
+            links.map((item) => {
+              const menuItems = [
+                ...(!item.missing
+                  ? [{
+                      label: t["menu.showInExplorer"],
+                      icon: <FolderOpen size={14} />,
+                      onClick: () => window.prism.showItemInFolder(item.filePath),
+                    }]
+                  : []),
+                ...(!readOnly
+                  ? [{
+                      label: t["gtd.projectDoc.unlink"],
+                      icon: <Unlink size={14} />,
+                      onClick: () => void unlink(item),
+                    }]
+                  : []),
+              ];
+              return (
+                <ItemRow
+                  key={item.id}
+                  variant="dense"
+                  className="mb-0.5 last:mb-0"
+                  onPrimaryClick={item.missing ? undefined : () => onOpenLink(item)}
+                  tooltip={item.filePath}
+                  menuItems={menuItems.length > 0 ? menuItems : undefined}
+                  title={
+                    item.missing
+                      ? <span className="text-muted">{item.title}</span>
+                      : item.title
+                  }
+                  meta={
+                    item.missing ? (
+                      <span className="flex items-center gap-1 text-caption text-danger">
+                        <TriangleAlert size={11} />
+                        {t["gtd.projectDoc.missing"]}
+                      </span>
+                    ) : undefined
+                  }
+                />
+              );
+            })
+          )}
+        </div>
       )}
+
+      <GtdProjectDocCreateModal
+        open={createKind !== null}
+        kind={createKind ?? "note"}
+        project={project}
+        vaults={vaults}
+        defaultVaultPath={defaultVaultPath}
+        onClose={() => setCreateKind(null)}
+        onCreated={(link) => {
+          onChanged();
+          onOpenLink(link);
+        }}
+      />
 
       <GtdProjectLinkPickerModal
         open={pickerKind !== null}
         projectId={project.id}
         kind={pickerKind ?? "note"}
         vaults={vaults}
-        defaultVaultPath={folder?.vaultPath || projectVaultPath}
-        linkedPaths={links.map((link) => link.filePath)}
+        defaultVaultPath={defaultVaultPath}
+        linkedPaths={links.map((item) => item.filePath)}
         onClose={() => setPickerKind(null)}
         onLinked={(link) => {
           window.dispatchEvent(new Event("gtd-project-links-changed"));

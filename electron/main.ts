@@ -40,20 +40,18 @@ import {
   deleteGtdTask,
   clearCompletedGtdTasks,
   reorderGtdProjectTasks,
+  reorderGtdInboxTasks,
+  reorderGtdProjects,
   addGtdProject,
   updateGtdProject,
   setGtdProjectArchived,
   deleteGtdProject,
   getGtdProject,
-  getGtdProjectFolder,
-  getGtdProjectFolders,
-  setGtdProjectFolder,
+  getGtdProjectLinkIndex,
   getGtdProjectLinks,
-  getGtdProjectsForFilePath,
   setGtdProjectLink,
   removeGtdProjectLink,
   renameGtdProjectLinkPath,
-  type GtdProjectFolderRow,
   type GtdProjectLinkRow,
   type VaultNote,
   renameNoteEntry,
@@ -77,7 +75,6 @@ import type {
   CanvasSaveResult,
   GlobalShortcutStatus,
   GtdProjectDocsPayload,
-  GtdProjectFolder,
   GtdProjectLink,
   GtdProjectLinkKind,
   GtdTaskPatch,
@@ -262,7 +259,9 @@ function applyAutoLaunch(): void {
 
 function revealMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
+    // The app already ran (tray/hidden startup): resume the persisted
+    // workspace instead of treating this as a cold start.
+    createWindow(true);
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -456,7 +455,7 @@ function applyNativeColorMode(mode: string): void {
   mainWindow.setBackgroundColor(dark ? DARK_BG : LIGHT_BG);
 }
 
-function createWindow(): void {
+function createWindow(reopen = false): void {
   const isWindows = process.platform === "win32";
   const saved = loadWindowState();
   const colorMode = resolveColorScheme(getSetting("color_mode"));
@@ -554,9 +553,12 @@ function createWindow(): void {
   });
 
   if (process.env.NODE_ENV === "development" || process.argv.includes("--dev")) {
-    win.loadURL("http://localhost:5173");
+    win.loadURL(`http://localhost:5173${reopen ? "?restore-workspace=1" : ""}`);
   } else {
-    win.loadFile(path.join(__dirname, "../dist/index.html"));
+    win.loadFile(
+      path.join(__dirname, "../dist/index.html"),
+      reopen ? { query: { "restore-workspace": "1" } } : undefined,
+    );
   }
 
   // Restored on the first main window, not at boot: a tray-only instance must
@@ -1281,20 +1283,10 @@ function persistPrivateAttachment(vaultPath: string, safeExt: string, data: Buff
   });
 }
 
-const PROJECT_DOCS_DIR = "Projects";
-
-function projectDocsVault(): string | null {
-  const raw = getSetting("project_vault_path");
-  if (!raw) return null;
-  const match = registeredVaultPaths().find(
-    (vaultPath) => normalizePathKey(vaultPath) === normalizePathKey(raw),
-  );
-  return match ?? null;
-}
-
-function isGtdProjectFolderPath(filePath: string): boolean {
-  return getGtdProjectFolders().some((folder) => isPathInside(folder.folder_path, filePath));
-}
+// Legacy project docs used to live under <vault>/Projects/<project>/. New
+// project links point at regular library files, but those folders stay readable
+// so existing canvases keep working (and survive project deletion).
+const LEGACY_PROJECT_DIR = "Projects";
 
 // Mind-map documents live in a vault-relative folder (default "canvases") as
 // plain JSON. The same sanitizing rules as attachments keep a bad setting from
@@ -1308,22 +1300,28 @@ function resolveCanvasDir(vaultPath: string): string {
   return path.join(vaultPath, ...segs);
 }
 
+function legacyProjectDocsDir(vaultPath: string): string {
+  return path.join(vaultPath, LEGACY_PROJECT_DIR);
+}
+
+function isAllowedCanvasPath(vaultPath: string, filePath: string): boolean {
+  return (
+    isPathInside(resolveCanvasDir(vaultPath), filePath) ||
+    isPathInside(legacyProjectDocsDir(vaultPath), filePath)
+  );
+}
+
 function canvasTitle(filePath: string): string {
   return path.basename(filePath).replace(/\.json$/i, "");
 }
 
 // Every canvas read/write must resolve to a .json file inside the owning
-// vault's canvas folder. Renames/imports elsewhere in the vault are refused.
+// vault's canvas folder or the legacy Projects/ tree.
 function assertCanvasFile(filePath: string): string {
   const vaultPath = findOwningVault(filePath);
   if (!vaultPath) throw new Error("CANVAS_OUTSIDE_VAULT");
   if (!filePath.toLowerCase().endsWith(".json")) throw new Error("CANVAS_INVALID");
-  // Canvas files normally live in canvas_dir. Project folders are the one
-  // deliberate exception so a project can keep notes and its flow canvas together.
-  if (
-    !isPathInside(resolveCanvasDir(vaultPath), filePath) &&
-    !isGtdProjectFolderPath(filePath)
-  ) {
+  if (!isAllowedCanvasPath(vaultPath, filePath)) {
     throw new Error("CANVAS_OUTSIDE_VAULT");
   }
   return vaultPath;
@@ -1345,9 +1343,12 @@ function listCanvasFiles(vaultPath: string): CanvasFile[] {
   };
 
   addDir(resolveCanvasDir(vaultPath));
-  for (const folder of getGtdProjectFolders()) {
-    if (normalizePathKey(folder.vault_path) === normalizePathKey(vaultPath)) {
-      addDir(folder.folder_path);
+  // Legacy project folders are discovered from disk, not from a DB mapping, so
+  // they remain visible after the project row is gone.
+  const legacyRoot = legacyProjectDocsDir(vaultPath);
+  if (fs.existsSync(legacyRoot)) {
+    for (const entry of fs.readdirSync(legacyRoot, { withFileTypes: true })) {
+      if (entry.isDirectory()) addDir(path.join(legacyRoot, entry.name));
     }
   }
   return Array.from(files.values()).sort((a, b) => b.modifiedAt - a.modifiedAt);
@@ -1480,60 +1481,6 @@ async function createCanvasFile(
   return { path: target.path, title: target.title, modifiedAt: stat.mtimeMs };
 }
 
-function toGtdProjectFolder(row: GtdProjectFolderRow): GtdProjectFolder {
-  const owner = findOwningVault(row.folder_path);
-  return {
-    projectId: row.project_id,
-    vaultPath: row.vault_path,
-    folderPath: row.folder_path,
-    missing: !fs.existsSync(row.folder_path) || !owner || !isPathInside(row.vault_path, row.folder_path),
-  };
-}
-
-function ensureGtdProjectFolder(projectId: number): GtdProjectFolderRow {
-  const project = getGtdProject(projectId);
-  if (project.archivedAt) throw new Error("GTD project is archived");
-
-  const existing = getGtdProjectFolder(projectId);
-  if (existing && fs.existsSync(existing.folder_path)) {
-    const owner = findOwningVault(existing.folder_path);
-    if (owner && isPathInside(owner, existing.folder_path)) return existing;
-  }
-  if (existing) {
-    // Keep the existing folder location when its vault is still registered;
-    // only fall back to the configured project vault when it is gone.
-    const owner = findOwningVault(existing.folder_path);
-    if (owner) {
-      if (isPrivateVault(owner)) requireUnlocked(owner);
-      fs.mkdirSync(existing.folder_path, { recursive: true });
-      return setGtdProjectFolder(projectId, owner, existing.folder_path);
-    }
-  }
-
-  const vault = projectDocsVault();
-  if (!vault) throw new Error("PROJECT_VAULT_NOT_SET");
-  if (isPrivateVault(vault)) requireUnlocked(vault);
-  const root = path.join(vault, PROJECT_DOCS_DIR);
-  fs.mkdirSync(root, { recursive: true });
-  const safeName =
-    project.title
-      .trim()
-      .replace(/[<>:"/\\|?*]/g, "-")
-      .replace(/^\.+|\.+$/g, "")
-      .trim() || "Untitled";
-  const taken = new Set(
-    getGtdProjectFolders().map((folder) => normalizePathKey(folder.folder_path)),
-  );
-  let folderPath = path.join(root, safeName);
-  let counter = 1;
-  while (fs.existsSync(folderPath) || taken.has(normalizePathKey(folderPath))) {
-    folderPath = path.join(root, `${safeName} ${counter}`);
-    counter++;
-  }
-  fs.mkdirSync(folderPath, { recursive: true });
-  return setGtdProjectFolder(projectId, vault, folderPath);
-}
-
 function toGtdProjectLink(row: GtdProjectLinkRow): GtdProjectLink {
   const owner = findOwningVault(row.file_path);
   const exists = fs.existsSync(row.file_path);
@@ -1542,8 +1489,7 @@ function toGtdProjectLink(row: GtdProjectLinkRow): GtdProjectLink {
       ? row.file_path.toLowerCase().endsWith(".md")
       : row.file_path.toLowerCase().endsWith(".json") &&
         !!owner &&
-        (isPathInside(resolveCanvasDir(owner), row.file_path) ||
-          isGtdProjectFolderPath(row.file_path));
+        isAllowedCanvasPath(owner, row.file_path);
   return {
     id: row.id,
     kind: row.kind,
@@ -1555,9 +1501,7 @@ function toGtdProjectLink(row: GtdProjectLinkRow): GtdProjectLink {
 }
 
 function getGtdProjectDocsPayload(projectId: number): GtdProjectDocsPayload {
-  const folderRow = getGtdProjectFolder(projectId);
   return {
-    folder: folderRow ? toGtdProjectFolder(folderRow) : null,
     links: getGtdProjectLinks(projectId).map(toGtdProjectLink),
   };
 }
@@ -1899,55 +1843,19 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gtd:delete-task", (_e, id: number) => deleteGtdTask(id));
   ipcMain.handle("gtd:clear-completed", () => clearCompletedGtdTasks());
   ipcMain.handle("gtd:reorder-project-tasks", (_e, projectId: number, orderedIds: number[]) => reorderGtdProjectTasks(projectId, orderedIds));
+  ipcMain.handle("gtd:reorder-inbox", (_e, orderedIds: number[]) =>
+    reorderGtdInboxTasks(Array.isArray(orderedIds) ? orderedIds.map(Number) : []),
+  );
+  ipcMain.handle("gtd:reorder-projects", (_e, orderedIds: number[]) =>
+    reorderGtdProjects(Array.isArray(orderedIds) ? orderedIds.map(Number) : []),
+  );
   ipcMain.handle("gtd:add-project", (_e, title: string) => addGtdProject(title));
   ipcMain.handle("gtd:update-project", (_e, id: number, patch: { title?: string; description?: string; color?: string }) => updateGtdProject(id, patch));
   ipcMain.handle("gtd:archive-project", (_e, id: number, archived: boolean) => setGtdProjectArchived(id, archived));
   ipcMain.handle("gtd:delete-project", (_e, id: number) => deleteGtdProject(id));
 
   ipcMain.handle("gtd:project-docs", (_e, projectId: number) => getGtdProjectDocsPayload(projectId));
-  ipcMain.handle("gtd:projects-for-file", (_e, filePath: string) =>
-    getGtdProjectsForFilePath(String(filePath ?? "")),
-  );
-
-  ipcMain.handle("gtd:ensure-project-folder", (_e, projectId: number) =>
-    toGtdProjectFolder(ensureGtdProjectFolder(projectId)),
-  );
-
-  ipcMain.handle("gtd:open-project-folder", async (_e, projectId: number) => {
-    const row = getGtdProjectFolder(projectId);
-    if (!row) throw new Error("PROJECT_FOLDER_NOT_FOUND");
-    const folder = toGtdProjectFolder(row);
-    if (folder.missing) throw new Error("PROJECT_FOLDER_MISSING");
-    const error = await shell.openPath(row.folder_path);
-    if (error) throw new Error(error);
-  });
-
-  ipcMain.handle(
-    "gtd:create-project-file",
-    async (_e, projectId: number, kind: GtdProjectLinkKind, templateJson?: string) => {
-      if (kind !== "note" && kind !== "canvas") throw new Error("INVALID_PROJECT_LINK_KIND");
-      const project = getGtdProject(projectId);
-      if (project.archivedAt) throw new Error("GTD project is archived");
-      const folder = ensureGtdProjectFolder(projectId);
-      const title = kind === "note" ? `${project.title} 文档` : `${project.title} 白板`;
-      if (kind === "note") {
-        const note = await createNoteFile(folder.vault_path, folder.folder_path, title);
-        return toGtdProjectLink(
-          setGtdProjectLink(projectId, "note", folder.vault_path, note.path, note.title),
-        );
-      }
-      if (!templateJson) throw new Error("CANVAS_TEMPLATE_REQUIRED");
-      const canvas = await createCanvasFile(
-        folder.vault_path,
-        folder.folder_path,
-        title,
-        templateJson,
-      );
-      return toGtdProjectLink(
-        setGtdProjectLink(projectId, "canvas", folder.vault_path, canvas.path, canvas.title),
-      );
-    },
-  );
+  ipcMain.handle("gtd:project-link-index", () => getGtdProjectLinkIndex());
 
   ipcMain.handle(
     "gtd:set-project-link",

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   FolderKanban,
-  FolderOpen,
   Frame,
   Link2,
   PanelRightClose,
@@ -68,7 +67,6 @@ export default function GtdProjectDetail({
   const docsRef = useRef<GtdProjectDocsHandle>(null);
   const docsMenuRef = useRef<HTMLButtonElement>(null);
   const railRef = useRef<HTMLElement>(null);
-  const [docsState, setDocsState] = useState({ hasFiles: false, canOpenFolder: false });
   const [docsMenuOpen, setDocsMenuOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
 
@@ -148,16 +146,6 @@ export default function GtdProjectDetail({
             </Button>
           </>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title={t["gtd.projectDoc.openFolder"]}
-          aria-label={t["gtd.projectDoc.openFolder"]}
-          disabled={!docsState.canOpenFolder}
-          onClick={() => docsRef.current?.openFolder()}
-        >
-          <FolderOpen size={15} />
-        </Button>
         {!readOnly && (
           <Button
             ref={docsMenuRef}
@@ -186,7 +174,6 @@ export default function GtdProjectDetail({
     ),
   }), [
     docsMenuOpen,
-    docsState.canOpenFolder,
     project.description,
     project.title,
     railOpen,
@@ -245,6 +232,7 @@ export default function GtdProjectDetail({
       return;
     }
     setRenaming(false);
+    window.dispatchEvent(new Event("gtd-project-links-changed"));
     onChanged();
   };
 
@@ -424,7 +412,6 @@ export default function GtdProjectDetail({
             readOnly={readOnly}
             onOpenLink={onOpenProjectLink}
             onChanged={onChanged}
-            onStateChange={setDocsState}
           />
         </aside>
       </div>

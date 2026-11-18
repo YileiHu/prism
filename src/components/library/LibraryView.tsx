@@ -17,18 +17,22 @@ import { useToast } from "../../lib/toast";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
 import { normalizePath, type LibraryRef } from "../../lib/workspace/types";
 import { useSidebarCollapsed } from "../../lib/sidebarState";
-import { resolveTagColor } from "../../lib/colors";
+import { persistVaultOrder } from "../../lib/vaultOrder";
 import ConfirmDialog from "../ConfirmDialog";
 import CreateCollectionModal from "../CreateCollectionModal";
 import EmptyState from "../EmptyState";
 import RenameModal from "../RenameModal";
 import { relKey, type PdfCollectionData } from "../pdf/types";
 import type { CollectionData } from "../collectionTypes";
+import type { VaultEntry } from "../../types";
 import { useVaultLock } from "../../lib/vaultLock";
 import Button from "../Button";
 import Input from "../Input";
 import Spinner from "../Spinner";
+import DragPreview from "../DragPreview";
 import { useLibraryData } from "./LibraryDataProvider";
+import CollectionDragPreview from "./CollectionDragPreview";
+import VaultDragPreview from "./VaultDragPreview";
 import LibrarySidebar from "./LibrarySidebar";
 import { ModuleSidebar } from "../AppSidebarSlot";
 import NoteLibraryContent from "./NoteLibraryContent";
@@ -96,21 +100,9 @@ function LockedVault({ vaultPath, vaultName }: { vaultPath: string; vaultName: s
   );
 }
 
-function CollectionDragPreview({ name, color, count }: { name: string; color?: string; count: number }) {
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
-      <span
-        className="w-2 h-2 rounded-full flex-shrink-0"
-        style={{ backgroundColor: resolveTagColor(name, color).bar }}
-      />
-      <span className="flex-1 text-body text-primary">{name}</span>
-      <span className="text-caption text-muted">{count}</span>
-    </div>
-  );
-}
-
 type DragState =
   | { kind: "note"; title: string; count: number }
+  | { kind: "vault"; vault: VaultEntry }
   | { kind: "note-collection"; collection: CollectionData }
   | { kind: "pdf-doc"; title: string }
   | { kind: "pdf-collection"; collection: PdfCollectionData }
@@ -149,6 +141,9 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
     if (data?.kind === "note") {
       const paths = Array.isArray(data.paths) ? data.paths as string[] : [];
       setDrag({ kind: "note", title: String(data.title ?? ""), count: paths.length });
+    } else if (data?.kind === "vault") {
+      const vault = vaults.find((entry) => entry.path === data.id);
+      if (vault) setDrag({ kind: "vault", vault });
     } else if (data?.kind === "collection") {
       const collection = note.collections.find((entry) => entry.id === data.id);
       if (collection) setDrag({ kind: "note-collection", collection });
@@ -172,6 +167,17 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
       if (!overId.startsWith("coll-")) return;
       const paths = Array.isArray(data.paths) ? data.paths as string[] : [];
       if (paths.length > 0) note.handleDropNote(overId.slice(5), paths);
+      return;
+    }
+    if (data?.kind === "vault") {
+      if (!overId.startsWith("vault-") || active.id === over.id) return;
+      const from = vaults.findIndex((entry) => `vault-${entry.path}` === active.id);
+      const to = vaults.findIndex((entry) => `vault-${entry.path}` === overId);
+      if (from !== -1 && to !== -1) {
+        void persistVaultOrder(vaults, from, to).catch(() => {
+          showToast(t["common.saveFailed"], "error");
+        });
+      }
       return;
     }
     if (data?.kind === "collection") {
@@ -308,14 +314,15 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
 
       <DragOverlay dropAnimation={null}>
         {drag?.kind === "note" && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+          <DragPreview className="flex items-center gap-2 px-3 py-1.5">
             <span className="text-body text-primary whitespace-nowrap">
               {drag.count > 1
                 ? t["collections.dragNotes"].replace("{count}", String(drag.count))
                 : drag.title}
             </span>
-          </div>
+          </DragPreview>
         )}
+        {drag?.kind === "vault" && <VaultDragPreview vault={drag.vault} />}
         {drag?.kind === "note-collection" && (
           <CollectionDragPreview
             name={drag.collection.name}
@@ -324,12 +331,12 @@ export default function LibraryView({ active, onOpenSettings }: Props) {
           />
         )}
         {drag?.kind === "pdf-doc" && (
-          <div className="w-36 rounded-card bg-elevated border border-[var(--accent)] shadow-drag overflow-hidden opacity-95">
+          <DragPreview className="w-36 overflow-hidden">
             <div className="aspect-[3/4] flex items-center justify-center bg-surface text-faint">
               <BookOpen size={26} strokeWidth={1.3} />
             </div>
             <div className="px-2 py-1.5 text-caption text-primary truncate">{drag.title}</div>
-          </div>
+          </DragPreview>
         )}
         {drag?.kind === "pdf-collection" && (
           <CollectionDragPreview

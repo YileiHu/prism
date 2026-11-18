@@ -1,17 +1,20 @@
 # 项目记忆
 
-> 最后核对：v0.5.2（2026-11-17）。只记稳定结论、决策和坑；不写每日流水。整块功能/重构/发布后更新。
+> 最后核对：v0.5.3（2026-11-18）。只记稳定结论、决策和坑；不写每日流水。整块功能/重构/发布后更新。
 
 ## 1. 当前快照
 
-- 版本 `0.5.2`，Electron 43 + React 19 + TS + Vite + SQLite。
+- 版本 `0.5.3`，Electron 43 + React 19 + TS + Vite + SQLite。
 - 类型检查基线：`node node_modules/typescript/bin/tsc --noEmit` 通过（本会话沙箱下 `npm run lint` 的 npm 包装受命名管道限制）。
 - 没有自动化测试/CI；UI 一律手动验收。
 - 2026-11 完成编辑器统一容器（表格/代码/提示卡/公式/嵌入共享块会话与菜单），设计背景见 [编辑器块重构](../design/editor-block-refactor.md)。
 - 2026-11 事务模块改为「即将优先」：任务/项目分表、日期自动分层（即将含今天/逾期）、完成日志、移除等待/未来清单与整理弹窗，新增全局快速记录。
-- 2026-11 事务改为日历为主：月网格按自然周滚动，聚焦周展开、上下周渐隐；项目进度环；移除「即将」列表；主页模块已删除，冷启动直接进入事务-日历。
-- 2026-11 项目资料：设置「事务 → 项目仓库」，每个项目在 `<仓库>/Projects/<项目>/` 下自动建文件夹；项目页维护文档/白板链接，新建文件进文件夹，关联已有文件留在原地。
+- 2026-11 事务改为日历为主：月网格按自然周滚动，聚焦周展开、上下周渐隐；项目进度环；移除「即将」列表；主页模块已删除，冷启动固定进入事务-日历（标签恢复，但不恢复激活文档/分屏），托盘重建窗口恢复完整现场。
+- 2026-11 项目资料改为纯链接：不再创建 `<仓库>/Projects/<项目>/`，新建笔记/白板落到仓库常规位置并自动关联；可关联任意已注册仓库的笔记/白板；列表标题后显示项目标记，编辑器/白板工具栏共用同一跳转入口。
 - 2026-11 项目页布局改为左侧输入/任务、右侧栏项目概览 + 描述 + 资料；移除未来 7 天分布，避免纵向堆叠。
+- 2026-11 项目列表支持拖动排序：进行中项目在侧栏用 `@dnd-kit` 拖动，顺序写入 `gtd_projects.sort_order`；归档列表仍按归档时间，新建项目排最前。
+- 2026-11 笔记库仓库列表支持拖动排序：`LibrarySidebar` 的 vault 行用 `useSortable`，模块页与工作区侧栏共用 `DragOverlay`，顺序直接写回 `vault_paths`。
+- 2026-11 收集箱支持拖动排序：`gtd_tasks.inbox_order` 保存手动顺序，日历右栏用 `SortableList`；日程 agenda 仍按截止时间，不参与拖动。
 - 2026-11 关闭行为/托盘/开机启动：`close_behavior`（退出 / 最小化到托盘）、`auto_launch`、`auto_launch_hidden`；托盘按需创建，`--hidden` 登录启动不建主窗口、PDF 库延后到首次建窗；打包版单实例；新增全局「呼出主界面」快捷键。
 - 文档体系：`AGENTS.md` 路由 + `docs/` 深度文档 + `.dsh/skills` 任务手册 + `docs/reference` 生成物 + `npm run docs:check` 防漂移。
 - 无已知未完成的大规模重构；下一步以用户需求为准。
@@ -31,7 +34,7 @@
 | D-009 | 技能只保留 `.dsh/skills` 一份，`.claude` 不再维护副本 | 避免两份内容长期不同步 | `AGENTS.md`、`.dsh/skills/` |
 | D-010 | 事务模块用「即将优先」模型：任务与项目分表，日期锚点自动分层（即将含今天/逾期），完成写日志不删除；取消 waiting/someday/整理弹窗与独立“今天”板块 | 整理成本高于收益，收集后应能直接消费；今天经常为空，单列板块噪声大 | `electron/database.ts`、`src/lib/gtd.ts`、`src/components/gtd/` |
 | D-011 | 事务改为日历为主（取代 D-010 的「即将」视图）：月网格按自然周滚动，聚焦周展开、上下周渐隐；项目环；原 Home 近期任务跳到日历日期（Home 入口已由 D-015 删除） | 列表与日历信息重复，周聚焦日历更直接；不新增依赖与迁移 | `GtdView`、`GtdCalendar` |
-| D-012 | 项目资料 = 项目仓库 + `Projects/<项目>/` + 链接表：新建文件进项目文件夹并登记 `gtd_project_links`，关联已有文件留在原地；项目删除只删链接/文件夹记录，文件保留；项目文件夹中的 `.json` 作为白板合法路径 | 文件保持普通笔记/白板，可独立编辑/同步；不复制内容，删除项目不丢用户文件；项目分组与白板库可见性兼顾 | `electron/database.ts`、`electron/main.ts`、`src/components/gtd/GtdProjectDocs.tsx`、`src/components/settings/GtdSection.tsx` |
+| D-012 | 项目资料 = 项目仓库 + `Projects/<项目>/` + 链接表（已由 D-029 取代）：新建文件进项目文件夹并登记 `gtd_project_links`，关联已有文件留在原地；项目删除只删链接/文件夹记录，文件保留；项目文件夹中的 `.json` 作为白板合法路径 | 文件保持普通笔记/白板，可独立编辑/同步；不复制内容，删除项目不丢用户文件；项目分组与白板库可见性兼顾 | `electron/database.ts`、`electron/main.ts`、`src/components/gtd/GtdProjectDocs.tsx`、`src/components/settings/GtdSection.tsx` |
 | D-013 | 项目页采用左任务/右「标题+进度」+纯文本描述+资料栏；重命名/编辑介绍/打开文件夹/资料新建关联/右栏折叠进工具栏，归档删除走左侧项目右键菜单；右栏折叠无动画，折叠后不渲染正文标题行；文档和白板合并为一个 `.sidebar-group` 凹陷容器列表，不显示分组标题；移除未来 7 天、标题操作按钮、文件夹信息框和完成归档提示 | 任务占主视觉，标题与概览合并省空间；工具栏承担项目级动作，右键菜单承担项目列表动作；折叠和资料列表保持简单 | `src/components/gtd/GtdProjectDetail.tsx`、`src/components/gtd/GtdProjectDocs.tsx` |
 | D-014 | 已关联笔记/白板的编辑器工具栏提供项目跳转按钮：按 `file_path` 查询 `gtd_project_links`，单项目直达、多项目下拉；归档项目通过 `GtdFocusRequest.archived` 跳到已归档列表 | 文件是普通文件，跳转入口应跟随文件本身；避免编辑器与项目页双向查找 | `src/components/gtd/ProjectJumpButton.tsx`、`src/App.tsx`、`src/components/gtd/GtdView.tsx`、`electron/database.ts` |
 | D-015 | 删除主页模块：`gtd` 成为第一个/默认模块，日历（`GtdView` 默认 `calendar`）即首页；同时删除只在主页消费的收藏/最近/时钟（`favorite_notes`/`recent_notes` 两表、4 个 `notes:*` 通道、`clock_format`/`home_recents_count` 两设置、17 个 i18n key），旧 `workspace_v1` 的 `module: "home"` 回落到 `gtd` | 主页四块与 GTD/资料库重复，收藏/最近低频；删除后模块统一为「侧栏 + 内容」，只保留单一数据归属（笔记归资料库、任务归事务），避免留下无消费者的契约 | `src/App.tsx`、`src/lib/workspace/types.ts`、`src/lib/workspace/WorkspaceProvider.tsx`、`electron/database.ts`、`electron/main.ts`、`src/components/library/useNoteLibrary.ts` |
@@ -44,6 +47,11 @@
 | D-022 | 关闭行为可选退出 / 最小化到托盘，开机启动可选且默认只驻留托盘：托盘按需创建（关闭到托盘、隐藏启动、或开启隐藏自启）；`--hidden` 启动不建主窗口、vault watcher 由渲染层触发、PDF 库延后到首次建窗；快速记录小窗不预热；打包版单实例锁 | 兼顾秒开与后台占用：仅托盘时只有主进程+托盘，隐藏主窗口保留渲染进程换取即时恢复；预热小窗或卸载主窗口都会带来常驻内存或丢编辑/标签状态 | `electron/main.ts`、`src/shared/settings.ts`、`src/components/settings/GeneralSection.tsx`、`src/shared/models.ts` |
 | D-023 | 新增全局「呼出主界面」快捷键 `showMain`（默认 `Ctrl+Shift+M`）：与 `quickCapture` 一起由 `applyGlobalShortcuts` 注册，`GLOBAL_SHORTCUT_ACTIONS` 标注 OS 级动作；注册结果统一经 `shortcuts:get-global-status` 给设置页做失败提示；渲染层不处理 `showMain` | 托盘/隐藏启动时主窗口可能不存在，只有 OS 级快捷键可靠；把全局动作的注册状态统一，避免再维护一套 quick-capture 专用状态 | `src/shared/shortcuts.ts`、`electron/main.ts`、`electron/preload.ts`、`src/components/settings/ShortcutsSection.tsx` |
 | D-024 | 统一快速记录术语：功能/快捷键「全局快速记录」，界面「快速记录小窗」，写入位置「收集箱」；英文 Quick capture / quick capture window；文档与注释不再用「全局捕获」「快速捕获」；代码标识符保持 `quickCapture`，不与中文逐字绑定 | 现状 UI/docs 有三套叫法；英文已统一为 GTD 的 capture，重命名代码要迁移已存的 `shortcuts` JSON，收益低 | `src/i18n/zh.ts`、`src/i18n/en.ts`、`src/quickCapture.tsx`、`docs/ai/glossary.md`、`docs/architecture/features.md` |
+| D-025 | 冷启动固定落在事务-日历：`workspace_v1` 仍保存完整现场，但冷启动只恢复标签与上次资料库，`module`/`activeId`/`split` 置空；窗口由托盘/第二实例/`app:activate` 重建时 `createWindow(true)` 带 `?restore-workspace=1`，恢复完整现场；已有窗口的托盘恢复不重新 hydrate；hydration 前由深链打开的文档优先；设置项改名为「恢复上次打开的文档标签」 | 用户要求每次启动都从首页开始；标签是工作上下文，页面与分屏属于现场，托盘恢复不应被重置；深链是外部显式打开，不能被首页覆盖 | `src/lib/workspace/WorkspaceProvider.tsx`、`electron/main.ts`、`src/App.tsx`、`src/i18n/zh.ts`、`src/i18n/en.ts` |
+| D-026 | 事务项目列表支持手动排序：`gtd_projects` 新增 `sort_order`，旧库按 `created_at DESC` 回填 0..N 保持原顺序；进行中列表按 `sort_order ASC` 读取，拖动由 `reorderGtdProjects` 整组写回；归档列表仍按 `archived_at DESC`，新建项目取 `MIN(sort_order)-1` 排最前 | 项目列表需要像笔记收藏集一样可拖动；只改进行中列表，归档保持时间序；新建项目沿用原来“最新在前”的可见位置 | `electron/database.ts`、`electron/main.ts`、`electron/preload.ts`、`src/components/gtd/GtdProjectList.tsx`、`src/components/gtd/GtdView.tsx` |
+| D-027 | 笔记库仓库列表支持手动排序：`LibrarySidebar` 的 vault 行用 `useSortable`（id `vault-<path>`），`LibraryView` 与 `DocumentSidebar` 的 `DndContext` 统一处理并渲染 `VaultDragPreview`；顺序直接写回 `vault_paths`，不新增排序键；`persistVaultOrder` 先派发 `vaults-order-changed` 做乐观更新，失败回滚 | 仓库顺序只属于 `vault_paths`，设置页与侧栏必须共用一份；复用现有 DnD/浮层与排序交互，避免再维护一套顺序 | `src/components/library/LibrarySidebar.tsx`、`src/components/library/LibraryView.tsx`、`src/components/workspace/DocumentSidebar.tsx`、`src/lib/vaultOrder.ts`、`src/App.tsx` |
+| D-028 | 收集箱支持手动排序，日程 agenda 不参与：`gtd_tasks` 新增 `inbox_order`，旧库按 `created_at DESC` 回填；收集箱按 `inbox_order` 排序，拖拽由 `reorderGtdInboxTasks` 整组写回；新建/重新进入收集箱的任务取 `MIN(inbox_order)-1` 排最前；日程仍按 `compareTasksByDeadline` | 收集箱是稳定列表，手动顺序有意义；日程是按日期过滤的派生视图，同一任务跨多天，按天排序需要额外表，先只做收集箱 | `electron/database.ts`、`electron/main.ts`、`electron/preload.ts`、`src/lib/gtd.ts`、`src/components/gtd/GtdCalendarInbox.tsx`、`src/components/gtd/GtdView.tsx` |
+| D-029 | 项目资料改为纯链接（取代 D-012）：删除 `gtd_project_folders` 与项目文件夹 IPC；`project_vault_path` 改为默认资料仓库；项目页新建落到 `default_notes_dir`/`canvas_dir` 后立即写链接；`gtd:project-link-index` 提供全量绑定，`ProjectLinksProvider` + `ProjectLinkMarker` 统一列表标记和工具栏跳转；旧 `Projects/<项目>/*.json` 由目录扫描继续兼容 | 资料应能来自任意仓库，而不是被专用文件夹绑死；列表标记与编辑器按钮需要同一份数据，避免逐文件 IPC；旧文件不能因删表/删项目而失效 | `electron/database.ts`、`electron/main.ts`、`electron/preload.ts`、`src/lib/projectLinks.tsx`、`src/components/ProjectLinkMarker.tsx`、`src/components/gtd/GtdProjectDocs.tsx`、`src/components/gtd/GtdProjectDocCreateModal.tsx` |
 
 ## 3. 硬坑
 
@@ -51,7 +59,9 @@
 - Vite 固定 5173 且 `strictPort`；换端口会让 Electron 白屏。
 - 路径比较必须走 `pathKey`/`normalizePath`；Windows/macOS 大小写不敏感。
 - 笔记保存要把真实 mtime 写进 DB，否则 watcher 会重复扫描。
-- 通过 IPC 新建笔记（尤其项目资料）后要主动推送 `vault:updated`；否则隐藏中的笔记库会保留旧列表，新文件夹也不一定被 watcher 立即发现。
+- 通过 IPC 新建笔记（尤其项目资料）后要主动推送 `vault:updated`；否则隐藏中的笔记库会保留旧列表，新文件也不一定被 watcher 立即发现。
+- `gtd_projects.sort_order` 的迁移必须在 `migrateGtdV2` 之后回填，并按 `created_at DESC` 保持旧的最新在前顺序；漏回填会让所有项目按 id 排。
+- 冷启动回日历只在 `WorkspaceProvider.hydrate` 里做；不要监听窗口 `focus`/托盘显示去切模块，否则托盘恢复会丢现场；托盘重建窗口必须走 `createWindow(true)`，否则 `?restore-workspace=1` 丢失、现场无法恢复。
 - 托盘驻留/`--hidden` 启动时没有主窗口：`window-all-closed` 必须放行，否则关掉快速记录小窗会把应用一起退出。
 - `app.setLoginItemSettings` 只在打包版写（开发模式注册的是 electron.exe）；托盘图标依赖 `public/icon-16.png` 被打包。
 - 私密库锁定后标签会关闭、索引不可用；不要把它当 bug。

@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import Button from "./Button";
+import DragPreview from "./DragPreview";
+import ProjectLinkMarker from "./ProjectLinkMarker";
 import EmptyState from "./EmptyState";
 import { useT } from "../i18n";
 import {
@@ -215,10 +217,13 @@ function SortableNoteRow({
       onClick={() => { if (!note.missing) onOpenNote(note); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onNoteContextMenu(e, note, groupId); }}
     >
-      <span className={`flex-1 text-body truncate ${note.missing ? "text-faint line-through" : "text-primary"}`}>
-        {note.title}
+      <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-body ${note.missing ? "text-faint" : "text-primary"}`}>
+        <span className={`min-w-0 truncate ${note.missing ? "line-through" : ""}`}>
+          {note.title}
+        </span>
+        {!note.missing && <ProjectLinkMarker filePath={note.path} />}
         {note.missing && (
-          <span className="ml-1.5 text-caption text-warning inline-flex items-center gap-0.5">
+          <span className="ml-1.5 inline-flex flex-shrink-0 items-center gap-0.5 text-caption text-warning">
             <AlertTriangle size={10} />
             {t["collections.missing"]}
           </span>
@@ -232,9 +237,9 @@ function SortableNoteRow({
 
 function DragOverlayNote({ note }: { note: NoteInfo }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+    <DragPreview className="flex items-center gap-2 px-3 py-1.5">
       <span className="text-body text-primary">{note.title}</span>
-    </div>
+    </DragPreview>
   );
 }
 
@@ -242,12 +247,12 @@ function DragOverlayNote({ note }: { note: NoteInfo }) {
 
 function DragOverlayGroup({ group, color }: { group: GroupView; color: PaletteColor }) {
   return (
-    <div className="rounded-card bg-elevated border border-[var(--accent)] shadow-drag opacity-90 overflow-hidden">
+    <DragPreview className="overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-8" style={{ backgroundColor: color.tint }}>
         <span className="text-caption font-medium" style={{ color: color.name }}>{group.name}</span>
         <span className="text-caption text-muted">{group.notes.length}</span>
       </div>
-    </div>
+    </DragPreview>
   );
 }
 

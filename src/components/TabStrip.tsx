@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import Button from "./Button";
+import DragPreview from "./DragPreview";
 import { useDragClickGuard } from "../lib/useDragClickGuard";
 import {
   DndContext,
@@ -108,11 +109,14 @@ function SortableTab({
 
 function TabOverlay({ item }: { item: TabStripItem }) {
   return (
-    <div className="flex items-center gap-1.5 pl-3 pr-2 h-7 text-caption whitespace-nowrap rounded-full bg-elevated border border-[var(--accent)] shadow-drag opacity-90">
+    <DragPreview
+      shape="pill"
+      className="flex items-center gap-1.5 pl-3 pr-2 h-7 text-caption whitespace-nowrap"
+    >
       {item.icon}
       <span className="max-w-[160px] truncate">{item.title}</span>
       <X size={11} className="ml-1 text-muted" />
-    </div>
+    </DragPreview>
   );
 }
 

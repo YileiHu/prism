@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Button from "../Button";
+import DragPreview from "../DragPreview";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { addDays, buildMonthGrid, dateKey, parseDateKey, type MonthGridCell } from "../../lib/dates";
@@ -38,6 +39,7 @@ interface Props {
   onOpenTask: (task: GtdTask) => void;
   onRequestDate: (task: GtdTask, kind: "scheduled" | "due") => void;
   onRequestDelete: (task: GtdTask) => void;
+  onReorderInbox: (from: number, to: number) => void;
   onChanged: () => void;
 }
 
@@ -248,6 +250,7 @@ export default function GtdCalendar({
   onOpenTask,
   onRequestDate,
   onRequestDelete,
+  onReorderInbox,
   onChanged,
 }: Props) {
   const { t, lang } = useT();
@@ -438,6 +441,7 @@ export default function GtdCalendar({
           onOpenTask={onOpenTask}
           onRequestDate={onRequestDate}
           onRequestDelete={onRequestDelete}
+          onReorder={onReorderInbox}
           onChanged={onChanged}
         />
       </div>
@@ -539,13 +543,13 @@ export default function GtdCalendar({
 
                 <DragOverlay dropAnimation={null}>
                   {activeTask ? (
-                    <div className="flex max-w-[220px] items-center gap-1.5 rounded-control border border-line bg-surface px-2 py-1 text-meta text-primary shadow-drag">
+                    <DragPreview className="flex max-w-[220px] items-center gap-1.5 px-2 py-1 text-meta text-primary">
                       <span
                         className="h-3.5 w-[3px] flex-shrink-0 rounded-full"
                         style={{ backgroundColor: taskColor(activeTask) }}
                       />
                       <span className="truncate">{activeTask.title}</span>
-                    </div>
+                    </DragPreview>
                   ) : null}
                 </DragOverlay>
               </DndContext>

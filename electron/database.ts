@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { app } from "electron";
 import type {
+  GtdFileProjectRef,
   GtdProject,
   GtdProjectLinkKind,
   GtdTask,
@@ -82,6 +83,7 @@ export function initDatabase(): void {
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       archived_at TEXT
     );
@@ -97,20 +99,13 @@ export function initDatabase(): void {
       completed_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       sort_order INTEGER NOT NULL DEFAULT 0,
+      inbox_order INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_gtd_tasks_project ON gtd_tasks(project_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_gtd_tasks_scheduled ON gtd_tasks(scheduled_date) WHERE scheduled_date IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_gtd_tasks_due ON gtd_tasks(due_date) WHERE due_date IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_gtd_tasks_completed ON gtd_tasks(completed_at) WHERE completed_at IS NOT NULL;
-
-    CREATE TABLE IF NOT EXISTS gtd_project_folders (
-      project_id INTEGER PRIMARY KEY,
-      vault_path TEXT NOT NULL,
-      folder_path TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE CASCADE
-    );
 
     CREATE TABLE IF NOT EXISTS gtd_project_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +170,11 @@ export function initDatabase(): void {
   db.exec("DROP TABLE IF EXISTS favorite_notes");
   db.exec("DROP TABLE IF EXISTS recent_notes");
 
+  // Migration: project docs no longer use a per-project folder. Legacy folders
+  // are rediscovered by scanning <vault>/Projects/, so the mapping table is
+  // dead metadata and can go.
+  db.exec("DROP TABLE IF EXISTS gtd_project_folders");
+
   // ---- GTD v2: tasks + projects -------------------------------------------
   // Legacy installs still carry gtd_items/gtd_actions. Normalize their last
   // legacy columns, copy everything into the new tables once, then drop the
@@ -202,6 +202,38 @@ export function initDatabase(): void {
     db.exec("ALTER TABLE gtd_actions ADD COLUMN due_date TEXT");
   }
   migrateGtdV2(dbPath, gtdItemCols.length > 0, gtdActionCols.length > 0);
+
+  // Migration: projects gained a manual sidebar order. Seed it from the old
+  // newest-first display so upgrading users see the same list.
+  const gtdProjectCols = db.prepare("PRAGMA table_info(gtd_projects)").all() as { name: string }[];
+  if (gtdProjectCols.length > 0 && !gtdProjectCols.some((c) => c.name === "sort_order")) {
+    db.exec("ALTER TABLE gtd_projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+    const ordered = db.prepare(`
+      SELECT id FROM gtd_projects
+      ORDER BY created_at DESC, id DESC
+    `).all() as { id: number }[];
+    const update = db.prepare("UPDATE gtd_projects SET sort_order = ? WHERE id = ?");
+    ordered.forEach((row, index) => update.run(index, row.id));
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_gtd_projects_sort ON gtd_projects(archived_at, sort_order)");
+
+  // Migration: the inbox got a manual order. Seed it from the old newest-first
+  // display so upgrading users see the same list.
+  const gtdTaskCols = db.prepare("PRAGMA table_info(gtd_tasks)").all() as { name: string }[];
+  if (gtdTaskCols.length > 0 && !gtdTaskCols.some((c) => c.name === "inbox_order")) {
+    db.exec("ALTER TABLE gtd_tasks ADD COLUMN inbox_order INTEGER NOT NULL DEFAULT 0");
+    const ordered = db.prepare(`
+      SELECT id FROM gtd_tasks
+      WHERE project_id IS NULL
+        AND scheduled_date IS NULL
+        AND due_date IS NULL
+        AND completed_at IS NULL
+      ORDER BY created_at DESC, id DESC
+    `).all() as { id: number }[];
+    const update = db.prepare("UPDATE gtd_tasks SET inbox_order = ? WHERE id = ?");
+    ordered.forEach((row, index) => update.run(index, row.id));
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_gtd_tasks_inbox_order ON gtd_tasks(inbox_order)");
 
   // Migration: resource ordering was added after resources shipped — seed it
   // from id so the existing newest-first display order is preserved.
@@ -876,6 +908,7 @@ interface GtdTaskRow {
   completed_at: string | null;
   created_at: string;
   sort_order: number;
+  inbox_order: number;
   project_title: string | null;
   project_color: string | null;
   project_archived_at: string | null;
@@ -890,12 +923,6 @@ interface GtdProjectRow {
   archived_at: string | null;
   task_count: number;
   done_task_count: number;
-}
-
-export interface GtdProjectFolderRow {
-  project_id: number;
-  vault_path: string;
-  folder_path: string;
 }
 
 export interface GtdProjectLinkRow {
@@ -926,6 +953,7 @@ function toGtdTask(row: GtdTaskRow): GtdTask {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     sortOrder: row.sort_order,
+    inboxOrder: row.inbox_order,
   };
 }
 
@@ -1022,6 +1050,18 @@ function nextGtdTaskSortOrder(projectId: number): number {
   return row.next;
 }
 
+function nextGtdInboxOrder(): number {
+  const row = db.prepare(
+    `SELECT COALESCE(MIN(inbox_order) - 1, 0) AS next
+     FROM gtd_tasks
+     WHERE project_id IS NULL
+       AND scheduled_date IS NULL
+       AND due_date IS NULL
+       AND completed_at IS NULL`,
+  ).get() as { next: number };
+  return row.next;
+}
+
 export function getGtdOpenTasks(): GtdTask[] {
   const rows = db.prepare(`
     ${GTD_TASK_SELECT}
@@ -1054,7 +1094,7 @@ export function getGtdProjectTasks(projectId: number): GtdTask[] {
 
 export function getGtdProjects(archived: boolean): GtdProject[] {
   const where = archived ? "p.archived_at IS NOT NULL" : "p.archived_at IS NULL";
-  const order = archived ? "p.archived_at DESC, p.id DESC" : "p.created_at DESC, p.id DESC";
+  const order = archived ? "p.archived_at DESC, p.id DESC" : "p.sort_order ASC, p.created_at DESC, p.id DESC";
   const rows = db.prepare(`
     ${GTD_PROJECT_SELECT}
     WHERE ${where}
@@ -1072,18 +1112,32 @@ export function addGtdTask(
   const clean = normalizeGtdTitle(title);
   assertDateKey(scheduledDate);
   let sortOrder = 0;
+  let inboxOrder = 0;
   if (projectId !== null) {
     assertGtdProjectWritable(projectId);
     sortOrder = nextGtdTaskSortOrder(projectId);
+  } else if (scheduledDate === null) {
+    inboxOrder = nextGtdInboxOrder();
   }
   const id = db.prepare(
-    "INSERT INTO gtd_tasks (title, project_id, scheduled_date, sort_order) VALUES (?, ?, ?, ?)",
-  ).run(clean, projectId, scheduledDate, sortOrder).lastInsertRowid as number;
+    "INSERT INTO gtd_tasks (title, project_id, scheduled_date, sort_order, inbox_order) VALUES (?, ?, ?, ?, ?)",
+  ).run(clean, projectId, scheduledDate, sortOrder, inboxOrder).lastInsertRowid as number;
   return getGtdTaskOrThrow(id);
 }
 
 export function updateGtdTask(id: number, patch: GtdTaskPatch): GtdTask {
   const row = getWritableGtdTaskRow(id);
+  const wasInbox = row.project_id === null
+    && row.scheduled_date === null
+    && row.due_date === null
+    && row.completed_at === null;
+  const nextProjectId = patch.projectId !== undefined ? patch.projectId : row.project_id;
+  const nextScheduled = patch.scheduledDate !== undefined ? patch.scheduledDate : row.scheduled_date;
+  const nextDue = patch.dueDate !== undefined ? patch.dueDate : row.due_date;
+  const willBeInbox = nextProjectId === null
+    && nextScheduled === null
+    && nextDue === null
+    && row.completed_at === null;
   const sets: string[] = [];
   const values: (string | number | null)[] = [];
 
@@ -1121,6 +1175,12 @@ export function updateGtdTask(id: number, patch: GtdTaskPatch): GtdTask {
     }
   }
 
+  if (willBeInbox && !wasInbox) {
+    // Entering the inbox from a project/date joins the top of the manual list.
+    sets.push("inbox_order = ?");
+    values.push(nextGtdInboxOrder());
+  }
+
   if (sets.length > 0) {
     values.push(id);
     db.prepare(`UPDATE gtd_tasks SET ${sets.join(", ")} WHERE id = ?`).run(...values);
@@ -1137,6 +1197,11 @@ export function completeGtdTask(id: number): void {
 export function reopenGtdTask(id: number): void {
   const row = getWritableGtdTaskRow(id);
   if (row.completed_at === null) return;
+  if (row.project_id === null && row.scheduled_date === null && row.due_date === null) {
+    db.prepare("UPDATE gtd_tasks SET completed_at = NULL, inbox_order = ? WHERE id = ?")
+      .run(nextGtdInboxOrder(), id);
+    return;
+  }
   db.prepare("UPDATE gtd_tasks SET completed_at = NULL WHERE id = ?").run(id);
 }
 
@@ -1161,9 +1226,41 @@ export function reorderGtdProjectTasks(projectId: number, orderedIds: number[]):
   })();
 }
 
+export function reorderGtdInboxTasks(orderedIds: number[]): void {
+  const ids = Array.from(new Set(orderedIds.filter((id) => Number.isInteger(id))));
+  if (ids.length === 0) return;
+  db.transaction(() => {
+    const update = db.prepare(`
+      UPDATE gtd_tasks SET inbox_order = ?
+      WHERE id = ?
+        AND project_id IS NULL
+        AND scheduled_date IS NULL
+        AND due_date IS NULL
+        AND completed_at IS NULL
+    `);
+    ids.forEach((taskId, index) => update.run(index, taskId));
+  })();
+}
+
+export function reorderGtdProjects(orderedIds: number[]): void {
+  const ids = Array.from(new Set(orderedIds.filter((id) => Number.isInteger(id))));
+  if (ids.length === 0) return;
+  db.transaction(() => {
+    const update = db.prepare("UPDATE gtd_projects SET sort_order = ? WHERE id = ?");
+    ids.forEach((projectId, index) => update.run(index, projectId));
+  })();
+}
+
 export function addGtdProject(title: string): GtdProject {
   const clean = normalizeGtdTitle(title);
-  const id = db.prepare("INSERT INTO gtd_projects (title) VALUES (?)").run(clean).lastInsertRowid as number;
+  const id = db.prepare(`
+    INSERT INTO gtd_projects (title, sort_order)
+    VALUES (?, (
+      SELECT COALESCE(MIN(sort_order) - 1, 0)
+      FROM gtd_projects
+      WHERE archived_at IS NULL
+    ))
+  `).run(clean).lastInsertRowid as number;
   return getGtdProjectOrThrow(id);
 }
 
@@ -1208,43 +1305,28 @@ export function deleteGtdProject(id: number): void {
   })();
 }
 
-// ---- Project docs (a per-project folder + linked notes/canvases) ----
+// ---- Project docs (linked notes/canvases) ----
 
-export function getGtdProjectFolder(projectId: number): GtdProjectFolderRow | null {
-  const row = db.prepare(
-    "SELECT project_id, vault_path, folder_path FROM gtd_project_folders WHERE project_id = ?",
-  ).get(projectId) as GtdProjectFolderRow | undefined;
-  return row ?? null;
-}
-
-export function getGtdProjectFolders(): GtdProjectFolderRow[] {
-  return db.prepare(
-    "SELECT project_id, vault_path, folder_path FROM gtd_project_folders ORDER BY project_id",
-  ).all() as GtdProjectFolderRow[];
-}
-
-export function setGtdProjectFolder(
-  projectId: number,
-  vaultPath: string,
-  folderPath: string,
-): GtdProjectFolderRow {
-  db.prepare(`
-    INSERT INTO gtd_project_folders (project_id, vault_path, folder_path)
-    VALUES (?, ?, ?)
-    ON CONFLICT(project_id) DO UPDATE SET
-      vault_path = excluded.vault_path,
-      folder_path = excluded.folder_path
-  `).run(projectId, vaultPath, folderPath);
-  const row = getGtdProjectFolder(projectId);
-  if (!row) throw new Error(`GTD project folder not found: ${projectId}`);
-  return row;
-}
-
-export function getGtdProjectsForFilePath(filePath: string): GtdProject[] {
-  const rows = db.prepare(
-    "SELECT DISTINCT project_id FROM gtd_project_links WHERE file_path = ? ORDER BY project_id",
-  ).all(filePath) as { project_id: number }[];
-  return rows.map((row) => getGtdProjectOrThrow(row.project_id));
+export function getGtdProjectLinkIndex(): GtdFileProjectRef[] {
+  const rows = db.prepare(`
+    SELECT l.file_path, p.id AS project_id, p.title, p.color, p.archived_at
+    FROM gtd_project_links l
+    JOIN gtd_projects p ON p.id = l.project_id
+    ORDER BY l.file_path, p.id
+  `).all() as {
+    file_path: string;
+    project_id: number;
+    title: string;
+    color: string;
+    archived_at: string | null;
+  }[];
+  return rows.map((row) => ({
+    filePath: row.file_path,
+    projectId: row.project_id,
+    title: row.title,
+    color: row.color,
+    archived: row.archived_at !== null,
+  }));
 }
 
 export function getGtdProjectLinks(projectId: number): GtdProjectLinkRow[] {
