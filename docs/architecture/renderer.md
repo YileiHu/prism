@@ -29,19 +29,19 @@ LibraryDataProvider
 - `SettingsProvider` 启动时 `getAllSettings()` 一次性载入并解码；`set()` 立即更新内存、异步写回，失败不回滚（下次编辑重试）。
 - `VaultLockProvider` 轮询/订阅私密仓库状态，维护锁定态与解锁请求队列；锁定事件会让 `App` 关闭该库标签。
 - `WorkspaceProvider` 负责标签/分屏/当前模块/资料库的单一状态源；`workspace_v1` 保存完整现场（标签、激活文档、分屏、模块、资料库），冷启动只取标签与资料库，托盘重建窗口时取全部。
-- `LibraryDataProvider` 只在 `App` 内，聚合笔记库、PDF 库、白板库数据；不要把它的 hook 挪到 Provider 链更外层。
+- `LibraryDataProvider` 只在 `App` 内，聚合笔记库、PDF 库、白板库与网页资源数据；不要把它的 hook 挪到 Provider 链更外层。
 
 ## App 外壳
 
 ```
 <header class="app-header">
-  模块图标（事务/资料库/网页资源）
+  模块图标（事务/资料库）
   TabStrip（文档标签 + 主题快捷菜单 + 更新日志 + 设置 + 窗口按钮）
 </header>
 <AppSidebarSlotProvider>
   <AppToolbar />
   <main class="app-main">
-    模块页 ×4（常驻，按 module 切换可见性）
+    模块页 ×3（常驻，按 module 切换可见性）
     DocumentWorkspace（工作区激活时可见）
   </main>
 </AppSidebarSlotProvider>
@@ -93,19 +93,36 @@ LibraryDataProvider
 
 ## 资料库数据
 
-`LibraryDataProvider` 聚合三种模式：
+`LibraryDataProvider` 聚合四种来源：
 
 - `note`：`useNoteLibrary(vaultPath)` + `useCollections`；
 - `pdf`：`usePdfDocuments` + `usePdfCollections`；
-- `canvas`：`useCanvasLibrary` + `useCanvasGroups`。
+- `canvas`：`useCanvasLibrary` + `useCanvasGroups`；
+- `resources`：`useResourceLibrary`（全局单例，无路径；标签作分组）。
 
 它额外维护：
 
-- 切到 PDF 时保留上一个笔记库路径，切回来不用重扫；
+- 切到 PDF/网页资源时保留上一个笔记库路径，切回来不用重扫；
 - 白板视图切换时写 `last_coll_<vault> = "__canvas__"`；
-- PDF 库路径与当前 `library` 不一致时纠正。
+- PDF 库路径与当前 `library` 不一致时纠正；
+- 资源搜索词、卡片折叠状态只在内存中跨来源保留；选中标签持久化到 `last_resource_tag`。
 
-`LibraryView` 按 `library.kind` 渲染 `NoteLibraryContent` / `CanvasLibraryContent` / `PdfLibraryContent`，侧栏统一由 `LibrarySidebar` 提供。
+`LibraryView` 按 `library.kind` 渲染 `NoteLibraryContent` / `CanvasLibraryContent` / `PdfLibraryContent` / `ResourcesLibraryContent`，侧栏统一由 `LibrarySidebar` 提供；资源模式下侧栏「标签」分区由 `ResourceTagList` 渲染，工作区侧栏（`DocumentSidebar`）自动获得同一入口。侧栏顶部只列笔记库，PDF 库与网页资源库固定在底部「全局库」区，不随上方列表滚动。
+
+### 资料库共用层
+
+三类仓库的数据源保持独立，但分组相关的展示与交互共用一层：
+
+- `libraryGroups.ts`：把笔记收藏集、PDF 收藏集、资源标签适配成 `LibraryGroup { id, name, color, count, source }`；`GroupNavRow` / 分组卡 / 拖拽预览只消费这个视图模型。
+- `librarySources.ts`：来源的标签、图标、分组标题、全部行文案等静态元数据；侧栏不再散落 `kind` 分支文案。
+- `GroupNavRow`：侧栏分组行的唯一实现（彩色圆点、计数、选中、右键菜单、拖拽把手、拖放高亮）；`CollectionNavRow` 和资源标签都复用它。
+- `SectionCard`：笔记/白板分组卡与资源分组卡共用的卡片外壳（头部、chevron、tint、计数、折叠、拖拽/右键透传）。
+- `CollectionDialogs`：收藏集/标签的重命名与删除对话框；`useNotePdfDialogs` 统一笔记/PDF 的选中、删除撤销与 toast，`LibraryView`、`DocumentSidebar`、`ResourceTagList` 共用。
+- `useLibraryDnd` + `LibraryDragOverlay`：vault 排序、收藏集排序、笔记/PDF 拖入收藏集、拖拽浮层的唯一状态机；两个侧栏宿主只挂载一次。
+- `LibraryTitle` / `SearchLimitHint`：工具栏标题与搜索上限提示的共用展示。
+- `lib/librarySelection.ts`：分组选择记忆的 key 构造与读写；笔记/PDF 保持旧 key，资源标签用 `last_resource_tag`。
+
+新增来源时：优先在 `librarySources.ts` 注册元数据、在 `libraryGroups.ts` 加适配器，再接内容组件；不要复制一套侧栏行/对话框/拖拽状态机。
 
 ## 异步与交互模式
 
@@ -128,6 +145,9 @@ LibraryDataProvider
 | 侧栏槽位 | `src/components/AppSidebarSlot.tsx` |
 | 工具栏 | `src/components/toolbar/ToolbarProvider.tsx`、`AppToolbar.tsx` |
 | 资料库模式 | `src/components/library/LibraryDataProvider.tsx`、`LibraryView.tsx` |
+| 资料库分组行/卡片/对话框 | `LibraryGroup` 适配器、`GroupNavRow`、`SectionCard`、`CollectionDialogs` |
+| 资料库拖拽 | `useLibraryDnd`、`LibraryDragOverlay` |
+| 分组选择记忆 | `src/lib/librarySelection.ts` |
 
 ## 验证
 

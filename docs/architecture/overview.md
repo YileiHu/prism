@@ -71,11 +71,11 @@ ThemeProvider
 
 - `SettingsProvider` 启动时一次 `getAllSettings()` 批量载入；`set()` 写回 `settings:set` 并广播 `settings-saved`。
 - `App` 读取 `vault_paths` 设置、查询私密仓库状态、调用 `WorkspaceProvider.hydrate()` 恢复标签与上次资料库（托盘重建窗口时恢复完整现场）；完成前显示启动屏。
-- `App` 内部再挂 `LibraryDataProvider`（笔记/PDF/白板三模式数据）与 `ToastProvider`。
+- `App` 内部再挂 `LibraryDataProvider`（笔记/PDF/白板/网页资源四类来源数据）与 `ToastProvider`。
 
 ## 导航与外壳
 
-- 顶级导航是**模块**：事务、资料库、网页资源、设置；冷启动固定进入事务-日历，托盘恢复保留当前页面。
+- 顶级导航是**模块**：事务、资料库、设置；网页资源是资料库内的一个固定来源（与 PDF 库同级），不再是独立模块。冷启动固定进入事务-日历，托盘恢复保留当前页面。
 - 打开文档后进入**工作区**：笔记 / 白板 / PDF 共用一条标签栏，可左右分屏；完整现场经 `workspace_v1` 持久化，冷启动只恢复标签/资料库，托盘重建窗口恢复激活文档与分屏。
 - 模块页与工作区**同时挂载**，只切换可见性；切换标签或模块不会丢编辑器/滚动状态。工作区激活时模块页用 `visibility: hidden` 隐藏，而不是卸载。
 - 每个模块的侧栏经 `ModuleSidebar` portal 到 `AppSidebarSlotProvider` 提供的全高槽位；模块内部不要自己平铺侧栏。

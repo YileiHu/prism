@@ -31,8 +31,9 @@
 | 笔记列表、搜索、收藏集、拖拽 | [features](architecture/features.md) | `src/components/library/NoteLibraryContent.tsx`、`src/components/useCollections.ts` |
 | PDF 库、阅读器、封面、收藏集 | [features](architecture/features.md) | `src/components/library/PdfLibraryContent.tsx`、`src/components/pdf/PdfReader.tsx` |
 | 白板库、画布、节点/边/容器 | [canvas](architecture/canvas.md) | `src/components/canvas/CanvasEditor.tsx`、`src/lib/canvas/model.ts` |
+| AI / MCP 画白板 | [ai-canvas](architecture/ai-canvas.md) | `integrations/prism-canvas-mcp/server/*`、`integrations/prism-canvas-mcp/cordis.patch.yml` |
 | 事务：日历/收集箱/项目/完成日志 | [features](architecture/features.md) | `src/components/gtd/GtdView.tsx`、`src/lib/gtd.ts`、`electron/database.ts` |
-| 网页资源、标签、标题抓取 | [features](architecture/features.md) | `src/components/WebResources.tsx`、`electron/main.ts` |
+| 网页资源、标签、标题抓取 | [features](architecture/features.md) | `src/components/library/ResourcesLibraryContent.tsx`、`src/components/library/useResourceLibrary.ts`、`electron/main.ts` |
 | Markdown 阅读/编辑、块容器、嵌入 | [editor](architecture/editor.md) | `src/components/editor/NoteEditor.tsx`、`src/components/editor/livePreview.ts` |
 | 设置项、设置页、快捷键 | [ui-kit](guides/ui-kit.md)、[recipes](guides/recipes.md) | `src/shared/settings.ts`、`src/components/settings/*` |
 | 关闭行为、托盘、开机启动 | [main-process](architecture/main-process.md) | `electron/main.ts`、`src/components/settings/GeneralSection.tsx` |
@@ -55,6 +56,7 @@
 | [功能域](architecture/features.md) | 资料库、PDF、白板库、GTD、网页资源、设置 |
 | [编辑器](architecture/editor.md) | Markdown 双管线、块会话、容器、嵌入、自动保存 |
 | [白板](architecture/canvas.md) | 画布格式、模型、编辑器、资料库分组、冲突 |
+| [AI 白板桥接](architecture/ai-canvas.md) | MCP 服务、vault 发现、工具/布局、DSH 安装与写入安全 |
 
 ### 指南
 
@@ -80,6 +82,7 @@
 |---|---|
 | [项目记忆](ai/memory.md) | 快照、已定决策、硬坑、待办、更新协议 |
 | [术语表](ai/glossary.md) | 中文 UI 术语 ↔ 代码名 ↔ 文件 |
+| [网页资源并入资料库](design/web-resources-as-library.md) | 唯一无路径来源的合理性、备选方案与数据流 |
 | [编辑器块重构](design/editor-block-refactor.md) | 历史设计依据（路径可能已变，仅作背景） |
 
 ## 写作约定

@@ -10,7 +10,7 @@
 - 修改笔记里的白板嵌入预览。
 - 修改白板设置或卡片预设。
 
-相关文档：[架构总览](./overview.md)、[功能域](./features.md)、[改动配方](../guides/recipes.md)、[IPC 参考](../reference/ipc.md)。
+相关文档：[架构总览](./overview.md)、[功能域](./features.md)、[改动配方](../guides/recipes.md)、[AI 白板桥接](./ai-canvas.md)、[IPC 参考](../reference/ipc.md)。
 
 ## 文件位置与格式
 
@@ -215,6 +215,7 @@
 | 资料库分组/拖拽/事件 | `useCanvasGroups.ts`、`CanvasLibraryContent.tsx`、`CollectionDetail.tsx`、`events.ts` |
 | 嵌入预览 | `src/components/embeds/loader.ts`、`EmbedCard.tsx`、`CanvasEmbedPreview.tsx` |
 | 设置/预设/标签与分屏 | `src/shared/settings.ts`、`CanvasSection.tsx`、`PresetBar.tsx`、`workspace/types.ts`、`DocumentPane.tsx` |
+| AI / MCP 生成白板 | [ai-canvas](./ai-canvas.md)、`integrations/prism-canvas-mcp/server/*` |
 
 ## 验证
 

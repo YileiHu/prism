@@ -1,0 +1,12 @@
+- insert:
+    - id: prism-canvas
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: prism_canvas
+        transport: stdio
+        command: node
+        args:
+          - '--no-warnings'
+          - 'E:/Projects/prism/integrations/prism-canvas-mcp/server/server.js'
+        failOnStartupError: true
+        toolCallTimeoutMs: 30000

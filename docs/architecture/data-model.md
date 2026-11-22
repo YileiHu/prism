@@ -47,6 +47,7 @@
 | `pdf_tabs_<repo>` | JSON | 旧版 PDF 标签，同上 |
 | `last_coll_<vault>` | 收藏集 id 或 `__canvas__` | 每个笔记库上次选中的视图 |
 | `last_pdf_coll_<repoKey>` | 收藏集 id | 每个 PDF 库上次选中的收藏集 |
+| `last_resource_tag` | 标签名 | 网页资源库上次选中的标签（不存在时自动清空） |
 | `image_path_style` | `note` / `vault` / `name` | 粘贴/插入附件的引用风格；`VaultsSection` 直接读写 |
 | `default_notes_dir` | 路径字符串 | 新建笔记的默认目录 |
 | `browser_path` | 可执行文件路径 | 外部程序设置；`ExternalSection` 直接读写 |

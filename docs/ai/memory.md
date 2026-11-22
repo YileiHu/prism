@@ -1,10 +1,10 @@
 # 项目记忆
 
-> 最后核对：v0.5.3（2026-11-18）。只记稳定结论、决策和坑；不写每日流水。整块功能/重构/发布后更新。
+> 最后核对：v0.5.4（2026-11-22）。只记稳定结论、决策和坑；不写每日流水。整块功能/重构/发布后更新。
 
 ## 1. 当前快照
 
-- 版本 `0.5.3`，Electron 43 + React 19 + TS + Vite + SQLite。
+- 版本 `0.5.4`，Electron 43 + React 19 + TS + Vite + SQLite。
 - 类型检查基线：`node node_modules/typescript/bin/tsc --noEmit` 通过（本会话沙箱下 `npm run lint` 的 npm 包装受命名管道限制）。
 - 没有自动化测试/CI；UI 一律手动验收。
 - 2026-11 完成编辑器统一容器（表格/代码/提示卡/公式/嵌入共享块会话与菜单），设计背景见 [编辑器块重构](../design/editor-block-refactor.md)。
@@ -14,9 +14,12 @@
 - 2026-11 项目页布局改为左侧输入/任务、右侧栏项目概览 + 描述 + 资料；移除未来 7 天分布，避免纵向堆叠。
 - 2026-11 项目列表支持拖动排序：进行中项目在侧栏用 `@dnd-kit` 拖动，顺序写入 `gtd_projects.sort_order`；归档列表仍按归档时间，新建项目排最前。
 - 2026-11 笔记库仓库列表支持拖动排序：`LibrarySidebar` 的 vault 行用 `useSortable`，模块页与工作区侧栏共用 `DragOverlay`，顺序直接写回 `vault_paths`。
+- 2026-11 网页资源并入资料库：网页资源成为资料库内唯一的无路径来源（与 PDF 库同级），顶级模块只剩事务/资料库/设置；标签仍作分组，资源行与标签分区同时出现在资料库侧栏和工作区侧栏；旧 `workspace_v1` 的 `module: "resources"` 在 resume 时迁移为「资料库 + 资源」。
+- 2026-11 资料库共用层：三类仓库的分组展示与交互收口到 `LibraryGroup` 适配器、`GroupNavRow`、`SectionCard`、`CollectionDialogs`、`useLibraryDnd` / `LibraryDragOverlay`、`LibraryTitle` / `SearchLimitHint` 和 `librarySelection`；资源标签选择开始持久化到 `last_resource_tag`。
 - 2026-11 收集箱支持拖动排序：`gtd_tasks.inbox_order` 保存手动顺序，日历右栏用 `SortableList`；日程 agenda 仍按截止时间，不参与拖动。
 - 2026-11 关闭行为/托盘/开机启动：`close_behavior`（退出 / 最小化到托盘）、`auto_launch`、`auto_launch_hidden`；托盘按需创建，`--hidden` 登录启动不建主窗口、PDF 库延后到首次建窗；打包版单实例；新增全局「呼出主界面」快捷键。
 - 文档体系：`AGENTS.md` 路由 + `docs/` 深度文档 + `.dsh/skills` 任务手册 + `docs/reference` 生成物 + `npm run docs:check` 防漂移。
+- 2026-11 新增 AI 白板桥接：`integrations/prism-canvas-mcp` 提供 6 个 MCP 工具（vaults/list/read/create/edit/layout），把模型生成的结构按 `CanvasDoc` v2 写成白板 JSON；DSH 插件行 `prism_canvas` 已接入，私密库拒绝、无默认仓库。
 - 无已知未完成的大规模重构；下一步以用户需求为准。
 
 ## 2. 已定决策
@@ -52,6 +55,9 @@
 | D-027 | 笔记库仓库列表支持手动排序：`LibrarySidebar` 的 vault 行用 `useSortable`（id `vault-<path>`），`LibraryView` 与 `DocumentSidebar` 的 `DndContext` 统一处理并渲染 `VaultDragPreview`；顺序直接写回 `vault_paths`，不新增排序键；`persistVaultOrder` 先派发 `vaults-order-changed` 做乐观更新，失败回滚 | 仓库顺序只属于 `vault_paths`，设置页与侧栏必须共用一份；复用现有 DnD/浮层与排序交互，避免再维护一套顺序 | `src/components/library/LibrarySidebar.tsx`、`src/components/library/LibraryView.tsx`、`src/components/workspace/DocumentSidebar.tsx`、`src/lib/vaultOrder.ts`、`src/App.tsx` |
 | D-028 | 收集箱支持手动排序，日程 agenda 不参与：`gtd_tasks` 新增 `inbox_order`，旧库按 `created_at DESC` 回填；收集箱按 `inbox_order` 排序，拖拽由 `reorderGtdInboxTasks` 整组写回；新建/重新进入收集箱的任务取 `MIN(inbox_order)-1` 排最前；日程仍按 `compareTasksByDeadline` | 收集箱是稳定列表，手动顺序有意义；日程是按日期过滤的派生视图，同一任务跨多天，按天排序需要额外表，先只做收集箱 | `electron/database.ts`、`electron/main.ts`、`electron/preload.ts`、`src/lib/gtd.ts`、`src/components/gtd/GtdCalendarInbox.tsx`、`src/components/gtd/GtdView.tsx` |
 | D-029 | 项目资料改为纯链接（取代 D-012）：删除 `gtd_project_folders` 与项目文件夹 IPC；`project_vault_path` 改为默认资料仓库；项目页新建落到 `default_notes_dir`/`canvas_dir` 后立即写链接；`gtd:project-link-index` 提供全量绑定，`ProjectLinksProvider` + `ProjectLinkMarker` 统一列表标记和工具栏跳转；旧 `Projects/<项目>/*.json` 由目录扫描继续兼容 | 资料应能来自任意仓库，而不是被专用文件夹绑死；列表标记与编辑器按钮需要同一份数据，避免逐文件 IPC；旧文件不能因删表/删项目而失效 | `electron/database.ts`、`electron/main.ts`、`electron/preload.ts`、`src/lib/projectLinks.tsx`、`src/components/ProjectLinkMarker.tsx`、`src/components/gtd/GtdProjectDocs.tsx`、`src/components/gtd/GtdProjectDocCreateModal.tsx` |
+| D-030 | 网页资源改为资料库的固定单例来源（`LibraryRef.kind = "resources"`，无路径）：删除顶级 resources 模块；数据仍存 SQLite，标签作侧栏分组；`useResourceLibrary` 在 `LibraryDataProvider` 常驻；工作区侧栏复用同一 `LibrarySidebar`；旧工作区 `module: "resources"` 在 resume 时迁移为 `library + resources` | 资源本来就是全局唯一、无磁盘根的数据源，缺的只是资料库来源这层身份；照 PDF 库模式可复用资料库外壳且不改 DB/IPC；不把假路径塞进 `vault_paths` 才能保住路径安全、私密仓库与扫描不变量 | `src/lib/workspace/types.ts`、`src/lib/workspace/WorkspaceProvider.tsx`、`src/components/library/LibraryDataProvider.tsx`、`src/components/library/useResourceLibrary.ts`、`src/components/library/LibrarySidebar.tsx`、`src/components/library/ResourcesLibraryContent.tsx`、`src/components/library/ResourceTagList.tsx`、`src/App.tsx` |
+| D-031 | 三类仓库（笔记/PDF/网页资源）在展示层共用一套分组抽象：`LibraryGroup` 适配器不改存储；`GroupNavRow` / `SectionCard` / `CollectionDialogs` / `LibraryTitle` / `SearchLimitHint` 统一行、卡片、对话框、标题；`useLibraryDnd` + `LibraryDragOverlay` 统一排序与投放；`librarySources` 集中来源元数据；`librarySelection` 统一选择记忆 key；资源标签新增 `last_resource_tag` 持久化 | 资源接入后侧栏行/卡片/对话框/拖拽出现第三套近似实现；把差异留在数据适配器、把交互收口到共用组件，既统一手感又不合并 sidecar/SQLite 存储与搜索/打开语义 | `src/components/library/libraryGroups.ts`、`librarySources.ts`、`GroupNavRow.tsx`、`SectionCard.tsx`、`CollectionDialogs.tsx`、`useNotePdfDialogs.ts`、`useLibraryDnd.ts`、`LibraryDragOverlay.tsx`、`LibraryTitle.tsx`、`SearchLimitHint.tsx`、`src/lib/librarySelection.ts`、`ResourceTagList.tsx`、`LibrarySidebar.tsx`、`LibraryView.tsx`、`DocumentSidebar.tsx` |
+| D-032 | AI 画白板走独立 stdio MCP 服务（`integrations/prism-canvas-mcp`）：只读写 `<vault>/<canvas_dir>/*.json`，格式层由 `src/lib/canvas/model.ts` 编译复用；工具必须显式指定仓库、私密库拒绝、写前比 mtime、不新增 Prism watcher；DSH 经 `@deepseek-ai/dsh-mcp-client` bundle 接入（`serverName: prism_canvas`） | 不侵入 Prism 数据层与加密逻辑，AI 和手工编辑共用同一份格式；文件级集成让任意 MCP 客户端都能用；接受“切换资料库/重启后可见”避免在主进程加目录监听与 IPC | `integrations/prism-canvas-mcp/**`、`docs/architecture/ai-canvas.md`、`package.json` |
 
 ## 3. 硬坑
 
@@ -66,8 +72,11 @@
 - `app.setLoginItemSettings` 只在打包版写（开发模式注册的是 electron.exe）；托盘图标依赖 `public/icon-16.png` 被打包。
 - 私密库锁定后标签会关闭、索引不可用；不要把它当 bug。
 - 白板标签用 `display:none` 隐藏；React Flow 会写内联 `visibility`，祖先 visibility 方案无效。
+- MCP 桥接的 `server/package.json` 必须声明 CommonJS：bundle 根 `"type": "module"` 会让 `server.js` 按 ESM 运行并报 `require is not defined`，DSH 侧只显示 `Connection closed`。另外 `cordis.patch.yml` 里是绝对路径，仓库搬家后要改并重装。
 - 资料库 `CanvasGroup`（侧栏分组）与画布 `CanvasGroup`（内部容器）是两个类型，不要混用。
 - 编辑器块编辑必须走 `BlockSession`/container spec；直接 focus 子编辑器会破坏选区恢复。
+- `LibraryRef` 增加 `resources` 后，所有读取 `library.vaultPath` 的分支必须先窄化（`note`/`canvas`）；网页资源不是 `vault_paths` 仓库，不要给它路径、扫描、watcher 或私密逻辑。
+- 资料库分组统一走 `LibraryGroup` + `GroupNavRow` / `SectionCard` / `CollectionDialogs`；新增来源不要复制侧栏行、对话框或 `useLibraryDnd` 的状态机。
 - `docs/reference/*` 是生成物；改源码后跑 `npm run docs`，不要手改。
 - 发布前核对 `release/latest.yml` 与实际安装包文件名（历史上出现过不一致）。
 

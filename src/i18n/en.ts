@@ -1,7 +1,6 @@
 import type { Translation } from "./zh";
 
 const en: Translation = {
-  "nav.resources": "Web Resources",
   "nav.gtd": "Tasks",
   "nav.library": "Library",
   "nav.settings": "Settings",
@@ -23,6 +22,12 @@ const en: Translation = {
   "workspace.closeSplit": "Close split view",
   "workspace.backToLibrary": "Back to library",
   "library.pdfLibrary": "PDF",
+  "library.noteVaults": "Note libraries",
+  "library.globalLibraries": "Global libraries",
+  "library.resourcesLibrary": "Web Resources",
+  "library.allResources": "All resources",
+  "library.tags": "Tags",
+  "library.groupColor": "Group color",
   "library.collections": "Collections",
   "library.emptyVaults": "No Markdown libraries yet. Add one in Settings.",
   "library.vaultIcon": "Choose icon",
@@ -51,8 +56,6 @@ const en: Translation = {
   "resources.added": "Added",
   "resources.updated": "Updated",
   "resources.deleteConfirm": "Delete this resource? This cannot be undone.",
-  "resources.tagColor": "Tag Color",
-  "resources.tagColorAuto": "Auto",
   "resources.tagRenameTitle": "Rename Tag",
   "resources.tagRenamed": "Tag renamed",
   "resources.tagDeleted": "Tag deleted",
@@ -233,7 +236,6 @@ const en: Translation = {
   "collections.expandSidebar": "Expand sidebar",
   "collections.namePlaceholder": "Collection name...",
   "collections.rename": "Rename",
-  "collections.color": "Collection Color",
   "collections.colorAuto": "Auto",
   "collections.delete": "Delete Collection",
   "collections.deleteGroup": "Delete Group",

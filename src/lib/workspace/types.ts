@@ -1,4 +1,4 @@
-export type ModuleId = "resources" | "gtd" | "library" | "settings";
+export type ModuleId = "gtd" | "library" | "settings";
 
 export type PaneSide = "left" | "right";
 
@@ -31,7 +31,15 @@ export type DocTab = NoteDocTab | PdfDocTab | CanvasDocTab;
 export type LibraryRef =
   | { kind: "note"; vaultPath: string }
   | { kind: "canvas"; vaultPath: string }
-  | { kind: "pdf"; repoPath: string };
+  | { kind: "pdf"; repoPath: string }
+  // Web resources are a global singleton source: exactly one instance, no
+  // filesystem root. Mirrors the PDF library, never a registered note vault.
+  | { kind: "resources" };
+
+/** The note vault a library source is rooted at; "" for path-less sources. */
+export function libraryVaultPath(library: LibraryRef): string {
+  return library.kind === "note" || library.kind === "canvas" ? library.vaultPath : "";
+}
 
 export interface SplitState {
   leftId: string;

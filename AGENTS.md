@@ -11,6 +11,8 @@ npm run electron:dev     # Vite + Electron 开发（固定 5173）
 npm run lint             # tsc --noEmit
 npm run docs             # 重新生成 docs/reference/*
 npm run docs:check       # 文档/IPC/路径/版本/i18n 校验
+npm run canvas:mcp:build # 编译白板格式层到 MCP 服务（改 src/lib/canvas/* 后）
+npm run canvas:mcp:test  # 白板 MCP 服务自测（临时库，不碰真实仓库）
 npm run verify           # lint + docs:check
 npm run rebuild          # 为 Electron 重编译 better-sqlite3
 npm run electron:build   # 打包 NSIS 安装程序
@@ -38,6 +40,7 @@ npm run release:win      # verify + electron:build
 | 笔记库/PDF/GTD/网页资源/设置 | `docs/architecture/features.md` | `quickstart` |
 | Markdown/编辑器/块/嵌入 | `docs/architecture/editor.md` | `editor-and-canvas` |
 | 白板/画布 | `docs/architecture/canvas.md` | `editor-and-canvas` |
+| AI/MCP 画白板 | `docs/architecture/ai-canvas.md`、`integrations/prism-canvas-mcp/README.md` | `editor-and-canvas` |
 | IPC/DB/扫描/私密仓库 | `docs/architecture/main-process.md`、`data-model.md` | `ipc-and-data` |
 | 设置/文案/快捷键/主题/控件 | `docs/guides/ui-kit.md`、`recipes.md` | `ui-settings-i18n` |
 | 发布/打包/提交 | `docs/guides/verify-and-release.md` | `release-and-package` |

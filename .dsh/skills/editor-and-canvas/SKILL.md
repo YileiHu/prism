@@ -80,6 +80,7 @@ user-invocable: true
 | 预设 | `PresetBar.tsx`、`src/shared/settings.ts`、`CanvasSection.tsx` |
 | 资料库白板视图 | `src/components/library/CanvasLibraryContent.tsx`、`useCanvasGroups.ts` |
 | 嵌入缩略图 | `src/components/embeds/CanvasEmbedPreview.tsx`、`embeds/loader.ts` |
+| AI/MCP 生成白板 | `integrations/prism-canvas-mcp/server/*`、`docs/architecture/ai-canvas.md` |
 
 ## 验证
 
@@ -87,6 +88,8 @@ user-invocable: true
 npm run lint
 npm run docs        # 契约/导出变化时
 npm run docs:check
+npm run canvas:mcp:build  # 改 src/lib/canvas/model.ts / targets.ts 后
+npm run canvas:mcp:test   # 白板 MCP 服务自测（临时库）
 ```
 
 Markdown 渲染改动额外跑 smoke test（见 `docs/guides/verify-and-release.md`；需先构建 `out/md-test.mjs` 与 `out/task-toggle.mjs`）。

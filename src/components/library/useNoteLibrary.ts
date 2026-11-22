@@ -4,6 +4,7 @@ import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { toRelativePath, useCollections } from "../useCollections";
 import { resolveTagColor, type PaletteColor } from "../../lib/colors";
 import { useVaultLock } from "../../lib/vaultLock";
+import { librarySelectionKey, readLibrarySelection, writeLibrarySelection } from "../../lib/librarySelection";
 import type { NoteBrief, NoteListChanges } from "../../shared/models";
 import { noteKey, normalizePath } from "../../lib/workspace/types";
 
@@ -140,7 +141,7 @@ export function useNoteLibrary(vaultPath: string) {
         if (cancelled) return;
         const cachedNotes = summary.notes;
         const colls = summary.collections?.collections ?? [];
-        const lastCollId = await window.prism.getSetting(`last_coll_${vaultPath}`);
+        const lastCollId = await readLibrarySelection(librarySelectionKey("note", vaultPath));
         if (cancelled) return;
         // Notes, collections and their owning vault must commit together.
         setCollections(colls);
@@ -224,7 +225,7 @@ export function useNoteLibrary(vaultPath: string) {
     // Collection view doesn't support searching; drop any active query so the
     // missing-marker resolution always runs against the full note list.
     if (id) setSearchQuery("");
-    if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, id ?? "");
+    if (vaultPath) void writeLibrarySelection(librarySelectionKey("note", vaultPath), id ?? "");
   }, [setSelectedCollectionId, vaultPath]);
 
   // Whiteboards are a view, not a collection, but they occupy the same slot in
@@ -232,7 +233,7 @@ export function useNoteLibrary(vaultPath: string) {
   const selectCanvasView = useCallback(() => {
     setSelectedCollectionId(null);
     setSearchQuery("");
-    if (vaultPath) void window.prism.setSetting(`last_coll_${vaultPath}`, CANVAS_VIEW_ID);
+    if (vaultPath) void writeLibrarySelection(librarySelectionKey("note", vaultPath), CANVAS_VIEW_ID);
   }, [setSelectedCollectionId, vaultPath]);
 
   // Collection (root list or group) that contains an absolute note path

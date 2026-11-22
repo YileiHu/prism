@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
-import Button from "./Button";
+import { AlertTriangle } from "lucide-react";
 import DragPreview from "./DragPreview";
 import ProjectLinkMarker from "./ProjectLinkMarker";
 import EmptyState from "./EmptyState";
+import SectionCard from "./SectionCard";
 import { useT } from "../i18n";
 import {
   DndContext,
@@ -115,57 +115,41 @@ function SortableGroupCard({
   const noteIds = useMemo(() => group.notes.map((n) => makeNoteId(n.relPath)), [group.notes]);
 
   return (
-    <div
-      ref={setNodeRef}
+    <SectionCard
+      cardRef={setNodeRef}
       style={style}
-      className={`mb-3 border rounded-card bg-surface overflow-hidden transition-colors ${
-        isOverlay ? "shadow-drag border-[var(--accent)]" : "border-strong/50"
-      }`}
+      className="mb-3"
+      overlay={isOverlay}
+      tintColor={color}
+      title={group.name}
+      count={group.notes.length}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      headerClickToggles={false}
+      headerProps={{ ...attributes, ...listeners, ...clickGuard }}
+      onHeaderContextMenu={(event) => onGroupContextMenu(event, group.id)}
+      bodyClassName="p-2"
     >
-      <div
-        className="flex items-center gap-2 px-3 h-8"
-        style={{ backgroundColor: color.tint }}
-        onContextMenu={(e) => onGroupContextMenu(e, group.id)}
-        {...attributes}
-        {...listeners}
-        {...clickGuard}
-      >
-        <Button variant="ghost" size="icon-xs" onClick={onToggle}>
-          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-        </Button>
-        <span className="text-caption font-medium truncate max-w-[200px]" style={{ color: color.name }}>{group.name}</span>
-        <span className="text-caption text-muted ml-1">{group.notes.length}</span>
-      </div>
-
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
-      >
-        <div className="overflow-hidden min-h-0">
-          <div className="p-2">
-            {group.notes.length === 0 ? (
-              <p className="text-caption text-faint text-center py-3">
-                {emptyText}
-              </p>
-            ) : (
-              <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-                {group.notes.map((note) => (
-                  <SortableNoteRow
-                    key={note.relPath}
-                    note={note}
-                    groupId={group.id}
-                    onRemoveNote={onRemoveNote}
-                    onReorderNotes={onReorderNotes}
-                    onNoteContextMenu={onNoteContextMenu}
-                    onOpenNote={onOpenNote}
-                  />
-                ))}
-              </SortableContext>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      {group.notes.length === 0 ? (
+        <p className="text-caption text-faint text-center py-3">
+          {emptyText}
+        </p>
+      ) : (
+        <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
+          {group.notes.map((note) => (
+            <SortableNoteRow
+              key={note.relPath}
+              note={note}
+              groupId={group.id}
+              onRemoveNote={onRemoveNote}
+              onReorderNotes={onReorderNotes}
+              onNoteContextMenu={onNoteContextMenu}
+              onOpenNote={onOpenNote}
+            />
+          ))}
+        </SortableContext>
+      )}
+    </SectionCard>
   );
 }
 
@@ -403,41 +387,33 @@ export default function CollectionDetail({
 
         {/* Ungrouped card */}
         {ungroupedNotes.length > 0 && (
-          <div
-            className="mb-3 border border-strong/50 rounded-card bg-surface overflow-hidden"
-          >
-            <div className="flex items-center gap-2 px-3 h-8 bg-tint/[0.06] border-b border-line/60">
-              <Button variant="ghost" size="icon-xs" onClick={onToggleUngrouped}>
-                {ungroupedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-              </Button>
-              <span className="text-caption font-medium text-secondary uppercase tracking-wide">
+          <SectionCard
+            className="mb-3"
+            title={(
+              <span className="text-secondary uppercase tracking-wide">
                 {t["collections.ungrouped"]}
               </span>
-              <span className="text-caption text-faint">{ungroupedNotes.length}</span>
-            </div>
-            <div
-              className="grid transition-[grid-template-rows] duration-200 ease-out"
-              style={{ gridTemplateRows: ungroupedCollapsed ? "0fr" : "1fr" }}
-            >
-              <div className="overflow-hidden min-h-0">
-                <div className="p-2">
-                  <SortableContext items={ungroupedIds} strategy={verticalListSortingStrategy}>
-                    {ungroupedNotes.map((note) => (
-                      <SortableNoteRow
-                        key={note.relPath}
-                        note={note}
-                        groupId={null}
-                        onRemoveNote={onRemoveNote}
-                        onReorderNotes={onReorderNotes}
-                        onNoteContextMenu={onNoteContextMenu}
-                        onOpenNote={onOpenNote}
-                      />
-                    ))}
-                  </SortableContext>
-                </div>
-              </div>
-            </div>
-          </div>
+            )}
+            count={ungroupedNotes.length}
+            collapsed={ungroupedCollapsed}
+            onToggle={onToggleUngrouped}
+            headerClickToggles={false}
+            bodyClassName="p-2"
+          >
+            <SortableContext items={ungroupedIds} strategy={verticalListSortingStrategy}>
+              {ungroupedNotes.map((note) => (
+                <SortableNoteRow
+                  key={note.relPath}
+                  note={note}
+                  groupId={null}
+                  onRemoveNote={onRemoveNote}
+                  onReorderNotes={onReorderNotes}
+                  onNoteContextMenu={onNoteContextMenu}
+                  onOpenNote={onOpenNote}
+                />
+              ))}
+            </SortableContext>
+          </SectionCard>
         )}
 
       </div>

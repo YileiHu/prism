@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Blocks, CalendarRange, FilePlus, FolderKanban, Frame, GripVertical, House, Lock, MessageSquareText, Network, Power, Zap } from "lucide-react";
+import { Blocks, CalendarRange, FilePlus, FolderKanban, Frame, Globe, GripVertical, House, Layers, Lock, MessageSquareText, Network, Power, Zap } from "lucide-react";
 import type { TagColorKey } from "../lib/colors";
 
 export interface ChangelogHighlight {
@@ -21,6 +21,59 @@ export interface ChangelogEntry {
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "0.5.4",
+    date: "2026-11-22",
+    summary:
+      "0.5.4 把网页资源并入资料库，并把 PDF 库与网页资源库固定在侧栏底部「全局库」；笔记/PDF/网页资源共用一套分组行、卡片、对话框与拖拽层。这个版本还加入了独立的 AI 白板 MCP 服务：模型可以按仓库创建或修改白板，写出的仍是 Prism 里可直接编辑的普通 CanvasDoc。",
+    highlights: [
+      {
+        icon: Globe,
+        palette: "blue",
+        title: "网页资源成为资料库的一种来源",
+        description: "网页资源不再单独占一个顶级模块，而是和 PDF 库一样成为资料库里的固定来源。",
+        items: [
+          "顶级导航收敛为事务 / 资料库 / 设置；网页资源从独立模块移入资料库侧栏",
+          "网页资源库保留新增、编辑、删除、搜索、标签颜色、标签排序与资源拖拽排序",
+          "标签作为资源的分组；资料库侧栏与工作区侧栏都能直接进入并筛选",
+          "旧 `workspace_v1` 的 `module: \"resources\"` 在托盘恢复时迁移为「资料库 + 资源」",
+          "资源标签选择跨重启保留（`last_resource_tag`），无效标签自动清空",
+        ],
+      },
+      {
+        icon: Layers,
+        palette: "violet",
+        title: "侧栏分区与三类仓库共用层",
+        description: "笔记库只放笔记 vault；PDF 库和网页资源库固定在侧栏底部「全局库」，分组交互统一。",
+        items: [
+          "侧栏顶部改为「笔记库」，底部固定「全局库」（PDF 库 / 网页资源库），不随上方列表滚动",
+          "笔记收藏集、PDF 收藏集与资源标签共用 `GroupNavRow`、`SectionCard`、`CollectionDialogs`、`LibraryTitle`、`SearchLimitHint`",
+          "笔记/PDF 拖入收藏集、收藏集排序与拖拽浮层统一由 `useLibraryDnd` + `LibraryDragOverlay` 处理",
+          "三类仓库的分组适配为 `LibraryGroup` 视图模型；存储、搜索与打开方式仍保持各自独立",
+        ],
+      },
+      {
+        icon: Network,
+        palette: "teal",
+        title: "AI 白板桥接（MCP）",
+        description: "新增独立 stdio MCP 服务，模型可以创建、读取和修改 Prism 白板。",
+        items: [
+          "`integrations/prism-canvas-mcp` 提供 `canvas_vaults` / `list` / `read` / `create` / `edit` / `layout` 六个工具",
+          "支持 tree / mindmap / grid 布局、卡片、连线与容器；写入遵循 CanvasDoc v2 与 mtime 冲突保护",
+          "必须显式指定仓库，私密（加密）仓库拒绝写入；Prism 不监听白板目录，切换资料库或重启后可见",
+          "`npm run canvas:mcp:build` 重新编译格式层，`npm run canvas:mcp:test` 在临时仓库跑完整自测",
+        ],
+      },
+    ],
+    changes: [
+      "资料库来源类型扩展为 note / canvas / pdf / resources；resources 无路径、全局唯一",
+      "新增资料库共用层：`LibraryGroup` 适配器、`librarySources` 元数据、`librarySelection` 选择记忆",
+      "侧栏文案与布局：顶部「笔记库」、底部「全局库」；资源工具栏显示标签颜色与数量",
+      "新增 AI 白板桥接文档 `docs/architecture/ai-canvas.md`、集成说明与 DSH bundle",
+      "MCP 服务零依赖，只读 `prism.db` 的 settings；白板格式层由 `src/lib/canvas` 编译",
+      "没有数据库迁移；新增 `last_resource_tag` 设置键",
+    ],
+  },
   {
     version: "0.5.3",
     date: "2026-11-18",

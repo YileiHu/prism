@@ -1,0 +1,24 @@
+{
+  "name": "@local/prism-canvas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Create and edit Prism whiteboards through MCP tools.",
+  "exports": {
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "server"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

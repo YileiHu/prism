@@ -81,7 +81,6 @@
 - `TagInput.tsx` — `TagInput`
 - `ThemeQuickMenu.tsx` — `ThemeQuickMenu`
 - `useCollections.ts` — `relativePathInsideVault`, `toRelativePath`, `useCollections`
-- `WebResources.tsx` — `WebResources`
 
 ## `src/components/canvas/`
 
@@ -187,14 +186,26 @@
 ## `src/components/library/`
 
 - `CanvasLibraryContent.tsx` — `CanvasLibraryContent`
+- `CollectionDialogs.tsx` — `CollectionDialogTarget`, `CollectionDialogs`, `useCollectionDialogs`
 - `CollectionDragPreview.tsx` — `CollectionDragPreview`
+- `GroupNavRow.tsx` — `GroupNavRow`, `GroupNavRowSortable`
 - `LibraryDataProvider.tsx` — `LibraryDataProvider`, `useLibraryData`
+- `LibraryDragOverlay.tsx` — `LibraryDragOverlay`
+- `libraryGroups.ts` — `LibraryGroup`, `toNoteCollectionGroups`, `toPdfCollectionGroups`, `toResourceTagGroups`
 - `LibrarySidebar.tsx` — `LibrarySidebar`
+- `librarySources.ts` — `LIBRARY_SOURCES`, `LibrarySourceDef`, `LibrarySourceKind`
+- `LibraryTitle.tsx` — `LibraryTitle`
 - `LibraryView.tsx` — `LibraryView`
 - `NoteLibraryContent.tsx` — `NoteLibraryContent`
 - `PdfLibraryContent.tsx` — `PdfLibraryContent`
+- `ResourcesLibraryContent.tsx` — `ResourcesLibraryContent`
+- `ResourceTagList.tsx` — `ResourceTagList`
+- `SearchLimitHint.tsx` — `SearchLimitHint`
 - `useCanvasGroups.ts` — `collectUngrouped`, `useCanvasGroups`
+- `useLibraryDnd.ts` — `LibraryDragState`, `useLibraryDnd`
 - `useNoteLibrary.ts` — `CANVAS_VIEW_ID`, `NoteLibrary`, `useNoteLibrary`
+- `useNotePdfDialogs.ts` — `useNotePdfDialogs`
+- `useResourceLibrary.ts` — `ResourceLibrary`, `ResourceTagGroup`, `useResourceLibrary`
 - `VaultDragPreview.tsx` — `VaultDragPreview`
 
 ## `src/components/pdf/`
@@ -259,6 +270,7 @@
 - `colors.ts` — `PALETTE`, `PaletteColor`, `TAG_COLORS`, `TagColorKey`, `TagColorOption`, `hashColor`, `resolveTagColor`, `tagColor`
 - `dates.ts` — `MonthGridCell`, `addDays`, `buildMonthGrid`, `dateKey`, `daysUntil`, `minDateKey`, `parseDateKey`
 - `gtd.ts` — `GtdGroupedTasks`, `GtdTaskRange`, `compareTasksByDeadline`, `groupGtdTasks`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange`
+- `librarySelection.ts` — `LibrarySelectionSource`, `librarySelectionKey`, `readLibrarySelection`, `writeLibrarySelection`
 - `noteMenu.tsx` — `noteBaseMenuItems`
 - `paths.ts` — `normalizePath`, `noteKey`, `relativePathInsideVault`, `toRelativePath`
 - `projectLinks.tsx` — `ProjectLinksProvider`, `jumpToProject`, `useProjectLinks`
@@ -289,7 +301,7 @@
 
 ## `src/lib/workspace/`
 
-- `types.ts` — `CanvasDocTab`, `DocTab`, `LibraryRef`, `ModuleId`, `NoteDocTab`, `PaneSide`, `PdfDocTab`, `SplitState`, `WorkspaceState`, `canvasDocId`, `initialWorkspaceState`, `makeCanvasDoc`, `makeNoteDoc`, `makePdfDoc`, `normalizePath`, `noteDocId`, `noteKey`, `pdfDocId`
+- `types.ts` — `CanvasDocTab`, `DocTab`, `LibraryRef`, `ModuleId`, `NoteDocTab`, `PaneSide`, `PdfDocTab`, `SplitState`, `WorkspaceState`, `canvasDocId`, `initialWorkspaceState`, `libraryVaultPath`, `makeCanvasDoc`, `makeNoteDoc`, `makePdfDoc`, `normalizePath`, `noteDocId`, `noteKey`, `pdfDocId`
 - `WorkspaceProvider.tsx` — `WorkspaceProvider`, `useWorkspace`
 
 ## `src/shared/`

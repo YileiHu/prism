@@ -8,7 +8,11 @@
 |---|---|---|
 | 仓库 / 资料库 | `LibraryView` / module `library` | `src/components/library/LibraryView.tsx` |
 | 事务 / GTD | `GtdView` / module `gtd` | `src/components/gtd/GtdView.tsx` |
-| 网页资源 | `WebResources` / module `resources` | `src/components/WebResources.tsx` |
+| 资料库来源 | `LibraryRef`（`note` / `canvas` / `pdf` / `resources`） | `src/lib/workspace/types.ts` |
+| 资料库分组 | `LibraryGroup` / `libraryGroups.ts` | `src/components/library/libraryGroups.ts` |
+| 分组行 / 卡片 / 对话框 | `GroupNavRow` / `SectionCard` / `CollectionDialogs` | `src/components/library/` |
+| 资料库拖拽 | `useLibraryDnd` / `LibraryDragOverlay` | `src/components/library/useLibraryDnd.ts` |
+| 网页资源 | `ResourceLibrary` / `LibraryRef.kind "resources"` / `useResourceLibrary` | `src/components/library/ResourcesLibraryContent.tsx` |
 | 设置 | `Settings` / module `settings` | `src/components/Settings.tsx` |
 | 工作区 | `WorkspaceProvider` / `WorkspaceState` | `src/lib/workspace/WorkspaceProvider.tsx` |
 | 文档标签 | `DocTab` / `TabStrip` | `src/lib/workspace/types.ts`、`src/components/TabStrip.tsx` |

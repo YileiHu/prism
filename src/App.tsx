@@ -5,7 +5,6 @@ import {
   Copy,
   FileText,
   Frame,
-  Globe,
   Library,
   ListChecks,
   Minus,
@@ -14,7 +13,6 @@ import {
   Square,
   X,
 } from "lucide-react";
-import WebResources from "./components/WebResources";
 import Settings from "./components/Settings";
 import GtdView from "./components/gtd/GtdView";
 import LibraryView from "./components/library/LibraryView";
@@ -38,7 +36,7 @@ import { useT } from "./i18n";
 import type { Translation } from "./i18n/zh";
 import { useWorkspace } from "./lib/workspace/WorkspaceProvider";
 import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState";
-import { makeCanvasDoc, makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
+import { libraryVaultPath, makeCanvasDoc, makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
 import { usePdfDocuments } from "./components/pdf/PdfDocumentsProvider";
 import { type VaultEntry } from "./types";
 import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
@@ -54,7 +52,6 @@ const RESUME_WORKSPACE =
 const MODULES: { id: ModuleId; icon: typeof ListChecks; labelKey: keyof Translation }[] = [
   { id: "gtd", icon: ListChecks, labelKey: "nav.gtd" },
   { id: "library", icon: Library, labelKey: "nav.library" },
-  { id: "resources", icon: Globe, labelKey: "nav.resources" },
 ];
 
 // `private` is a hint derived from marker files, not part of the stored list.
@@ -169,10 +166,11 @@ export default function App() {
     }
     setVaults(parsed);
     const library = libraryRef.current;
-    const notePath = library.kind === "pdf" ? "" : library.vaultPath;
+    const notePath = libraryVaultPath(library);
     if (notePath && !parsed.some((vault) => normalizePath(vault.path) === normalizePath(notePath))) {
       if (parsed.length > 0) setLibrary({ kind: "note", vaultPath: parsed[0].path });
       else if (pdf.repoPath) setLibrary({ kind: "pdf", repoPath: pdf.repoPath });
+      else setLibrary({ kind: "resources" });
     }
   }, [closeVaultDocs, pdf.repoPath, setLibrary]);
 
@@ -439,9 +437,6 @@ export default function App() {
               />
 
               <main className="flex-1 overflow-hidden relative app-main">
-                <div style={paneStyle(moduleActive === "resources")} className={moduleActive === "resources" ? "pane-enter" : ""}>
-                  <WebResources active={moduleActive === "resources"} />
-                </div>
                 <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
                   <GtdView
                     active={moduleActive === "gtd"}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Prism whiteboards",
+    "description": "Create and edit Prism whiteboards as CanvasDoc v2 JSON files. The agent must name a vault; private (encrypted) vaults are refused. Boards appear in Prism under 资料库 → 白板 after switching to that view or restarting the app, and stay ordinary whiteboards you can edit there.",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -3,7 +3,7 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useDebouncedPersist } from "../../lib/useDebouncedJsonPersist";
 import { deleteById, insertAt, moveItem, renameById } from "../../lib/collectionOps";
-import { normalizePath } from "../../lib/paths";
+import { librarySelectionKey, readLibrarySelection, writeLibrarySelection } from "../../lib/librarySelection";
 import { relKey, type PdfCollectionData } from "./types";
 
 function makeId(): string {
@@ -34,8 +34,7 @@ export function usePdfCollections(repoPath: string) {
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  const repoKey = normalizePath(repoPath);
-  const selectionKey = `last_pdf_coll_${repoKey}`;
+  const selectionKey = librarySelectionKey("pdf", repoPath);
 
   const { schedule: schedulePersist, flush: flushPersist } = useDebouncedPersist({
     onError: () => showToast(t["pdf.saveFailed"], "error"),
@@ -69,7 +68,7 @@ export function usePdfCollections(repoPath: string) {
           ? data.collections.map(normalizeCollection).filter((c): c is PdfCollectionData => c !== null)
           : [];
         setCollections(colls);
-        const saved = await window.prism.getSetting(selectionKey);
+        const saved = await readLibrarySelection(selectionKey);
         if (!cancelled && saved && colls.some((c) => c.id === saved)) {
           setSelectedIdState(saved);
         }
@@ -84,7 +83,7 @@ export function usePdfCollections(repoPath: string) {
 
   const selectCollection = useCallback((id: string | null) => {
     setSelectedIdState(id);
-    void window.prism.setSetting(selectionKey, id ?? "");
+    void writeLibrarySelection(selectionKey, id);
   }, [selectionKey]);
 
   const update = useCallback((fn: (prev: PdfCollectionData[]) => PdfCollectionData[]) => {

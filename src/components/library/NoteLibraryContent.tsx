@@ -26,6 +26,8 @@ import { makeNoteDoc, noteDocId, noteKey } from "../../lib/workspace/types";
 import { buildColorMenuItem } from "../ColorPicker";
 import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
+import LibraryTitle from "./LibraryTitle";
+import SearchLimitHint from "./SearchLimitHint";
 import Badge from "../Badge";
 import Button from "../Button";
 import SegmentedToggle from "../SegmentedToggle";
@@ -399,15 +401,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
   const count = selectedCollection ? totalCollectionNotes : sortedNotes.length;
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
-    title: (
-      <>
-        {titleColor && (
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: titleColor.bar }} />
-        )}
-        <span className="text-body font-medium text-primary truncate">{title}</span>
-        <span className="text-caption text-faint tabular-nums">{count}</span>
-      </>
-    ),
+    title: <LibraryTitle title={title} color={titleColor} count={count} />,
     // Searching inside a collection has no defined semantics (search replaces
     // the note list the collection resolves against), and private vaults are
     // not indexed — hide the controls in both cases.
@@ -574,9 +568,10 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         ref={notesScrollRef}
       >
         {searchScope === "title" && debouncedQuery.trim() && notes.length >= settings.search_result_limit && (
-          <div className="px-4 py-1.5 text-caption text-faint">
-            {t["vault.resultLimitHint"].replace("{count}", String(settings.search_result_limit))}
-          </div>
+          <SearchLimitHint
+            limit={settings.search_result_limit}
+            messageKey="vault.resultLimitHint"
+          />
         )}
         {(scanning || notesLoading) && sortedNotes.length === 0 && <SkeletonRows count={8} />}
         {!scanning && !notesLoading && sortedNotes.length === 0 && (

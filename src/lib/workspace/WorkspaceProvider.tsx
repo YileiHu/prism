@@ -29,7 +29,7 @@ import {
 
 const WORKSPACE_KEY = "workspace_v1";
 const RESTORE_KEY = "restore_note_tabs";
-const MODULE_IDS: ReadonlySet<string> = new Set(["resources", "gtd", "library", "settings"]);
+const MODULE_IDS: ReadonlySet<string> = new Set(["gtd", "library", "settings"]);
 
 // The workspace remembers the full session so a window recreated from the tray
 // can resume it. A cold start deliberately ignores the active document, split
@@ -116,6 +116,7 @@ function resolvePersistedTab(
 function validLibrary(raw: unknown, vaults: VaultEntry[], pdfRepoPath: string): LibraryRef | null {
   if (!raw || typeof raw !== "object") return null;
   const ref = raw as { kind?: unknown; vaultPath?: unknown; repoPath?: unknown };
+  if (ref.kind === "resources") return { kind: "resources" };
   if ((ref.kind === "note" || ref.kind === "canvas") && typeof ref.vaultPath === "string") {
     const vaultPath = ref.vaultPath;
     return vaults.some((vault) => normalizePath(vault.path) === normalizePath(vaultPath))
@@ -133,7 +134,14 @@ function validLibrary(raw: unknown, vaults: VaultEntry[], pdfRepoPath: string): 
 function defaultLibrary(vaults: VaultEntry[], pdfRepoPath: string): LibraryRef {
   if (vaults.length > 0) return { kind: "note", vaultPath: vaults[0].path };
   if (pdfRepoPath) return { kind: "pdf", repoPath: pdfRepoPath };
-  return { kind: "note", vaultPath: "" };
+  // Web resources always exist, so the path-less source is the safe fallback
+  // when no note vault or PDF repository is configured.
+  return { kind: "resources" };
+}
+
+function libraryIsSet(library: LibraryRef): boolean {
+  if (library.kind === "resources") return true;
+  return library.kind === "pdf" ? library.repoPath !== "" : library.vaultPath !== "";
 }
 
 function dedupeTabs(tabs: DocTab[]): DocTab[] {
@@ -224,6 +232,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       let restoredLibrary = defaultLibrary(vaults, pdfRepoPath);
 
       if (restore && parsed && parsed.version === 1) {
+        // Older workspaces could remember the web-resources module. It is a
+        // library source now; resume maps it back so the user lands on the same
+        // page, while a cold start still restores the persisted library only.
+        const legacyResourcesModule = parsed.module === "resources";
         tabs = dedupeTabs(
           (Array.isArray(parsed.tabs) ? parsed.tabs : [])
             .map((raw) => resolvePersistedTab(raw, noteMaps, canvasMaps, pdfRepoPath, pdfTitles))
@@ -237,13 +249,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               ? activeId
               : tabs[0]?.id ?? null;
           }
-          restoredModule = isModuleId(parsed.module) ? parsed.module : "gtd";
+          restoredModule = legacyResourcesModule
+            ? "library"
+            : isModuleId(parsed.module) ? parsed.module : "gtd";
           // A split with no active document was hidden behind a module page;
           // restoring it would mount editors the user cannot see.
           restoredSplit = restoredActiveId ? validSplit(parsed.split, tabs) : null;
         }
-        restoredLibrary =
-          validLibrary(parsed.library, vaults, pdfRepoPath) ?? defaultLibrary(vaults, pdfRepoPath);
+        restoredLibrary = legacyResourcesModule && resume
+          ? { kind: "resources" }
+          : validLibrary(parsed.library, vaults, pdfRepoPath) ?? defaultLibrary(vaults, pdfRepoPath);
       } else if (restore) {
         // One-time migration from the old per-vault / per-repo tab keys.
         for (const vault of vaults) {
@@ -300,9 +315,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (split && activeId && activeId !== split.leftId && activeId !== split.rightId) {
           activeId = split.focused === "left" ? split.leftId : split.rightId;
         }
-        const prevLibrarySet = prev.library.kind === "pdf"
-          ? prev.library.repoPath !== ""
-          : prev.library.vaultPath !== "";
+        const prevLibrarySet = libraryIsSet(prev.library);
         const library = prevLibrarySet
           ? validLibrary(prev.library, vaults, pdfRepoPath) ?? restoredLibrary
           : restoredLibrary;

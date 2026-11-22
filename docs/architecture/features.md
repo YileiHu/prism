@@ -5,8 +5,8 @@
 ## 1. 资料库-笔记
 
 **入口**
-- `src/components/library/LibraryView.tsx`：按 `workspace.library.kind`（`note` / `pdf` / `canvas`）渲染内容区，侧栏 `LibrarySidebar` 经 `ModuleSidebar` Portal 进全高槽位（`src/components/AppSidebarSlot.tsx`）。
-- `src/components/library/LibraryDataProvider.tsx`：一次装配 `useNoteLibrary`、`usePdfDocuments`、`usePdfCollections`、`useCanvasLibrary`，组件用 `useLibraryData()` 取。
+- `src/components/library/LibraryView.tsx`：按 `workspace.library.kind`（`note` / `pdf` / `canvas` / `resources`）渲染内容区，侧栏 `LibrarySidebar` 经 `ModuleSidebar` Portal 进全高槽位（`src/components/AppSidebarSlot.tsx`）。
+- `src/components/library/LibraryDataProvider.tsx`：一次装配 `useNoteLibrary`、`usePdfDocuments`、`usePdfCollections`、`useCanvasLibrary`、`useResourceLibrary`，组件用 `useLibraryData()` 取。
 - 笔记内容 `NoteLibraryContent`；收藏集状态 `src/components/useCollections.ts`；收藏集详情与分组拖拽 `src/components/CollectionDetail.tsx`；共享类型 `src/components/collectionTypes.ts`。
 
 **主流程**
@@ -152,31 +152,38 @@
 - 项目资料：项目页新建/关联任意仓库的笔记和白板；新建文件落在常规位置并自动关联；旧 `Projects/<项目>/` 白板仍可列出/打开/保存；资料缺失/重命名/删除项目/归档/私密库路径符合预期；列表项目标记与工具栏跳转一致。
 - 全局快捷键在后台/最小化/仅托盘驻留（无主窗口）时可用；旧数据迁移数量一致且不重复跑。
 
-## 5. 网页资源
+## 5. 网页资源（资料库来源）
 
 **入口**
-- `src/components/WebResources.tsx`：左侧标签栏，主区按标签分组的卡片视图，选中标签后变平铺列表。
+- 资料库侧栏底部固定行「网页资源库」（`src/components/library/LibrarySidebar.tsx`）→ `LibraryRef.kind = "resources"`；内容区 `src/components/library/ResourcesLibraryContent.tsx`，数据在 `src/components/library/useResourceLibrary.ts`（经 `LibraryDataProvider` 常驻）。
+- 侧栏标签分区 `src/components/library/ResourceTagList.tsx`：全部资源 + 标签拖拽/右键菜单；工作区侧栏（`DocumentSidebar`）复用同一 `LibrarySidebar`。
 - 主进程：`resources:*` 通道与 `fetch:title`、`resources:open-url`（`electron/main.ts`）。
 
 **主流程**
-1. 加载：`getResources()` 全量 + `getAllTags()`；搜索（防抖）走 `searchResources(query)`，上限 `search_result_limit`。
+1. 加载：`getResources()` 全量 + `getAllTags()`；搜索（防抖）走 `searchResources(query)`，上限 `search_result_limit`。hook 在 `LibraryDataProvider` 挂载即加载，切换资料库来源不重新拉取。
 2. 新增：URL 无协议时自动补 `https://`；标题留空则 `fetchPageTitle(url)`（主进程 5s 超时、只流式读到 `</title>`，失败回落 URL）；`addResource` 的唯一约束冲突映射成「已存在」提示。
-3. 标签：颜色 `setTagColor`（未知标签用 `hashColor` 派生），重命名 `renameTag`、删除 `deleteTag`、全局顺序 `reorderTags`（侧栏拖拽）。
+3. 标签：颜色 `setTagColor`（未知标签用 `hashColor` 派生），重命名 `renameTag`（重名合并后选中态跟到新名字）、删除 `deleteTag`（清空当前筛选）、全局顺序 `reorderTags`（侧栏拖拽）。
 4. 排序：侧栏标签拖拽改全局顺序；卡片视图按该顺序分组，未打标签进「未分组」；列表内拖拽 `reorderResources` 只在自身占用的槽位内重排。
-5. 打开：行点击与菜单都走 `window.prism.openUrl`（`shell.openExternal`）。
+5. 打开：行点击与菜单都走 `window.prism.openUrl`（`shell.openExternal`）；资源不是工作区文档，没有标签页。
+6. 来源记忆：上次来源存 `workspace_v1.library`；旧工作区 `module: "resources"` 在托盘重建窗口时迁移为「资料库 + 资源」。
 
 **不变量**
+- 网页资源是**全局唯一、无路径**的资料库来源：不进入 `vault_paths`，不参与扫描、watcher、私密仓库、侧车文件或路径安全。
 - URL 唯一；标签是独立实体（`tags` / `resource_tags`），颜色属于标签而非资源，`Resource.tags` 只是字符串数组。
 - 颜色只从 `resolveTagColor` 取，未知标签用 `hashColor` 稳定派生，禁止硬编码色值。
 - 分组顺序永远跟随侧栏标签顺序，不做第二套排序。
 - `fetchPageTitle` 失败不阻塞新增。
+- 资源视图只读写 `resources` / `tags` / `resource_tags`，不得写 `collections.json`、`canvas-groups.json` 或 `vault_paths`。
+- 搜索词与卡片折叠状态属于 UI 会话状态，放在 provider 内存中；选中标签经 `last_resource_tag` 持久化，与笔记/PDF 收藏集选择一致。
 
 **常见改动点**
 - 新增字段 → 先改 `resources` 表与 `src/shared/models.ts`，再改 `electron/preload.ts` + `electron/main.ts` 通道。
-- 标签颜色/排序行为 → `src/lib/colors.ts` 与 `WebResources.tsx`（`tagGroups`）。
+- 标签颜色/排序行为 → `src/lib/colors.ts` 与 `useResourceLibrary.ts`（`tagGroups` / `colorForTag`）。
+- 资料库入口/资源行 → `LibrarySidebar.tsx`；内容布局/toolbar → `ResourcesLibraryContent.tsx`。
 
 **验证**
 - 只输域名能抓到标题；重复 URL 报「已存在」；改标签颜色/改名/删标签后列表与侧栏同步；拖标签与拖资源后重启顺序保持。
+- 笔记库 / PDF / 白板 / 网页资源来回切换后资源搜索词、选中标签、折叠状态保留；资源页不产生任何库内写入；零笔记库/零 PDF/私密库锁定时资源仍可用。
 
 ## 6. 设置
 
@@ -254,6 +261,6 @@ npm run verify   # = npm run lint（tsc --noEmit）+ npm run docs:check
 - **PDF**：换库根、外部增删、封面重建、大文件翻页、收藏集成员清理、删除到回收站。
 - **白板**：新建/改名/删除、分组增删与拖拽、切库后分组保持、打开标签标题同步。
 - **事务**：记录后不整理可直接设日期/完成；日历按选中日期查看，收集箱只收未归项目的未安排项；完成进日志并可撤销；项目归档只读、删除后未完成任务回收集箱；全局快捷键在后台可用。
-- **网页资源**：抓标题、重复 URL、标签增删改色与排序、外部打开链接。
+- **网页资源**：资料库侧栏固定行进入；抓标题、重复 URL、标签增删改色与排序、外部打开链接；与笔记/PDF/白板切换后筛选与折叠状态保留。
 - **设置**：改项后重启保留、越界夹取、重置（含主题与语言）、`npm run docs` 后 `docs:check` 通过。
 - **变更日志**：新版本在顶部且可展开；冷启动 splash 正常淡出。

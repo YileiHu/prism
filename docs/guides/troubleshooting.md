@@ -104,6 +104,10 @@
 - 保存冲突：文件被外部修改后保存返回 conflict；选择重新加载或覆盖，不要静默丢弃。
 - 分组异常：资料库分组在 `.prism/canvas-groups.json`；未分组 = 全部 − 各组；删除分组后成员回未分组。
 - 节点目标失效：笔记/PDF/白板被移动或删除后，目标只保留标题/路径；打开时按当前库重新解析。
+- AI 画完在 Prism 里看不到：Prism 不监听白板目录；切到「资料库 → 白板」或重启 Prism 后列表才刷新。
+- DSH 里没有 `mcp__prism_canvas__*` 工具或报 `Connection closed`：先跑 `npm run canvas:mcp:test` 排除服务本身；再看 bundle 的 `cordis.patch.yml` 绝对路径、`server/package.json` 是否为 CommonJS、`node` 是否在 PATH 且 ≥22.5（`node:sqlite`）。
+- 写入报 `VAULT_PRIVATE`：目标是私密（加密）仓库，桥接不会解密，改用公开仓库或直接在 Prism 内编辑。
+- 写入报 `CANVAS_CONFLICT`：文件在读取后被改过（多半是 Prism 里正在编辑）；重新读取后再改，不要强推。
 
 ## 设置 / i18n / 主题
 

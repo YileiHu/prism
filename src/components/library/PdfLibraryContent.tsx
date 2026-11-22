@@ -15,6 +15,8 @@ import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
 import { makePdfDoc, pdfDocId } from "../../lib/workspace/types";
 import { resolveTagColor } from "../../lib/colors";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
+import LibraryTitle from "./LibraryTitle";
+import SearchLimitHint from "./SearchLimitHint";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import { DropdownMenu, DropdownMenuItem } from "../DropdownMenu";
@@ -94,15 +96,7 @@ export default function PdfLibraryContent({
   const count = selectedCollection ? selectedCollection.pdfPaths.length : pdf.documents.length;
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
-    title: (
-      <>
-        {titleColor && (
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: titleColor.bar }} />
-        )}
-        <span className="text-body font-medium text-primary truncate">{title}</span>
-        <span className="text-caption text-faint tabular-nums">{count}</span>
-      </>
-    ),
+    title: <LibraryTitle title={title} color={titleColor} count={count} />,
     controls: (
       <>
         <SearchInput
@@ -244,9 +238,7 @@ export default function PdfLibraryContent({
   return (
     <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
       {pdf.limitHit && (
-        <div className="px-4 py-1.5 text-caption text-faint">
-          {t["pdf.resultLimitHint"].replace("{count}", String(pdf.visible.length))}
-        </div>
+        <SearchLimitHint limit={pdf.visible.length} messageKey="pdf.resultLimitHint" />
       )}
       <div ref={gridScrollRef} className="flex-1 overflow-y-auto p-4">
         <PdfGridView

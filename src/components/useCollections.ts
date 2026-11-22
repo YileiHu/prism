@@ -7,6 +7,7 @@ import { noteKey } from "../lib/workspace/types";
 import { relativePathInsideVault, toRelativePath } from "../lib/paths";
 import { useDebouncedPersist } from "../lib/useDebouncedJsonPersist";
 import { deleteById, insertAt, moveItem, renameById } from "../lib/collectionOps";
+import { librarySelectionKey, writeLibrarySelection } from "../lib/librarySelection";
 
 export { relativePathInsideVault, toRelativePath } from "../lib/paths";
 
@@ -102,7 +103,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
         saveCollections(updated);
         if (selectedCollectionId === id) {
           setSelectedCollectionId(null);
-          window.prism.setSetting(`last_coll_${vaultPath}`, "");
+          void writeLibrarySelection(librarySelectionKey("note", vaultPath), "");
         }
       },
     };
@@ -113,7 +114,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     saveCollections(snapshot);
     if (selectedId !== undefined) {
       setSelectedCollectionId(selectedId);
-      window.prism.setSetting(`last_coll_${vaultPath}`, selectedId ?? "");
+      void writeLibrarySelection(librarySelectionKey("note", vaultPath), selectedId ?? "");
     }
   }, [saveCollections, vaultPath]);
 
