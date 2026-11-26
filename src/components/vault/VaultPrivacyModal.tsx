@@ -183,7 +183,7 @@ export default function VaultPrivacyModal({
       {error && <p className="mt-3 text-caption text-danger break-words">{error}</p>}
 
       <div className="flex justify-end gap-2 mt-5">
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>
           {t["private.cancel"]}
         </Button>
         <Button

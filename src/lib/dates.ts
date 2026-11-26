@@ -5,6 +5,36 @@ export function dateKey(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/**
+ * SQLite timestamps are UTC. Depending on the writer they look like
+ * `YYYY-MM-DD HH:MM:SS` (sqlite `datetime('now')`) or a full ISO string
+ * (`new Date().toISOString()` on import). Parse both without appending a second
+ * `Z`; the old implementation turned ISO values into NaN.
+ */
+export function parseSqliteTime(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (!text) return null;
+  const hasZone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(text);
+  const iso = text.includes("T") ? text : text.replace(" ", "T");
+  const ms = Date.parse(hasZone ? iso : `${iso}Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** UTC timestamp → local calendar date (YYYY-MM-DD); empty when invalid. */
+export function localDateFromStamp(value: string | null | undefined): string {
+  const ms = parseSqliteTime(value);
+  return ms === null ? "" : dateKey(new Date(ms));
+}
+
+/** UTC timestamp → local `YYYY-MM-DD HH:mm`; empty when invalid. */
+export function localDateTimeFromStamp(value: string | null | undefined): string {
+  const ms = parseSqliteTime(value);
+  if (ms === null) return "";
+  const date = new Date(ms);
+  return `${dateKey(date)} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
 export function parseDateKey(key: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!match) return null;

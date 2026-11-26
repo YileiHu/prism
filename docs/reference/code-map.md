@@ -6,7 +6,7 @@
 
 ## `electron/`
 
-- `database.ts` — `GtdProjectLinkRow`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGtdProject`, `addGtdTask`, `addResource`, `clearCompletedGtdTasks`, `completeGtdTask`, `deleteGtdProject`, `deleteGtdTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteTag`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getAllTags`, `getGtdCompletedTasks`, `getGtdOpenTasks`, `getGtdProject`, `getGtdProjectLinkIndex`, `getGtdProjectLinks`, `getGtdProjectTasks`, `getGtdProjects`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResources`, `getSetting`, `initDatabase`, `insertNote`, `listPdfDocuments`, `purgeVaultNotes`, `removeGtdProjectLink`, `renameGtdProjectLinkPath`, `renameNoteEntry`, `renameNoteInDb`, `renameTag`, `reopenGtdTask`, `reorderGtdInboxTasks`, `reorderGtdProjectTasks`, `reorderGtdProjects`, `reorderResources`, `reorderTags`, `resetPdfCover`, `searchNoteContents`, `searchNotes`, `searchResources`, `setGtdProjectArchived`, `setGtdProjectLink`, `setPdfCustomCover`, `setPdfPageCount`, `setSetting`, `setTagColor`, `syncPdfDocuments`, `syncVaultNotes`, `updateGtdProject`, `updateGtdTask`, `updatePdfCover`, `updateResource`
+- `database.ts` — `GrowthMediaOwnerType`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGrowthEvidence`, `addGrowthFeedback`, `addGrowthPrediction`, `addGrowthSelfModel`, `addGrowthTask`, `addResource`, `clearCompletedGrowthTasks`, `closeGrowthSeason`, `completeGrowthTask`, `createGrowthArtifact`, `createGrowthCapability`, `createGrowthChallenge`, `createGrowthDomain`, `createGrowthSeason`, `createResourceCollection`, `deleteGrowthAnnualNote`, `deleteGrowthArtifact`, `deleteGrowthCapability`, `deleteGrowthChallenge`, `deleteGrowthEvidence`, `deleteGrowthFeedback`, `deleteGrowthPrediction`, `deleteGrowthSeason`, `deleteGrowthSelfModel`, `deleteGrowthTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteResourceCollection`, `exportGrowthBackup`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getGrowthEvidence`, `getGrowthMediaFiles`, `getGrowthSnapshots`, `getGrowthState`, `getGrowthTasks`, `getGrowthTimeline`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResourceCollections`, `getResources`, `getSetting`, `growthBackupCounts`, `growthHasAnyData`, `importGrowthBackup`, `initDatabase`, `insertNote`, `isGrowthMediaFileReferenced`, `listGrowthMediaFiles`, `listPdfDocuments`, `moveResources`, `purgeVaultNotes`, `renameNoteInDb`, `renameResourceCollection`, `reopenGrowthTask`, `reorderResourceCollections`, `reorderResources`, `resetPdfCover`, `resolveGrowthChallenge`, `reviewGrowthCapability`, `saveGrowthAnnualNote`, `searchNoteContents`, `searchNotes`, `searchResources`, `setPdfCustomCover`, `setPdfPageCount`, `setResourceCollectionColor`, `setSetting`, `settleGrowthPrediction`, `syncPdfDocuments`, `syncVaultNotes`, `updateGrowthArtifact`, `updateGrowthCapability`, `updateGrowthChallenge`, `updateGrowthDomain`, `updateGrowthFeedback`, `updateGrowthSeason`, `updateGrowthSelfModel`, `updateGrowthTask`, `updatePdfCover`, `updateResource`
 - `main.ts`
 - `paths.ts` — `isPathInside`, `pathKey`
 - `preload.ts` — `PrismAPI`
@@ -29,7 +29,8 @@
 
 ## `scripts/ai/lib/`
 
-- `reference.mjs` — `REPO_ROOT`, `SOURCES`, `collect`, `exists`, `generateAll`, `generateCodeMap`, `generateDatabase`, `generateIpc`, `generateSettings`, `parseChangelog`, `parseDatabase`, `parseExports`, `parseI18n`, `parseMain`, `parsePreload`, `parseSettings`, `parseSettingsUi`, `parseShortcutActions`, `placeholders`, `read`, `repoRel`, `toPosix`, `walk`
+- `reference.mjs` — `REPO_ROOT`, `SOURCES`, `collect`, `exists`, `generateAll`, `generateCodeMap`, `generateDatabase`, `generateIpc`, `generateSettings`, `generateUiInventory`, `matchBracket`, `parseChangelog`, `parseCssVarNames`, `parseDatabase`, `parseExports`, `parseI18n`, `parseMain`, `parsePreload`, `parseSettings`, `parseSettingsUi`, `parseSharedClasses`, `parseShortcutActions`, `parseTailwindTokens`, `placeholders`, `read`, `repoRel`, `toPosix`, `walk`
+- `reuse.mjs` — `checkReuse`
 
 ## `src/`
 
@@ -43,9 +44,10 @@
 
 - `AppSidebarSlot.tsx` — `AppSidebarSlotProvider`, `ModuleSidebar`
 - `Badge.tsx` — `Badge`
-- `BatchActionBar.tsx` — `BatchActionBar`
+- `BatchActionBar.tsx` — `BatchAction`, `BatchActionBar`, `BatchActionMenuItem`
 - `Button.tsx` — `Button`
 - `ChangelogModal.tsx` — `ChangelogModal`
+- `ChipTabs.tsx` — `ChipTab`, `ChipTabs`
 - `CollapsibleSidebar.tsx` — `CollapsibleSidebar`
 - `CollectionDetail.tsx` — `CollectionDetail`, `NoteInfo`
 - `collectionTypes.ts` — `CollectionData`, `NoteGroup`
@@ -56,23 +58,33 @@
 - `CreateCollectionModal.tsx` — `CreateCollectionModal`
 - `CreateGroupModal.tsx` — `CreateGroupModal`
 - `CreateNoteModal.tsx` — `CreateNoteModal`
+- `DateCalendar.tsx` — `DateCalendar`
+- `DateField.tsx` — `DateField`
 - `DragPreview.tsx` — `DragPreview`
 - `DropdownMenu.tsx` — `DropdownMenu`, `DropdownMenuDivider`, `DropdownMenuItem`
 - `EmptyState.tsx` — `EmptyState`
-- `ErrorBoundary.tsx`
+- `ErrorBoundary.tsx` — `ErrorBoundary`
+- `GlowBadge.tsx` — `GlowBadge`
+- `ImageGallery.tsx` — `ImageGallery`
+- `ImagePickActions.tsx` — `ImagePickActions`
 - `Input.tsx` — `CONTROL_CLASSES`, `Input`, `Textarea`
-- `ItemRow.tsx` — `ItemRow`, `ItemRowHoverAction`
+- `ItemRow.tsx` — `ItemRow`
 - `Modal.tsx` — `Modal`
 - `NavItem.tsx` — `NavItem`
-- `ProjectLinkMarker.tsx` — `ProjectLinkMarker`
+- `NumberInput.tsx` — `NumberInput`
+- `NumericInput.tsx` — `NumericInput`
 - `PromptModal.tsx` — `PromptModal`
 - `RenameModal.tsx` — `RenameModal`
+- `ScrollFade.tsx` — `ScrollFade`
 - `SearchInput.tsx` — `SearchInput`
 - `SectionCard.tsx` — `SectionCard`
 - `SegmentedToggle.tsx` — `SegmentedOption`, `SegmentedToggle`
-- `SelectButton.tsx` — `SelectButton`, `SelectOption`
+- `SelectButton.tsx` — `SelectButton`, `SelectGroup`, `SelectOption`
+- `SelectionCheck.tsx` — `SelectionCheck`
+- `SelectModeButton.tsx` — `SelectModeButton`
 - `Settings.tsx` — `Settings`
 - `Sidebar.tsx` — `Sidebar`
+- `SidebarSection.tsx` — `SidebarSection`
 - `Skeleton.tsx` — `Skeleton`, `SkeletonRows`
 - `SortableList.tsx` — `SortableList`
 - `Spinner.tsx` — `Spinner`
@@ -81,6 +93,9 @@
 - `TagInput.tsx` — `TagInput`
 - `ThemeQuickMenu.tsx` — `ThemeQuickMenu`
 - `useCollections.ts` — `relativePathInsideVault`, `toRelativePath`, `useCollections`
+- `useElementSize.ts` — `ElementSize`, `useElementSize`
+- `useElementWidth.ts` — `useElementWidth`
+- `useSlidingThumb.ts` — `SlidingThumbBox`, `useSlidingThumb`
 
 ## `src/components/canvas/`
 
@@ -158,54 +173,80 @@
 - `loader.ts` — `EmbedContext`, `EmbedData`, `EmbedLoadResult`, `clearVaultEmbedCache`, `isAsyncKind`, `loadEmbed`, `subscribeEmbedData`
 - `model.ts` — `CANVAS_PREVIEW_RATIO`, `EMBED_SIZE_MAX`, `EMBED_SIZE_MIN`, `EMBED_SIZE_STEP`, `EmbedKind`, `EmbedOpenTarget`, `EmbedSpec`, `clampEmbedSize`, `defaultEmbedHeight`, `detectEmbedKind`, `domainOf`, `parseEmbedSpec`, `parseMarkdownImage`, `serializeEmbedSpec`, `specFromData`
 
-## `src/components/gtd/`
+## `src/components/growth/`
 
-- `DueDateCalendar.tsx` — `DueDateCalendar`
-- `DueDateChip.tsx` — `DueDateChip`
-- `GtdCalendar.tsx` — `GtdCalendar`
-- `GtdCalendarAgenda.tsx` — `GtdCalendarAgenda`
-- `GtdCalendarInbox.tsx` — `GtdCalendarInbox`
-- `GtdCompleted.tsx` — `GtdCompleted`
-- `GtdDueDateModal.tsx` — `GtdDueDateModal`
-- `GtdProgressRing.tsx` — `GtdProgressRing`
-- `GtdProjectCreateModal.tsx` — `GtdProjectCreateModal`
-- `GtdProjectDetail.tsx` — `GtdProjectDetail`
-- `GtdProjectDocCreateModal.tsx` — `GtdProjectDocCreateModal`
-- `GtdProjectDocs.tsx` — `GtdProjectDocs`, `GtdProjectDocsHandle`
-- `GtdProjectLinkPickerModal.tsx` — `GtdProjectLinkPickerModal`
-- `GtdProjectList.tsx` — `GtdProjectList`
-- `GtdSectionHeading.tsx` — `GtdSectionHeading`
-- `GtdTaskModal.tsx` — `GtdTaskModal`
-- `GtdTaskRow.tsx` — `GtdTaskRow`
-- `GtdView.tsx` — `GtdView`
-- `InboxCapture.tsx` — `InboxCapture`
-- `ProjectJumpButton.tsx` — `ProjectJumpButton`
-- `types.ts` — `GtdFocus`, `GtdFocusRequest`, `formatGtdDate`, `formatGtdDayHeading`, `formatGtdTime`, `gtdTimestampDateKey`
-- `useGtdFocusHighlight.ts` — `useGtdFocusHighlight`
+- `GrowthAccuracySpark.tsx` — `GrowthAccuracySpark`
+- `GrowthAnnualModal.tsx` — `AnnualStats`, `GrowthAnnualModal`
+- `GrowthArtifactCard.tsx` — `GrowthArtifactCard`
+- `GrowthArtifactDetail.tsx` — `GrowthArtifactDetail`
+- `GrowthArtifactGalleryField.tsx` — `GrowthArtifactGalleryField`
+- `GrowthArtifactModal.tsx` — `GrowthArtifactModal`
+- `GrowthBadges.tsx` — `ChallengeStatusIcon`, `ConfidenceBadge`, `HalfLifeBadge`, `PortabilityBadge`, `StatusBadge`
+- `GrowthBoard.tsx` — `GrowthBoard`
+- `GrowthCapabilityCard.tsx` — `GrowthCapabilityCard`
+- `GrowthCapabilityModal.tsx` — `GrowthCapabilityModal`
+- `GrowthChallengeBoard.tsx` — `GrowthChallengeBoard`
+- `GrowthChallengeDetail.tsx` — `GrowthChallengeDetail`
+- `GrowthChallengeModal.tsx` — `GrowthChallengeModal`
+- `GrowthChronicleView.tsx` — `GrowthChronicleView`
+- `GrowthCurveChart.tsx` — `GrowthCurveChart`, `Props`
+- `GrowthDomainDistribution.tsx` — `GrowthDomainDistribution`
+- `GrowthDomainModal.tsx` — `GrowthDomainModal`
+- `GrowthEmptyGuide.tsx` — `GrowthEmptyGuide`
+- `GrowthErrorChart.tsx` — `GrowthErrorChart`
+- `GrowthEvidenceModal.tsx` — `GrowthEvidenceModal`
+- `GrowthFeedbackModal.tsx` — `GrowthFeedbackModal`
+- `GrowthImageField.tsx` — `GrowthImageField`, `GrowthImageRatio`
+- `GrowthLevelBar.tsx` — `GrowthLevelBar`
+- `GrowthMarkdown.tsx` — `GrowthMarkdown`
+- `GrowthPredictionModal.tsx` — `GrowthPredictionModal`
+- `GrowthPredictionSettleModal.tsx` — `GrowthPredictionSettleModal`
+- `GrowthRadar.tsx` — `GrowthRadar`, `RadarAxis`
+- `GrowthResolveModal.tsx` — `GrowthResolveModal`
+- `GrowthReviewModal.tsx` — `GrowthReviewModal`
+- `GrowthSeasonCloseModal.tsx` — `GrowthSeasonCloseModal`
+- `GrowthSeasonModal.tsx` — `GrowthSeasonModal`
+- `GrowthSeasonPoster.tsx` — `GrowthSeasonPoster`
+- `GrowthSelfModelModal.tsx` — `GrowthSelfModelModal`
+- `GrowthSelfModelPanel.tsx` — `GrowthSelfModelPanel`
+- `GrowthSelfView.tsx` — `GrowthSelfView`
+- `GrowthSidebar.tsx` — `GrowthSidebar`
+- `GrowthStars.tsx` — `GrowthStars`
+- `GrowthTaskModal.tsx` — `GrowthTaskModal`
+- `GrowthTaskRow.tsx` — `GrowthTaskRow`
+- `GrowthTasksCard.tsx` — `GrowthTasksCard`
+- `GrowthThemeSwatches.tsx` — `GrowthThemeSwatches`
+- `GrowthView.tsx` — `GrowthView`
+- `labels.ts` — `ARTIFACT_KIND_KEYS`, `ATTRIBUTION_KEYS`, `CHALLENGE_STATUS_KEYS`, `CONFIDENCE_HINT_KEYS`, `CONFIDENCE_NAME_KEYS`, `CONFIDENCE_OPTIONS`, `EVIDENCE_KINDS`, `EVIDENCE_KIND_KEYS`, `LEVEL_HINT_KEYS`, `LEVEL_NAME_KEYS`, `LEVEL_VALUE_OPTIONS`, `PREDICTION_KIND_COLORS`, `PREDICTION_KIND_KEYS`, `PREDICTION_UNIT_KEYS`, `SELF_SECTIONS`, `SELF_SECTION_COLORS`, `SELF_SECTION_HINT_KEYS`, `SELF_SECTION_KEYS`
+- `types.ts` — `GrowthArtifactDefaults`, `GrowthPredictionLink`, `GrowthSelfViewKey`, `GrowthTaskDefaults`, `GrowthViewKey`
+- `useGrowthCoverDraft.ts` — `useGrowthCoverDraft`
+- `useGrowthImagesDraft.ts` — `MAX_ARTIFACT_IMAGES`, `useGrowthImagesDraft`
+- `useGrowthTaskActions.ts` — `GrowthTaskToggleAction`, `useGrowthTaskActions`
 
 ## `src/components/library/`
 
 - `CanvasLibraryContent.tsx` — `CanvasLibraryContent`
 - `CollectionDialogs.tsx` — `CollectionDialogTarget`, `CollectionDialogs`, `useCollectionDialogs`
 - `CollectionDragPreview.tsx` — `CollectionDragPreview`
+- `CollectionSection.tsx` — `CollectionSection`
 - `GroupNavRow.tsx` — `GroupNavRow`, `GroupNavRowSortable`
 - `LibraryDataProvider.tsx` — `LibraryDataProvider`, `useLibraryData`
 - `LibraryDragOverlay.tsx` — `LibraryDragOverlay`
-- `libraryGroups.ts` — `LibraryGroup`, `toNoteCollectionGroups`, `toPdfCollectionGroups`, `toResourceTagGroups`
+- `libraryGroups.ts` — `LibraryGroup`, `toNoteCollectionGroups`, `toPdfCollectionGroups`, `toResourceCollectionGroups`
 - `LibrarySidebar.tsx` — `LibrarySidebar`
 - `librarySources.ts` — `LIBRARY_SOURCES`, `LibrarySourceDef`, `LibrarySourceKind`
 - `LibraryTitle.tsx` — `LibraryTitle`
 - `LibraryView.tsx` — `LibraryView`
 - `NoteLibraryContent.tsx` — `NoteLibraryContent`
 - `PdfLibraryContent.tsx` — `PdfLibraryContent`
+- `ResourceCollectionList.tsx` — `ResourceCollectionList`
 - `ResourcesLibraryContent.tsx` — `ResourcesLibraryContent`
-- `ResourceTagList.tsx` — `ResourceTagList`
 - `SearchLimitHint.tsx` — `SearchLimitHint`
 - `useCanvasGroups.ts` — `collectUngrouped`, `useCanvasGroups`
 - `useLibraryDnd.ts` — `LibraryDragState`, `useLibraryDnd`
 - `useNoteLibrary.ts` — `CANVAS_VIEW_ID`, `NoteLibrary`, `useNoteLibrary`
 - `useNotePdfDialogs.ts` — `useNotePdfDialogs`
-- `useResourceLibrary.ts` — `ResourceLibrary`, `ResourceTagGroup`, `useResourceLibrary`
+- `useResourceLibrary.ts` — `ResourceCollectionGroup`, `ResourceLibrary`, `useResourceLibrary`
 - `VaultDragPreview.tsx` — `VaultDragPreview`
 
 ## `src/components/pdf/`
@@ -218,7 +259,7 @@
 - `pdfOutline.ts` — `PdfOutlineEntry`, `loadPdfOutline`
 - `PdfPage.tsx` — `PdfPage`
 - `PdfReader.tsx` — `PdfReader`
-- `types.ts` — `PdfCollectionData`, `PdfSort`, `PdfSortDir`, `formatFileSize`, `pdfCoverUrl`, `pdfDocumentUrl`, `relKey`
+- `types.ts` — `PdfSort`, `PdfSortDir`, `formatFileSize`, `pdfCoverUrl`, `pdfDocumentUrl`, `relKey`
 - `usePdfCollections.ts` — `usePdfCollections`
 - `usePdfLibrary.ts` — `usePdfLibrary`
 
@@ -226,11 +267,10 @@
 
 - `AppearanceSection.tsx` — `AppearanceSection`
 - `CanvasSection.tsx` — `CanvasSection`
-- `controls.tsx` — `NumberInput`, `SectionHeader`, `Select`, `SettingBlock`, `SettingRow`, `Slider`, `TextField`, `Toggle`
+- `controls.tsx` — `SectionHeader`, `Select`, `SettingBlock`, `SettingRow`, `Slider`, `TextField`, `Toggle`
 - `EditorSection.tsx` — `EditorSection`
 - `ExternalSection.tsx` — `ExternalSection`
 - `GeneralSection.tsx` — `GeneralSection`
-- `GtdSection.tsx` — `GtdSection`
 - `NoteColors.tsx` — `NoteColors`
 - `PdfSection.tsx` — `PdfSection`
 - `SearchSection.tsx` — `SearchSection`
@@ -257,6 +297,11 @@
 
 - `changelog.ts` — `ChangelogEntry`, `ChangelogHighlight`, `changelog`
 
+## `src/dev/`
+
+- `ChallengeDetailPreview.tsx` — `ChallengeDetailPreview`
+- `ControlShowcase.tsx`
+
 ## `src/i18n/`
 
 - `en.ts` — `en`
@@ -266,23 +311,32 @@
 ## `src/lib/`
 
 - `api.ts`
+- `capabilityGroups.ts` — `CapabilityOptionGroup`, `capabilityGroupsByDomain`
 - `collectionOps.ts` — `deleteById`, `insertAt`, `moveItem`, `renameById`
-- `colors.ts` — `PALETTE`, `PaletteColor`, `TAG_COLORS`, `TagColorKey`, `TagColorOption`, `hashColor`, `resolveTagColor`, `tagColor`
-- `dates.ts` — `MonthGridCell`, `addDays`, `buildMonthGrid`, `dateKey`, `daysUntil`, `minDateKey`, `parseDateKey`
-- `gtd.ts` — `GtdGroupedTasks`, `GtdTaskRange`, `compareTasksByDeadline`, `groupGtdTasks`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange`
+- `colors.ts` — `GRADE_COLOR_KEYS`, `PALETTE`, `PaletteColor`, `TAG_COLORS`, `TagColorKey`, `TagColorOption`, `gradeColor`, `hashColor`, `resolveTagColor`, `tagColor`
+- `dates.ts` — `MonthGridCell`, `addDays`, `buildMonthGrid`, `dateKey`, `daysUntil`, `localDateFromStamp`, `localDateTimeFromStamp`, `minDateKey`, `parseDateKey`, `parseSqliteTime`
+- `growth.ts` — `AccuracyPoint`, `CONFIDENCE_BAND`, `CurvePoint`, `DomainAggregate`, `GrowthDisplay`, `LEVEL_BASE`, `LEVEL_GRADES`, `PredictionBias`, `PredictionDelta`, `SeasonProgress`, `SelfAccuracy`, `SettledPrediction`, `artifactDateForSeason`, `capabilityDisplay`, `capabilityGap`, `challengeHasContent`, `confidenceBand`, `daysSince`, `domainAggregates`, `globalCurve`, `growthCoverUrl`, `isActive`, `isPredictionValue`, `levelGrade`, `levelIndex`, `levelScore`, `passedChallengeCount`, `plainTextExcerpt`, `portableShare`, `predictionBias`, `predictionBounds`, `predictionDelta`, `predictionError`, `predictionStep`, `requiredChallengeCount`, `scoreLevel`, `seasonArtifacts`, `seasonOrdinalOf`, `seasonProgress`, `seasonTimeline`, `selfAccuracy`, `settledPredictions`, `weekStartKey`, `weeklyAccuracy`, `yearCurve`
+- `imageFocus.ts` — `coverImageStyle`, `normalizeCoverTransform`
 - `librarySelection.ts` — `LibrarySelectionSource`, `librarySelectionKey`, `readLibrarySelection`, `writeLibrarySelection`
+- `modalStack.ts` — `ModalLayerRegistration`, `ModalLayerState`, `registerModalLayer`, `setModalLayerExiting`, `useModalLayer`
 - `noteMenu.tsx` — `noteBaseMenuItems`
 - `paths.ts` — `normalizePath`, `noteKey`, `relativePathInsideVault`, `toRelativePath`
-- `projectLinks.tsx` — `ProjectLinksProvider`, `jumpToProject`, `useProjectLinks`
+- `selectionEdge.ts` — `SelectionEdge`, `selectionEdgeAt`
 - `settings.tsx` — `SettingsProvider`, `useSettings`
-- `sidebarState.ts` — `setSidebarCollapsed`, `toggleSidebarCollapsed`, `useSidebarCollapsed`
+- `sidebarState.ts` — `setSidebarCollapsed`, `toggleSidebarCollapsed`, `useSidebarCollapsed`, `useSidebarSection`
+- `taskDates.ts` — `GrowthTaskBuckets`, `TaskRange`, `bucketGrowthTasks`, `compareTasksByDeadline`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange`
 - `toast.tsx` — `ToastAction`, `ToastOptions`, `ToastProvider`, `ToastType`, `useToast`
 - `useAnimatedMount.ts` — `useAnimatedMount`
+- `useAnimatedValues.ts` — `useAnimatedValues`
 - `useAutosave.ts` — `useAutosaveTimer`
 - `useContextMenu.tsx` — `ContextMenuProvider`, `useContextMenu`
 - `useDebouncedJsonPersist.ts` — `useDebouncedPersist`
 - `useDebouncedValue.ts` — `useDebouncedValue`
 - `useDragClickGuard.ts` — `useDragClickGuard`
+- `useHorizontalWheel.ts` — `useHorizontalWheel`
+- `useImagePickAction.ts` — `useImagePickAction`
+- `useMultiSelect.ts` — `MultiSelect`, `MultiSelectOptions`, `useMultiSelect`
+- `useScrollEdges.ts` — `HorizontalScrollEdges`, `ScrollEdges`, `useHorizontalScrollEdges`, `useScrollEdges`
 - `useShortcuts.ts` — `useGlobalShortcuts`
 - `useToggleSet.ts` — `useSetToggle`
 - `vaultIcons.tsx` — `VAULT_ICON_PRESETS`, `VaultIcon`
@@ -306,7 +360,8 @@
 
 ## `src/shared/`
 
-- `models.ts` — `AppLaunchState`, `CanvasContent`, `CanvasFile`, `CanvasGroup`, `CanvasGroupsFile`, `CanvasSaveResult`, `GlobalShortcutState`, `GlobalShortcutStatus`, `GtdFileProjectRef`, `GtdProject`, `GtdProjectDocsPayload`, `GtdProjectLink`, `GtdProjectLinkKind`, `GtdTask`, `GtdTaskPatch`, `GtdTaskProjectRef`, `GtdViewKey`, `NoteBrief`, `NoteCollectionData`, `NoteCollectionsFile`, `NoteContentHit`, `NoteGroupData`, `NoteListChanges`, `NoteRef`, `PdfDocument`, `PdfListChanges`, `Resource`, `TagInfo`, `VaultLibrarySummary`, `VaultMigrationProgress`, `VaultMigrationResult`, `VaultPrivacyStatus`
+- `collectionUniqueness.ts` — `dedupeNoteCollections`, `dedupePdfCollections`
+- `models.ts` — `AppLaunchState`, `CanvasContent`, `CanvasFile`, `CanvasGroup`, `CanvasGroupsFile`, `CanvasSaveResult`, `GlobalShortcutState`, `GlobalShortcutStatus`, `GrowthAnnualNote`, `GrowthAnnualNoteInput`, `GrowthArtifact`, `GrowthArtifactInput`, `GrowthArtifactKind`, `GrowthArtifactPatch`, `GrowthAttribution`, `GrowthBackup`, `GrowthBackupCounts`, `GrowthBackupExportResult`, `GrowthBackupImportResult`, `GrowthBackupPreview`, `GrowthCapability`, `GrowthCapabilityInput`, `GrowthCapabilityPatch`, `GrowthChallenge`, `GrowthChallengeInput`, `GrowthChallengePatch`, `GrowthChallengeStatus`, `GrowthCoverTransform`, `GrowthDomain`, `GrowthEvidence`, `GrowthEvidenceInput`, `GrowthEvidenceKind`, `GrowthFeedback`, `GrowthFeedbackInput`, `GrowthHalfLife`, `GrowthPortability`, `GrowthPrediction`, `GrowthPredictionInput`, `GrowthPredictionKind`, `GrowthResolveInput`, `GrowthResolveResult`, `GrowthReviewInput`, `GrowthReviewResult`, `GrowthSeason`, `GrowthSeasonInput`, `GrowthSeasonPatch`, `GrowthSelfModelEntry`, `GrowthSelfModelInput`, `GrowthSelfModelPatch`, `GrowthSelfSection`, `GrowthSnapshot`, `GrowthState`, `GrowthStatus`, `GrowthTask`, `GrowthTaskInput`, `GrowthTaskPatch`, `GrowthTasksPayload`, `NoteBrief`, `NoteCollectionData`, `NoteCollectionsFile`, `NoteContentHit`, `NoteGroupData`, `NoteListChanges`, `NoteRef`, `PdfCollectionData`, `PdfCollectionsFile`, `PdfDocument`, `PdfListChanges`, `Resource`, `ResourceCollection`, `VaultLibrarySummary`, `VaultMigrationProgress`, `VaultMigrationResult`, `VaultPrivacyStatus`
 - `settings.ts` — `AppSettings`, `CanvasBackground`, `CanvasMinimapPosition`, `CanvasPreset`, `CloseBehavior`, `ColorMode`, `DEFAULT_SETTINGS`, `MAX_CANVAS_PRESETS`, `NumberRange`, `SETTING_KEYS`, `SETTING_META`, `SettingKey`, `SettingMeta`, `decodeSetting`, `normalizeCanvasPresets`, `normalizeSetting`, `serializeSetting`
 - `shortcuts.ts` — `DEFAULT_SHORTCUTS`, `GLOBAL_SHORTCUT_ACTIONS`, `GlobalShortcutAction`, `QUICK_CAPTURE_EVENT`, `SHORTCUT_ACTIONS`, `SHORTCUT_EVENT`, `ShortcutAction`, `ShortcutEventDetail`, `ShortcutMap`, `formatShortcut`, `isReservedShortcut`, `isValidShortcut`, `normalizeShortcuts`, `shortcutFromEvent`
 

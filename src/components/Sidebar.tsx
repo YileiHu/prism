@@ -12,7 +12,7 @@ const MIN_WIDTH = 160;
 const DEFAULT_WIDTH = 192;
 const MAX_WIDTH = 400;
 const STORAGE_KEY = "prism_sidebar_width";
-const LEGACY_KEYS = ["vault", "pdf", "resources", "gtd", "gtd-projects", "settings"].map(
+const LEGACY_KEYS = ["vault", "pdf", "resources", "settings"].map(
   (key) => `prism_sidebar_${key}`,
 );
 

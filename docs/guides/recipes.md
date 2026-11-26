@@ -11,6 +11,8 @@ git status --short
 npm run lint        # 先确认基线
 ```
 
+改 UI 或通用逻辑时，先查 `docs/reference/ui-inventory.md` 与 [UI kit](ui-kit.md)，再 `grep` 一次现有实现；已有同职责的控件/函数/样式类时不要重造。
+
 收尾：
 
 ```bash
@@ -142,3 +144,21 @@ npm run verify      # tsc + docs 检查
 2. 默认 dry-run，`--apply` 才写盘；写盘前打印目标并建议备份。
 3. 路径参数用绝对路径；校验目标在库内。
 4. 在 `README.md` 或 `docs/guides/verify-and-release.md` 补一行用法；如果是文档/契约脚本，加到 `package.json`。
+
+## 12. 新增共享控件 / 工具函数 / 效果类
+
+1. 搜：`docs/reference/ui-inventory.md` + `grep` 现有调用点；已有同名或同职责实现就先复用。
+2. 判定阶梯：直接复用 → 给现有件加可选 prop/variant → 共享层新建。一次性页面内实现不要进 `src/components/` 根目录。要新增 variant / size / 全局样式类时，先按 [UI kit](ui-kit.md) 的请求流程提出并等待确认，不要边做边加。
+3. 放置与命名：逻辑/hook → `src/lib/`；跨模块视觉件 → `src/components/` 根目录；设置行/块 → `components/settings/controls.tsx`；模块私有件 → `src/components/<module>/`。命名按 [UI kit](ui-kit.md) 的约定（`variant` / `palette` / `active` / `selected`）。
+4. 样式只用语义 token 与已有共用类；确实要加效果类时，先确认第二处会用到。
+5. 在 [UI kit](ui-kit.md) 补一行（根目录控件必须收录），跑 `npm run docs` 更新 `code-map.md` 与 `ui-inventory.md`。
+6. `npm run verify`；UI 变更说明需要手测的路径（深/浅色、窄窗口、空态/加载态、键盘）。
+
+## 13. 新增详情 / 写作弹窗
+
+1. **先判档**（见 [UI kit](ui-kit.md)「Modal 的三种容器」）：确认/单输入/短表单 → `sm/md`；多短字段表单 → `lg`；阅读正文或长文写作 → `layout="document"`。不要用 `lg` + `max-h-[62vh]` 硬撑文档型。
+2. 文档型：`<Modal layout="document">`，面板自动铺满窗口（四边 64px）、固定标题/页脚、只滚正文；页面不要再包滚动容器或 `ScrollFade`。
+3. 内容外层 `mx-auto w-full max-w-[1400px]`；正文列 `max-w-[800px]`（公告 960），避免 1800px 行长。
+4. 单栏/双栏：用 `useElementSize` 量**正文容器**，阈值参考 900（能力 / 挑战）、880（作品）、820（年度）；不要用 viewport 媒体查询。
+5. 写作型 `closeOnBackdrop={false}`，长文本 `min-h-[34vh]`；本轮不做脏检查/写预览分栏。
+6. `npm run docs` + `npm run verify`；手测 900/1200/1920、125%/150% 缩放、头尾固定、分栏切换与堆叠子弹窗。

@@ -21,7 +21,7 @@ npm run electron:dev     # Vite + Electron，固定 5173
 |---|---|---|
 | `npm run lint` | `tsc --noEmit` | 每次改完 |
 | `npm run docs` | 重新生成 `docs/reference/*` | 改 IPC/设置/表结构/导出后 |
-| `npm run docs:check` | 生成物、IPC、链接、路径、版本、i18n 等校验 | 提交前 |
+| `npm run docs:check` | 生成物、IPC、链接、路径、版本、i18n、复用/样式检查（调色板/hex、原生数字输入、重复导出、共享控件登记） | 提交前 |
 | `npm run verify` | `lint` + `docs:check` | 默认收尾 |
 | `npm run build` | `tsc` + `vite build` | 需要验证生产构建时 |
 | `npm run electron:build` | `vite build` + `electron-builder`（NSIS） | 出安装包 |
@@ -49,7 +49,7 @@ node scripts/md-smoke-test.mjs
 - 阅读/编辑切换、表格/代码/callout/公式/嵌入；
 - 笔记库切换、搜索、收藏集拖拽、回收站；
 - PDF 打开/翻页/封面、白板保存冲突；
-- 分屏左右聚焦、标签恢复、冷启动固定事务-日历、托盘/隐藏启动恢复现场、项目拖动排序、私密库锁定。
+- 分屏左右聚焦、标签恢复、冷启动固定养成-能力总览、托盘/隐藏启动恢复现场、任务日期分组、私密库锁定。
 
 ## 发布清单
 
@@ -58,7 +58,7 @@ node scripts/md-smoke-test.mjs
 3. **跑验证**：`npm run verify`。
 4. **打包**：`npm run release:win`（内部先 verify，再 `vite build && electron-builder`）。
 5. **检查产物**：`release/` 下应有 `Prism Setup <version>.exe`、`.blockmap`、`latest.yml`；确认 `latest.yml` 里的 `version` 与 `files[].url` 对得上实际文件名（历史上出现过文件名与 yml 不一致的情况）。
-6. **安装冒烟**：在干净目录安装；启动后依次打开笔记库、笔记、PDF、白板、GTD、设置，确认无白屏/报错。
+6. **安装冒烟**：在干净目录安装；启动后依次打开笔记库、笔记、PDF、白板、养成、设置，确认无白屏/报错。
 7. **提交**：`git status` → `git diff` → `git add`；提交信息沿用现有风格：`Release vX.Y.Z with <主题>`，功能提交用 `Add ...` / `Polish ...`。
 8. **推送**：`git push origin master`。当前仓库没有打 tag 的习惯；如要打 tag，先和用户确认。
 9. **不要动外部笔记仓库**：`D:\MyDocuments\MyNotes` 与构建无关；`Life/` 永不 `git add -f`。

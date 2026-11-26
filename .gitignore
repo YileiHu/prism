@@ -4,6 +4,7 @@ dist-electron/
 release/
 *.db
 *.log
+.scratch/
 .DS_Store
 Thumbs.db
 .claude/

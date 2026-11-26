@@ -208,7 +208,7 @@ export default function VaultsSection({ onSaved }: Props) {
               placeholder={t["settings.vaultPath"]}
               className="flex-1"
             />
-            <Button variant="ghost" size="icon-md" onClick={handleSelectDir}>
+            <Button variant="ghost" size="icon-sm" onClick={handleSelectDir}>
               <FolderOpen size={16} />
             </Button>
           </div>

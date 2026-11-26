@@ -19,6 +19,7 @@ import {
   read,
   walk,
 } from "./lib/reference.mjs";
+import { checkReuse } from "./lib/reuse.mjs";
 
 const errors = [];
 const warnings = [];
@@ -31,7 +32,14 @@ const data = collect();
 // 1. Generated reference must match source
 // ---------------------------------------------------------------------------
 
-const generated = generateAll(data);
+const generated = (() => {
+  try {
+    return generateAll(data);
+  } catch (error) {
+    fail(`reference generator failed: ${error.message}`);
+    return {};
+  }
+})();
 for (const [relPath, content] of Object.entries(generated)) {
   if (!exists(relPath)) {
     fail(`missing generated file ${relPath}; run \`npm run docs\``);
@@ -299,6 +307,14 @@ for (const key of data.i18n.en.keys()) {
 }
 
 // ---------------------------------------------------------------------------
+// 14. Reuse and style rules
+// ---------------------------------------------------------------------------
+
+const reuse = checkReuse();
+for (const message of reuse.warnings) warn(message);
+for (const message of reuse.errors) fail(message);
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
@@ -309,7 +325,8 @@ console.log("");
 console.log(
   `Checked ${data.preload.methods.length} IPC methods, ${data.database.tables.length} tables, ` +
     `${data.settings.keys.length} settings, ${data.i18n.zh.size} i18n keys, ` +
-    `${data.shortcutActions.length} shortcuts, ${markdownFiles.length} markdown files.`,
+    `${data.shortcutActions.length} shortcuts, ${markdownFiles.length} markdown files, ` +
+    `${reuse.checkedFiles} source files (reuse/style).`,
 );
 console.log(`${errors.length} error(s), ${warnings.length} warning(s).`);
 process.exit(errors.length > 0 ? 1 : 0);

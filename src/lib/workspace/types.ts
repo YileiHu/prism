@@ -1,4 +1,4 @@
-export type ModuleId = "gtd" | "library" | "settings";
+export type ModuleId = "growth" | "library" | "settings";
 
 export type PaneSide = "left" | "right";
 
@@ -86,7 +86,7 @@ export function makeCanvasDoc(vaultPath: string, canvasPath: string, title: stri
 
 export function initialWorkspaceState(): WorkspaceState {
   return {
-    module: "gtd",
+    module: "growth",
     tabs: [],
     activeId: null,
     split: null,

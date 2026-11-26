@@ -1,7 +1,8 @@
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import type { AppSettings } from "../../shared/settings";
-import { NumberInput, SectionHeader, Select, SettingRow, Toggle } from "./controls";
+import { SectionHeader, Select, SettingRow, Toggle } from "./controls";
+import NumberInput from "../NumberInput";
 
 export default function CanvasSection() {
   const { t } = useT();
@@ -41,12 +42,13 @@ export default function CanvasSection() {
 
         <SettingRow label={t["settings.canvasGridSize"]} description={t["settings.canvasGridSizeDesc"]}>
           <NumberInput
+            className="w-24 text-primary"
             value={values.canvas_grid_size}
             min={10}
             max={60}
             step={2}
             suffix="px"
-            onChange={(v) => set("canvas_grid_size", v)}
+            onChange={(v) => v !== null && set("canvas_grid_size", v)}
           />
         </SettingRow>
 

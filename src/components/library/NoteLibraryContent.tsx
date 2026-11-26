@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRightLeft,
-  CheckSquare,
   FileText,
   FolderOpen,
   FolderX,
@@ -19,7 +18,7 @@ import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useSetToggle } from "../../lib/useToggleSet";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
-import { resolveTagColor } from "../../lib/colors";
+import { hashColor, resolveTagColor } from "../../lib/colors";
 import { noteBaseMenuItems } from "../../lib/noteMenu";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
 import { makeNoteDoc, noteDocId, noteKey } from "../../lib/workspace/types";
@@ -29,6 +28,7 @@ import { useToolbarContribution, type ToolbarContribution } from "../toolbar/Too
 import LibraryTitle from "./LibraryTitle";
 import SearchLimitHint from "./SearchLimitHint";
 import Badge from "../Badge";
+import GlowBadge from "../GlowBadge";
 import Button from "../Button";
 import SegmentedToggle from "../SegmentedToggle";
 import Spinner from "../Spinner";
@@ -36,8 +36,10 @@ import SearchInput from "../SearchInput";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import ItemRow from "../ItemRow";
-import ProjectLinkMarker from "../ProjectLinkMarker";
-import BatchActionBar from "../BatchActionBar";
+import BatchActionBar, { type BatchAction } from "../BatchActionBar";
+import SelectModeButton from "../SelectModeButton";
+import { useMultiSelect } from "../../lib/useMultiSelect";
+import { selectionEdgeAt } from "../../lib/selectionEdge";
 import ContentSearchView from "../ContentSearchView";
 import CollectionDetail from "../CollectionDetail";
 import CreateCollectionModal from "../CreateCollectionModal";
@@ -106,12 +108,12 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
   const [renameGroupTarget, setRenameGroupTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameNoteTarget, setRenameNoteTarget] = useState<NoteBrief | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchFocusPendingRef = useRef(false);
+  const notesScrollRef = useRef<HTMLDivElement>(null);
+  const collectionScrollRef = useRef<HTMLDivElement>(null);
   const [searchFocusSeq, setSearchFocusSeq] = useState(0);
   const toggleCollapsedGroup = useSetToggle(setCollapsedGroups);
 
@@ -142,12 +144,12 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     restoreCollections,
     handleSetCollectionColor,
     handleReorderCollections,
-    handleDropNote,
+    handleMoveNotesToCollection,
     handleDropNoteDirect,
     handleMoveNoteDirect,
     handleMoveNote,
     handleRemoveNote,
-    handleMoveToCollection,
+    handleBatchRemoveFromAnyCollection,
     handleReorderNotesInGroup,
     handleAddGroup,
     handleSetGroupColor,
@@ -156,7 +158,6 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     handleReorderGroups,
     updateNotePaths,
     removeNotePaths,
-    handleBatchAddToCollection,
     handleBatchDelete,
     groupedViews,
     ungroupedNotes,
@@ -165,28 +166,57 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     sortedNotes,
   } = lib;
 
+  // Two independent selections: the flat list and the open collection never
+  // share a scroll container, and each scope key exits the mode when the user
+  // switches away from it.
+  const flatKeys = useMemo(() => sortedNotes.map((note) => note.path), [sortedNotes]);
+  const flatSelection = useMultiSelect({
+    scopeKey: `${vaultPath}|notes|${selectedCollectionId ?? ""}|${searchScope}|${debouncedQuery}`,
+    keys: flatKeys,
+    containerRef: notesScrollRef,
+  });
+  // A run of selected rows is drawn as one block: only its first/last row keeps
+  // the outer radius.
+  const flatEdges = useMemo(
+    () => flatKeys.map((_, index) => selectionEdgeAt(flatKeys, index, flatSelection.selected)),
+    [flatKeys, flatSelection.selected],
+  );
+
+  const collectionKeys = useMemo(
+    () => [
+      ...groupedViews.flatMap((group) => group.notes.map((note) => note.relPath)),
+      ...ungroupedNotes.map((note) => note.relPath),
+    ],
+    [groupedViews, ungroupedNotes],
+  );
+
+  const collectionSelection = useMultiSelect({
+    scopeKey: `${vaultPath}|collection|${selectedCollectionId ?? ""}`,
+    keys: collectionKeys,
+    containerRef: collectionScrollRef,
+  });
+
+  // relPath -> owning group, needed by "remove from collection" and by the
+  // trash action (which must not resurrect a missing file).
+  const collectionNotesByRelPath = useMemo(() => {
+    const map = new Map<string, { path: string; missing: boolean; groupId: string | null }>();
+    for (const group of groupedViews) {
+      for (const note of group.notes) map.set(note.relPath, { path: note.path, missing: note.missing, groupId: group.id });
+    }
+    for (const note of ungroupedNotes) map.set(note.relPath, { path: note.path, missing: note.missing, groupId: null });
+    return map;
+  }, [groupedViews, ungroupedNotes]);
+
   const openNote = useCallback((note: { path: string; title: string }) => {
     openDoc(makeNoteDoc(vaultPath, note.path, note.title));
   }, [openDoc, vaultPath]);
 
   const leaveEditorSelection = useCallback(() => {
-    setSelectMode(false);
-    setSelectedPaths(new Set());
+    flatSelection.exit();
+    collectionSelection.exit();
     setCollapsedGroups(new Set());
     setUngroupedCollapsed(false);
-  }, []);
-
-  useEffect(() => {
-    if (!selectMode) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      setSelectMode(false);
-      setSelectedPaths(new Set());
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [selectMode]);
+  }, [flatSelection.exit, collectionSelection.exit]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -209,20 +239,6 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     input.focus();
     input.select();
   }, [searchFocusSeq, selectedCollectionId]);
-
-  const toggleSelectMode = () => {
-    setSelectMode((value) => !value);
-    setSelectedPaths(new Set());
-  };
-
-  const toggleSelectPath = (path: string) => {
-    setSelectedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  };
 
   const handleCreateNote = (note: { id: number; path: string; title: string }, collectionId?: string, groupId?: string) => {
     setShowNewNoteModal(false);
@@ -258,12 +274,19 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     collectionContext?: { collectionId: string; groupId: string | null; relPath: string; onRemove: () => void },
   ): MenuItem[] => {
     const relPath = collectionContext?.relPath ?? toRelativePath(note.path, vaultPath);
-    const addToCollectionSubmenu: MenuItem[] = collections.length > 0
-      ? collections.map((collection) => ({
+    const relKey = noteKey(relPath);
+    const owners = collections.filter((collection) => (
+      collection.notePaths.some((path) => noteKey(path) === relKey)
+      || (collection.groups ?? []).some((group) => group.notePaths.some((path) => noteKey(path) === relKey))
+    ));
+    // Single assignment: the menu is a move picker, not an "add" list. The
+    // current collection is excluded when the menu is opened from inside it.
+    const moveTargets = collections.filter((collection) => collection.id !== collectionContext?.collectionId);
+    const moveToCollectionSubmenu: MenuItem[] = moveTargets.length > 0
+      ? moveTargets.map((collection) => ({
           label: collection.name,
-          checked: collection.notePaths.includes(relPath)
-            || (collection.groups ?? []).some((group) => group.notePaths.includes(relPath)),
-          onClick: () => handleDropNoteDirect(collection.id, [relPath]),
+          checked: owners.some((owner) => owner.id === collection.id),
+          onClick: () => handleMoveNotesToCollection(collection.id, [relPath]),
         }))
       : [{ label: t["collections.none"], onClick: () => {} }];
 
@@ -271,40 +294,17 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       showInExplorer: t["menu.showInExplorer"],
     });
 
+    items.push({
+      label: t["collections.moveTo"],
+      icon: <ArrowRightLeft size={14} />,
+      children: moveToCollectionSubmenu,
+    });
+
     if (collectionContext) {
-      const otherCollections = collections.filter((collection) => collection.id !== collectionContext.collectionId);
-      items.push(
-        {
-          label: t["menu.addToCollection"],
-          icon: <FileText size={14} />,
-          children: addToCollectionSubmenu,
-        },
-        {
-          label: t["menu.removeFromCollection"],
-          icon: <Trash2 size={14} />,
-          onClick: collectionContext.onRemove,
-        },
-        {
-          label: t["menu.moveTo"],
-          icon: <ArrowRightLeft size={14} />,
-          children: otherCollections.length > 0
-            ? otherCollections.map((collection) => ({
-                label: collection.name,
-                onClick: () => handleMoveToCollection(
-                  collectionContext.collectionId,
-                  collection.id,
-                  collectionContext.relPath,
-                  collectionContext.groupId,
-                ),
-              }))
-            : [{ label: t["collections.none"], onClick: () => {} }],
-        },
-      );
-    } else {
       items.push({
-        label: t["menu.addToCollection"],
-        icon: <FileText size={14} />,
-        children: addToCollectionSubmenu,
+        label: t["menu.removeFromCollection"],
+        icon: <Trash2 size={14} />,
+        onClick: collectionContext.onRemove,
       });
     }
 
@@ -372,7 +372,6 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     ];
   };
 
-  const notesScrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: sortedNotes.length,
     getScrollElement: () => notesScrollRef.current,
@@ -453,16 +452,16 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
             </Button>
           </>
         )}
-        {searchScope === "title" && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            active={selectMode}
-            onClick={toggleSelectMode}
-            title={selectMode ? t["batch.cancelSelect"] : t["batch.selectMode"]}
-          >
-            <CheckSquare size={15} />
-          </Button>
+        {selectedCollection ? (
+          <SelectModeButton
+            active={collectionSelection.active}
+            onToggle={collectionSelection.active ? collectionSelection.exit : collectionSelection.enter}
+          />
+        ) : contentResultsVisible ? null : (
+          <SelectModeButton
+            active={flatSelection.active}
+            onToggle={flatSelection.active ? flatSelection.exit : flatSelection.enter}
+          />
         )}
         <Button
           variant="ghost"
@@ -483,8 +482,10 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
       </>
     ),
   }), [
-    allExpanded, changeSearchScope, count, handleToggleAll, privateVault, searchQuery,
-    searchScope, selectMode, selectedCollection, t, title, titleColor,
+    allExpanded, changeSearchScope, collectionSelection.active, collectionSelection.enter,
+    collectionSelection.exit, contentResultsVisible, count, flatSelection.active, flatSelection.enter,
+    flatSelection.exit, handleToggleAll, privateVault, searchQuery, searchScope, selectedCollection, t,
+    title, titleColor,
   ]);
 
   useToolbarContribution("module:library", toolbar);
@@ -511,6 +512,113 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         </Button>
       </div>
     );
+  }
+
+  const flatBatchActions: BatchAction[] = [];
+  if (flatSelection.count > 0) {
+    if (collections.length > 0) {
+      flatBatchActions.push({
+        key: "moveToCollection",
+        label: t["collections.moveTo"],
+        variant: "primary",
+        menu: collections.map((collection) => ({
+          key: collection.id,
+          label: collection.name,
+          onClick: () => {
+            handleMoveNotesToCollection(
+              collection.id,
+              Array.from(flatSelection.selected).map((path) => toRelativePath(path, vaultPath)),
+            );
+            flatSelection.clear();
+          },
+        })),
+      });
+    }
+    flatBatchActions.push({
+      key: "removeFromCollection",
+      label: t["collections.removeFrom"],
+      onClick: () => {
+        handleBatchRemoveFromAnyCollection(
+          Array.from(flatSelection.selected).map((path) => toRelativePath(path, vaultPath)),
+        );
+        flatSelection.clear();
+      },
+    });
+    flatBatchActions.push({
+      key: "delete",
+      label: t["batch.delete"],
+      variant: "ghost-danger",
+      onClick: () => {
+        const paths = Array.from(flatSelection.selected);
+        const { onConfirm } = handleBatchDelete(paths);
+        setConfirm({
+          message: t["vault.batchDeleteConfirm"].replace("{count}", String(paths.length)),
+          confirmLabel: t["batch.delete"],
+          onConfirm: async () => {
+            const { succeeded } = await onConfirm();
+            removeDocs(succeeded.map(noteDocId));
+            flatSelection.exit();
+          },
+        });
+      },
+    });
+  }
+
+  const collectionBatchActions: BatchAction[] = [];
+  if (collectionSelection.count > 0 && selectedCollectionId) {
+    const moveTargets = collections.filter((collection) => collection.id !== selectedCollectionId);
+    if (moveTargets.length > 0) {
+      collectionBatchActions.push({
+        key: "moveToCollection",
+        label: t["collections.moveTo"],
+        variant: "primary",
+        menu: moveTargets.map((collection) => ({
+          key: collection.id,
+          label: collection.name,
+          onClick: () => {
+            handleMoveNotesToCollection(collection.id, Array.from(collectionSelection.selected));
+            collectionSelection.clear();
+          },
+        })),
+      });
+    }
+    collectionBatchActions.push({
+      key: "removeFromCollection",
+      label: t["collections.removeFrom"],
+      onClick: () => {
+        handleBatchRemoveFromAnyCollection(Array.from(collectionSelection.selected));
+        collectionSelection.clear();
+      },
+    });
+    collectionBatchActions.push({
+      key: "delete",
+      label: t["batch.delete"],
+      variant: "ghost-danger",
+      onClick: () => {
+        const selected = Array.from(collectionSelection.selected);
+        const paths: string[] = [];
+        for (const relPath of selected) {
+          const info = collectionNotesByRelPath.get(relPath);
+          if (info && !info.missing) paths.push(info.path);
+        }
+        const skipped = selected.length - paths.length;
+        if (paths.length === 0) {
+          showToast(t["batch.deleteFailed"].replace("{count}", String(skipped)), "error");
+          return;
+        }
+        const { onConfirm } = handleBatchDelete(paths);
+        setConfirm({
+          message: t["vault.batchDeleteConfirm"].replace("{count}", String(paths.length)),
+          confirmLabel: t["batch.delete"],
+          onConfirm: async () => {
+            const { succeeded } = await onConfirm();
+            removeDocs(succeeded.map(noteDocId));
+            collectionSelection.exit();
+            if (skipped > 0) showToast(t["batch.deleteFailed"].replace("{count}", String(skipped)), "error");
+          },
+        });
+      },
+    });
   }
 
   return (
@@ -548,6 +656,10 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
             },
           ))}
           onOpenNote={openNote}
+          scrollRef={collectionScrollRef}
+          selecting={collectionSelection.active}
+          selectedKeys={collectionSelection.selected}
+          onToggleItem={(relPath, event) => collectionSelection.toggle(relPath, { shiftKey: event.shiftKey })}
         />
       )}
 
@@ -562,10 +674,11 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
 
       <div
         style={selectedCollectionId || contentResultsVisible ? { position: "absolute", visibility: "hidden" } : undefined}
-        className={`flex-1 overflow-y-auto py-1 inset-0 ${
+        className={`flex-1 overflow-y-auto p-2 inset-0 focus:outline-none ${
           !selectedCollectionId && !contentResultsVisible ? "anim-fade-in" : ""
         }`}
         ref={notesScrollRef}
+        tabIndex={-1}
       >
         {searchScope === "title" && debouncedQuery.trim() && notes.length >= settings.search_result_limit && (
           <SearchLimitHint
@@ -590,7 +703,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const note = sortedNotes[virtualRow.index];
               const relPath = toRelativePath(note.path, vaultPath);
-              const isSelected = selectedPaths.has(note.path);
+              const isSelected = flatSelection.isSelected(note.path);
               return (
                 <div
                   key={note.path}
@@ -604,38 +717,36 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                   <DraggableNoteRow
                     notePath={note.path}
                     noteTitle={note.title}
-                    dragPaths={selectedPaths.size > 0 && selectedPaths.has(note.path)
-                      ? Array.from(selectedPaths) : [relPath]}
+                    dragPaths={flatSelection.selected.size > 0 && flatSelection.isSelected(note.path)
+                      ? Array.from(flatSelection.selected) : [relPath]}
                   >
                     <ItemRow
-                      variant="list"
+                      // Fixed integer height: the virtualizer positions rows
+                      // with fractional translateY when a row measures 30.2px
+                      // (select mode hides `meta`), which leaves a subpixel seam
+                      // between adjacent selected backgrounds. 32px matches
+                      // `estimateSize` and the meta-visible height.
+                      className="h-8"
                       menuItems={getContextMenuItems(note)}
-                      onPrimaryClick={() => {
-                        if (selectMode) toggleSelectPath(note.path);
+                      onPrimaryClick={(event) => {
+                        if (flatSelection.active) flatSelection.toggle(note.path, { shiftKey: event.shiftKey });
                         else openNote(note);
                       }}
                       selected={isSelected}
+                      selectable={flatSelection.active}
+                      checked={isSelected}
+                      selectionEdge={flatEdges[virtualRow.index] ?? undefined}
                       tooltip={note.path}
-                      leading={selectMode ? (
-                        <div className={`w-4 h-4 rounded-chip border flex-shrink-0 flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? "surface-raised-fill bg-[var(--accent)] border-[var(--accent)]"
-                            : "surface-inset"
-                        }`}>
-                          {isSelected && <CheckSquare size={12} className="text-on-accent" />}
-                        </div>
-                      ) : undefined}
                       title={
                         <span className="flex min-w-0 items-center gap-1.5">
                           <span className="min-w-0 truncate">{note.title}</span>
-                          {!selectMode && <ProjectLinkMarker filePath={note.path} />}
                         </span>
                       }
-                      meta={!selectMode ? (
+                      meta={!flatSelection.active ? (
                         <>
                           {(() => {
                             const noteColls = noteCollections.get(noteKey(relPath)) ?? [];
-                            if (noteColls.length === 0) return <Badge variant="warning">{t["vault.uncategorized"]}</Badge>;
+                            if (noteColls.length === 0) return <GlowBadge tone="warning" intensity={0.2}>{t["vault.uncategorized"]}</GlowBadge>;
                             return (
                               <span className="flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                                 {noteColls.slice(0, 3).map((name) => (
@@ -650,7 +761,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
                           {note.tags && (
                             <span className="hidden xl:flex items-center gap-1 flex-shrink-0 max-w-[200px] overflow-hidden">
                               {note.tags.split(" ").filter(Boolean).slice(0, 2).map((tag) => (
-                                <Badge key={tag} variant="accent">{tag}</Badge>
+                                <Badge key={tag} palette={hashColor(tag)}>{tag}</Badge>
                               ))}
                             </span>
                           )}
@@ -665,27 +776,21 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
         )}
       </div>
 
-      {selectMode && selectedPaths.size > 0 && (
+      {collectionSelection.active && (
         <BatchActionBar
-          selectedCount={selectedPaths.size}
-          collections={collections}
-          onAddToCollection={(collectionId) => {
-            handleBatchAddToCollection(collectionId, Array.from(selectedPaths));
-            setSelectedPaths(new Set());
-          }}
-          onDelete={() => {
-            const paths = Array.from(selectedPaths);
-            const { onConfirm } = handleBatchDelete(paths);
-            setConfirm({
-              message: t["vault.batchDeleteConfirm"].replace("{count}", String(paths.length)),
-              confirmLabel: t["batch.delete"],
-              onConfirm: async () => {
-                await onConfirm();
-                removeDocs(paths.map(noteDocId));
-                setSelectedPaths(new Set());
-              },
-            });
-          }}
+          selectedCount={collectionSelection.count}
+          actions={collectionBatchActions}
+          onSelectAll={collectionSelection.selectAll}
+          onExit={collectionSelection.exit}
+        />
+      )}
+
+      {flatSelection.active && !contentResultsVisible && (
+        <BatchActionBar
+          selectedCount={flatSelection.count}
+          actions={flatBatchActions}
+          onSelectAll={flatSelection.selectAll}
+          onExit={flatSelection.exit}
         />
       )}
 

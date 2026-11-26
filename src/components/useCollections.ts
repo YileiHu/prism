@@ -131,22 +131,36 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
   }, [saveCollections]);
 
   // ---- Note-to-collection operations ----
-  // A note may belong to multiple collections (context menu checkmarks imply it),
-  // so adding never removes it from other collections.
+  // Moving is the only way into a collection: a note belongs to at most one
+  // collection, so the same write also strips it from every other collection and
+  // group. Only comparisons are case-insensitive; the stored path keeps its case.
 
-  const handleDropNote = useCallback((collectionId: string, notePaths: string[]) => {
-    const relPaths = notePaths.map((p) => toRelativePath(p, vaultPath));
+  const handleMoveNotesToCollection = useCallback((collectionId: string, notePaths: string[]) => {
     const target = collections.find((c) => c.id === collectionId);
-    if (!target) return;
-    const newOnes = relPaths.filter((np) => !collectionHasNote(target, np));
-    showToast(newOnes.length > 0
-      ? t["collections.added"].replace("{name}", target.name)
-      : t["collections.alreadyExists"]);
-    if (newOnes.length === 0) return;
-    const updated = collections.map((c) =>
-      c.id === collectionId ? { ...c, notePaths: [...c.notePaths, ...newOnes] } : c);
+    if (!target || notePaths.length === 0) return;
+    const wanted = new Map<string, string>();
+    for (const path of notePaths) {
+      const rel = toRelativePath(path, vaultPath);
+      const key = noteKey(rel);
+      if (!wanted.has(key)) wanted.set(key, rel);
+    }
+    const keys = new Set(wanted.keys());
+    const updated = collections.map((c) => {
+      const without = (paths: string[]) => paths.filter((p) => !keys.has(noteKey(p)));
+      const notePaths = without(c.notePaths);
+      const groups = (c.groups ?? []).map((g) => ({ ...g, notePaths: without(g.notePaths) }));
+      if (c.id !== collectionId) return { ...c, notePaths, groups };
+      const present = new Set([...notePaths, ...groups.flatMap((g) => g.notePaths)].map(noteKey));
+      const additions = [...wanted.entries()]
+        .filter(([key]) => !present.has(key))
+        .map(([, path]) => path);
+      return { ...c, notePaths: [...notePaths, ...additions], groups };
+    });
     setCollections(updated);
     saveCollections(updated);
+    showToast(wanted.size > 1
+      ? t["collections.movedBatch"].replace("{count}", String(wanted.size)).replace("{name}", target.name)
+      : t["collections.moved"].replace("{name}", target.name));
   }, [collections, vaultPath, saveCollections, showToast, t]);
 
   const handleDropNoteDirect = useCallback((collectionId: string, notePaths: string[], silent = false) => {
@@ -257,23 +271,22 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     });
   }, [collections, updateCollection, handleMoveNote, showToast, t]);
 
-  const handleMoveToCollection = useCallback((fromCollId: string, toCollId: string, relPath: string, fromGroupId: string | null) => {
-    const target = collections.find((c) => c.id === toCollId);
-    const updated = collections.map((c) => {
-      if (c.id === fromCollId) {
-        if (fromGroupId) {
-          return { ...c, groups: (c.groups ?? []).map((g) => g.id === fromGroupId ? { ...g, notePaths: g.notePaths.filter((p) => p !== relPath) } : g) };
-        }
-        return { ...c, notePaths: c.notePaths.filter((p) => p !== relPath) };
-      }
-      if (c.id === toCollId && !collectionHasNote(c, relPath)) {
-        return { ...c, notePaths: [...c.notePaths, relPath] };
-      }
-      return c;
-    });
+  // Batch remove from every collection: the batch bar is view-independent, so it
+  // does not need per-item group context. One write, one toast, no undo.
+  const handleBatchRemoveFromAnyCollection = useCallback((relPaths: string[]) => {
+    if (relPaths.length === 0) return;
+    const keys = new Set(relPaths.map(noteKey));
+    const updated = collections.map((c) => ({
+      ...c,
+      notePaths: c.notePaths.filter((p) => !keys.has(noteKey(p))),
+      groups: (c.groups ?? []).map((g) => ({
+        ...g,
+        notePaths: g.notePaths.filter((p) => !keys.has(noteKey(p))),
+      })),
+    }));
     setCollections(updated);
     saveCollections(updated);
-    showToast(t["collections.moved"].replace("{name}", target?.name ?? ""));
+    showToast(t["collections.removedBatch"].replace("{count}", String(relPaths.length)));
   }, [collections, saveCollections, showToast, t]);
 
   const handleReorderNotesInGroup = useCallback((collId: string, groupId: string | null, fromIndex: number, toIndex: number) => {
@@ -460,13 +473,11 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   // ---- Batch operations ----
 
-  const handleBatchAddToCollection = useCallback((collectionId: string, notePaths: string[]) => {
-    handleDropNote(collectionId, notePaths);
-  }, [handleDropNote]);
-
   const handleBatchDelete = useCallback((notePaths: string[]) => {
     return {
-      onConfirm: async () => {
+      // Returns the paths that actually reached the trash so callers only close
+      // those tabs (a failed file is still on disk).
+      onConfirm: async (): Promise<{ succeeded: string[]; failed: number }> => {
         const result = await window.prism.trashFiles(notePaths);
         const succeeded = (result.results as { path: string; success: boolean }[])
           .filter((r) => r.success)
@@ -483,6 +494,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
         } else {
           showToast(t["batch.deleteFailed"].replace("{count}", String(failed)), "error");
         }
+        return { succeeded, failed };
       },
     };
   }, [vaultPath, removeNotePaths, loadNotes, showToast, t]);
@@ -501,12 +513,12 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     handleSetCollectionColor,
     handleReorderCollections,
     // Notes in collections
-    handleDropNote,
+    handleMoveNotesToCollection,
     handleDropNoteDirect,
     handleMoveNoteDirect,
     handleMoveNote,
     handleRemoveNote,
-    handleMoveToCollection,
+    handleBatchRemoveFromAnyCollection,
     handleReorderNotesInGroup,
     // Groups
     handleAddGroup,
@@ -518,7 +530,6 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     updateNotePaths,
     removeNotePaths,
     // Batch
-    handleBatchAddToCollection,
     handleBatchDelete,
     // Derived
     selectedCollection,

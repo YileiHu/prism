@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 import DragPreview from "./DragPreview";
-import ProjectLinkMarker from "./ProjectLinkMarker";
 import EmptyState from "./EmptyState";
+import ItemRow from "./ItemRow";
 import SectionCard from "./SectionCard";
 import { useT } from "../i18n";
 import {
@@ -22,8 +22,11 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { resolveTagColor, type PaletteColor } from "../lib/colors";
+import { selectionEdgeAt, type SelectionEdge } from "../lib/selectionEdge";
 import { useDragClickGuard } from "../lib/useDragClickGuard";
 import type { NoteRef } from "../shared/models";
+
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
 
 export interface NoteInfo extends NoteRef {
   relPath: string;
@@ -52,6 +55,11 @@ interface Props {
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
   emptyGroupText?: string;
+  /** Scroll container ref, so the owning list can bind Ctrl/Cmd+A and focus it. */
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
+  selecting?: boolean;
+  selectedKeys?: ReadonlySet<string>;
+  onToggleItem?: (relPath: string, event: React.MouseEvent<HTMLDivElement>) => void;
 }
 
 // Returns the group containing the note, null for ungrouped, undefined when absent
@@ -76,24 +84,26 @@ function SortableGroupCard({
   color,
   isOverlay,
   emptyText,
+  selecting,
+  selectedKeys,
   onToggle,
   onGroupContextMenu,
-  onRemoveNote,
-  onReorderNotes,
   onNoteContextMenu,
   onOpenNote,
+  onToggleItem,
 }: {
   group: GroupView;
   collapsed: boolean;
   color: PaletteColor;
   isOverlay?: boolean;
   emptyText: string;
+  selecting?: boolean;
+  selectedKeys?: ReadonlySet<string>;
   onToggle: () => void;
   onGroupContextMenu: (e: React.MouseEvent, groupId: string) => void;
-  onRemoveNote: (relPath: string, groupId: string | null) => void;
-  onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
+  onToggleItem?: (relPath: string, event: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const {
     attributes,
@@ -113,6 +123,8 @@ function SortableGroupCard({
   };
 
   const noteIds = useMemo(() => group.notes.map((n) => makeNoteId(n.relPath)), [group.notes]);
+  const noteKeys = useMemo(() => group.notes.map((note) => note.relPath), [group.notes]);
+  const selection = selectedKeys ?? EMPTY_SELECTION;
 
   return (
     <SectionCard
@@ -136,15 +148,17 @@ function SortableGroupCard({
         </p>
       ) : (
         <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-          {group.notes.map((note) => (
+          {group.notes.map((note, index) => (
             <SortableNoteRow
               key={note.relPath}
               note={note}
               groupId={group.id}
-              onRemoveNote={onRemoveNote}
-              onReorderNotes={onReorderNotes}
+              selecting={selecting}
+              selected={selection.has(note.relPath)}
+              selectionEdge={selectionEdgeAt(noteKeys, index, selection) ?? undefined}
               onNoteContextMenu={onNoteContextMenu}
               onOpenNote={onOpenNote}
+              onToggleItem={onToggleItem}
             />
           ))}
         </SortableContext>
@@ -158,17 +172,21 @@ function SortableGroupCard({
 function SortableNoteRow({
   note,
   groupId,
-  onRemoveNote,
-  onReorderNotes,
+  selecting = false,
+  selected = false,
+  selectionEdge,
   onNoteContextMenu,
   onOpenNote,
+  onToggleItem,
 }: {
   note: NoteInfo;
   groupId: string | null;
-  onRemoveNote: (relPath: string, groupId: string | null) => void;
-  onReorderNotes: (groupId: string | null, fromIndex: number, toIndex: number) => void;
+  selecting?: boolean;
+  selected?: boolean;
+  selectionEdge?: SelectionEdge;
   onNoteContextMenu: (e: React.MouseEvent, note: NoteInfo, groupId: string | null) => void;
   onOpenNote: (note: NoteInfo) => void;
+  onToggleItem?: (relPath: string, event: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const { t } = useT();
   const {
@@ -189,31 +207,40 @@ function SortableNoteRow({
   };
 
   return (
-    <div
-      ref={setNodeRef}
+    <ItemRow
+      rowRef={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
       {...clickGuard}
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded-control transition-colors cursor-pointer ${
-        note.missing ? "opacity-50" : "hover:bg-hover/50"
-      }`}
-      onClick={() => { if (!note.missing) onOpenNote(note); }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onNoteContextMenu(e, note, groupId); }}
-    >
-      <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-body ${note.missing ? "text-faint" : "text-primary"}`}>
-        <span className={`min-w-0 truncate ${note.missing ? "line-through" : ""}`}>
-          {note.title}
-        </span>
-        {!note.missing && <ProjectLinkMarker filePath={note.path} />}
-        {note.missing && (
-          <span className="ml-1.5 inline-flex flex-shrink-0 items-center gap-0.5 text-caption text-warning">
-            <AlertTriangle size={10} />
-            {t["collections.missing"]}
+      selected={selected}
+      selectable={selecting}
+      checked={selected}
+      selectionEdge={selectionEdge}
+      className={note.missing ? "opacity-50" : ""}
+      onPrimaryClick={(event) => {
+        if (selecting) onToggleItem?.(note.relPath, event as React.MouseEvent<HTMLDivElement>);
+        else if (!note.missing) onOpenNote(note);
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onNoteContextMenu(event, note, groupId);
+      }}
+      title={
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className={`min-w-0 truncate ${note.missing ? "line-through" : ""}`}>
+            {note.title}
           </span>
-        )}
-      </span>
-    </div>
+          {note.missing && (
+            <span className="ml-1.5 inline-flex flex-shrink-0 items-center gap-0.5 text-caption text-warning">
+              <AlertTriangle size={10} />
+              {t["collections.missing"]}
+            </span>
+          )}
+        </span>
+      }
+    />
   );
 }
 
@@ -257,6 +284,10 @@ export default function CollectionDetail({
   onNoteContextMenu,
   onOpenNote,
   emptyGroupText,
+  scrollRef,
+  selecting = false,
+  selectedKeys,
+  onToggleItem,
 }: Props) {
   const { t } = useT();
   const emptyText = emptyGroupText ?? t["collections.dropNotesHere"];
@@ -268,6 +299,8 @@ export default function CollectionDetail({
 
   const groupIds = useMemo(() => groups.map((g) => makeGroupId(g.id)), [groups]);
   const ungroupedIds = useMemo(() => ungroupedNotes.map((n) => makeNoteId(n.relPath)), [ungroupedNotes]);
+  const ungroupedKeys = useMemo(() => ungroupedNotes.map((note) => note.relPath), [ungroupedNotes]);
+  const selection = selectedKeys ?? EMPTY_SELECTION;
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -365,7 +398,7 @@ export default function CollectionDetail({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex-1 overflow-y-auto p-3">
+      <div ref={scrollRef} tabIndex={-1} className="flex-1 overflow-y-auto p-3 focus:outline-none">
         {/* Group cards */}
         <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
           {groups.map((group) => (
@@ -375,12 +408,13 @@ export default function CollectionDetail({
               collapsed={collapsedGroups.has(group.id)}
               color={resolveTagColor(group.name, group.color)}
               emptyText={emptyText}
+              selecting={selecting}
+              selectedKeys={selectedKeys}
               onToggle={() => onToggleGroup(group.id)}
               onGroupContextMenu={onGroupContextMenu}
-              onRemoveNote={onRemoveNote}
-              onReorderNotes={onReorderNotes}
               onNoteContextMenu={onNoteContextMenu}
               onOpenNote={onOpenNote}
+              onToggleItem={onToggleItem}
             />
           ))}
         </SortableContext>
@@ -401,15 +435,17 @@ export default function CollectionDetail({
             bodyClassName="p-2"
           >
             <SortableContext items={ungroupedIds} strategy={verticalListSortingStrategy}>
-              {ungroupedNotes.map((note) => (
+              {ungroupedNotes.map((note, index) => (
                 <SortableNoteRow
                   key={note.relPath}
                   note={note}
                   groupId={null}
-                  onRemoveNote={onRemoveNote}
-                  onReorderNotes={onReorderNotes}
+                  selecting={selecting}
+                  selected={selection.has(note.relPath)}
+                  selectionEdge={selectionEdgeAt(ungroupedKeys, index, selection) ?? undefined}
                   onNoteContextMenu={onNoteContextMenu}
                   onOpenNote={onOpenNote}
+                  onToggleItem={onToggleItem}
                 />
               ))}
             </SortableContext>

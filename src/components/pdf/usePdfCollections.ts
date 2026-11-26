@@ -146,16 +146,56 @@ export function usePdfCollections(repoPath: string) {
     }));
   }, [update]);
 
-  const addPaths = useCallback((collId: string, relPaths: string[]) => {
+  // Single assignment: moving into one collection removes the paths from every
+  // other collection, so the same write cannot leave a duplicate behind.
+  const movePaths = useCallback((collId: string, relPaths: string[]) => {
     const target = collections.find((c) => c.id === collId);
-    if (!target) return 0;
-    const existing = new Set(target.pdfPaths.map(relKey));
-    const fresh = relPaths.filter((p, i) => !existing.has(relKey(p)) && relPaths.findIndex((q) => relKey(q) === relKey(p)) === i);
-    if (fresh.length === 0) return 0;
-    const next = collections.map((c) => (c.id === collId ? { ...c, pdfPaths: [...c.pdfPaths, ...fresh] } : c));
-    setCollections(next);
-    saveCollections(next);
-    return fresh.length;
+    if (!target || relPaths.length === 0) return 0;
+    const wanted = new Map<string, string>();
+    for (const relPath of relPaths) {
+      const key = relKey(relPath);
+      if (!wanted.has(key)) wanted.set(key, relPath);
+    }
+    const keys = new Set(wanted.keys());
+    let changed = false;
+    const next = collections.map((c) => {
+      const kept = c.pdfPaths.filter((p) => !keys.has(relKey(p)));
+      if (c.id !== collId) {
+        if (kept.length === c.pdfPaths.length) return c;
+        changed = true;
+        return { ...c, pdfPaths: kept };
+      }
+      const present = new Set(kept.map(relKey));
+      const additions = [...wanted.entries()]
+        .filter(([key]) => !present.has(key))
+        .map(([, path]) => path);
+      if (additions.length === 0 && kept.length === c.pdfPaths.length) return c;
+      changed = true;
+      return { ...c, pdfPaths: [...kept, ...additions] };
+    });
+    if (changed) {
+      setCollections(next);
+      saveCollections(next);
+    }
+    return wanted.size;
+  }, [collections, saveCollections]);
+
+  /** Copies stay consistent even if the same path was listed twice. */
+  const removePathsFromAll = useCallback((relPaths: string[]) => {
+    if (relPaths.length === 0) return 0;
+    const keys = new Set(relPaths.map(relKey));
+    let changed = false;
+    const next = collections.map((c) => {
+      const kept = c.pdfPaths.filter((p) => !keys.has(relKey(p)));
+      if (kept.length === c.pdfPaths.length) return c;
+      changed = true;
+      return { ...c, pdfPaths: kept };
+    });
+    if (changed) {
+      setCollections(next);
+      saveCollections(next);
+    }
+    return relPaths.length;
   }, [collections, saveCollections]);
 
   const removePath = useCallback((collId: string, relPath: string) => {
@@ -215,7 +255,8 @@ export function usePdfCollections(repoPath: string) {
     deleteCollection,
     setCollectionColor,
     reorderCollections,
-    addPaths,
+    movePaths,
+    removePathsFromAll,
     removePath,
     insertPath,
     pruneMissing,

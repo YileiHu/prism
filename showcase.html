@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prism 控件预览</title>
+    <script>
+      // Same first-paint mode handoff as index.html so the gallery doesn't
+      // flash between dark and light before React mounts.
+      (function () {
+        var mode = "dark";
+        try {
+          var stored = localStorage.getItem("prism_mode");
+          if (stored === "light" || stored === "dark" || stored === "system") mode = stored;
+        } catch (e) {}
+        var resolved =
+          mode === "system"
+            ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : mode;
+        document.documentElement.dataset.mode = resolved;
+        document.documentElement.style.colorScheme = resolved;
+      })();
+    </script>
+  </head>
+  <body class="text-primary bg-base">
+    <div id="root">
+      <div style="padding: 24px; font: 14px/1.6 system-ui, sans-serif; color: rgb(var(--c-primary))">
+        正在加载控件预览…
+      </div>
+    </div>
+    <script>
+      // If the module or React crashes before an ErrorBoundary can mount, show
+      // the message on the page instead of leaving the user with a blank tab.
+      (function () {
+        function show(message) {
+          var root = document.getElementById("root");
+          if (!root) return;
+          root.textContent = "";
+          var pre = document.createElement("pre");
+          pre.style.cssText =
+            "padding: 24px; white-space: pre-wrap; font: 12px/1.6 ui-monospace, monospace; color: rgb(var(--danger))";
+          pre.textContent = "控件预览加载失败：\n\n" + message;
+          root.appendChild(pre);
+        }
+        window.addEventListener("error", function (event) {
+          show(
+            (event.message || "unknown error") +
+              (event.filename ? "\n" + event.filename + ":" + (event.lineno || 0) : ""),
+          );
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          show(String((reason && (reason.stack || reason.message)) || reason));
+        });
+      })();
+    </script>
+    <script>
+      // The real renderer gets window.prism from Electron preload. The gallery
+      // runs in a plain browser, so stub the three methods ThemeProvider reads
+      // while syncing color_mode (otherwise its mount effect throws).
+      window.prism =
+        window.prism || {
+          getSetting: function () {
+            return Promise.resolve(null);
+          },
+          setSetting: function () {
+            return Promise.resolve();
+          },
+          setColorMode: function () {
+            return Promise.resolve();
+          },
+        };
+    </script>
+    <script type="module" src="/src/dev/ControlShowcase.tsx"></script>
+  </body>
+</html>

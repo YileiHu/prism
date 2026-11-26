@@ -13,7 +13,7 @@ export default function LibraryDragOverlay({ drag }: { drag: LibraryDragState })
   return (
     <DragOverlay dropAnimation={null}>
       {drag?.kind === "note" && (
-        <DragPreview className="flex items-center gap-2 px-3 py-1.5">
+        <DragPreview className="flex items-center gap-2 px-2 py-1.5">
           <span className="text-body text-primary whitespace-nowrap">
             {drag.paths.length > 1
               ? t["collections.dragNotes"].replace("{count}", String(drag.paths.length))

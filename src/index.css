@@ -53,6 +53,15 @@
   --inset-bg: rgb(var(--c-overlay) / 0.28);
   --inset-border: rgb(var(--c-strong) / 0.55);
   --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.25);
+  /* Fields are their own layer: in dark mode they recess into the surface, in
+     light mode they are the raised (white) layer on a tinted card. Keeping the
+     pair separate means tinting cards never bleeds into tracks or switches. */
+  --field-bg: rgb(var(--c-overlay) / 0.28);
+  --field-border: rgb(var(--c-strong) / 0.55);
+  --field-border-width: 1px;
+  --field-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.25);
+  --field-focus-border: var(--accent);
+  --field-focus-ring: var(--accent);
   /* Flat chrome ladder (dark): header is the lifted step, toolbar sits one
      step lower with a faint accent tint. */
   --header-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-tint)));
@@ -80,7 +89,7 @@
   /* Light surface defaults (= lightSurfaces) so the very first paint is
      already light, before ThemeProvider applies the theme variant */
   --c-base: 246 246 247;
-  --c-surface: 255 255 255;
+  --c-surface: 252 250 255;
   --c-elevated: 255 255 255;
   --c-hover: 240 240 241;
   --c-tint: 24 24 27;
@@ -131,6 +140,19 @@
   --inset-bg: rgb(var(--c-tint) / 0.05);
   --inset-border: rgb(var(--c-strong) / 0.6);
   --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.05);
+  /* Mirror of the dark recipe: dark recesses with an inner shadow under a 1px
+     edge, light bulges with an outer shadow over a 1px edge. Depth therefore
+     comes from the shadow on both sides and the border stays thin. */
+  --field-bg: rgb(var(--c-elevated));
+  --field-border: color-mix(in srgb, rgb(var(--c-strong)) 55%, rgb(var(--c-elevated)));
+  --field-border-width: 1px;
+  --field-shadow:
+    0 1px 1px rgb(var(--c-overlay) / 0.06),
+    0 2px 4px -1px rgb(var(--c-overlay) / 0.08),
+    0 4px 10px -3px rgb(var(--c-overlay) / 0.10),
+    inset 0 -1px 0 rgb(var(--c-strong) / 0.28);
+  --field-focus-border: color-mix(in srgb, var(--accent) 60%, rgb(var(--c-strong)));
+  --field-focus-ring: var(--field-focus-border);
 }
 
 body {
@@ -169,6 +191,57 @@ body {
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;
+}
+
+/* Edge fades for a scroll area whose scrollbar is hidden (see ScrollFade.tsx).
+   Both are sticky and height-neutral (the negative margin cancels the box), so
+   they overlay the first/last rows without adding scroll length. Visibility is
+   driven by useScrollEdges. */
+.scroll-fade-top,
+.scroll-fade-bottom {
+  position: sticky;
+  z-index: 1;
+  height: 56px;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+.scroll-fade-top {
+  top: 0;
+  margin-bottom: -56px;
+  background: linear-gradient(to bottom, rgb(var(--c-surface)) 28%, transparent);
+}
+.scroll-fade-bottom {
+  bottom: 0;
+  margin-top: -56px;
+  background: linear-gradient(to bottom, transparent, rgb(var(--c-surface)) 72%);
+}
+.scroll-fade-left,
+.scroll-fade-right {
+  position: sticky;
+  z-index: 1;
+  width: 56px;
+  align-self: stretch;
+  flex-shrink: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+.scroll-fade-left {
+  left: 0;
+  margin-right: -56px;
+  background: linear-gradient(to right, rgb(var(--c-surface)) 28%, transparent);
+}
+.scroll-fade-right {
+  right: 0;
+  margin-left: -56px;
+  background: linear-gradient(to left, rgb(var(--c-surface)) 28%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fade-top,
+  .scroll-fade-bottom,
+  .scroll-fade-left,
+  .scroll-fade-right {
+    transition: none;
+  }
 }
 
 /* App shell stays transparent; each chrome band and the main canvas paint
@@ -256,14 +329,27 @@ body {
   background-color: rgb(var(--c-primary) / 0.65);
 }
 
-/* Raised/inset surfaces. Inset hosts a control (input, switch track, segmented
-   track); raised marks the selected item inside it. Fields share the inset
-   palette so every recessed box reads the same color. */
-.surface-inset,
-.field-inset {
+/* Multi-select rows: the left indicator spans the full row height so a run of
+   adjacent selected rows reads as one continuous rail (`.active-bar` is a
+   centered tick per item, which leaves gaps when rows are stacked). Radius is
+   owned by the run: ItemRow only rounds the first/last row of a run. */
+.selection-bar {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Raised/inset surfaces. Inset hosts a control (switch track, segmented track);
+   raised marks the selected item inside it. Fields are their own layer: recessed
+   in dark mode, raised white in light mode, so a tinted card still separates. */
+.surface-inset {
   background-color: var(--inset-bg);
   border-color: var(--inset-border);
   box-shadow: var(--inset-shadow);
+}
+.field-inset {
+  background-color: var(--field-bg);
+  border-width: var(--field-border-width);
+  border-color: var(--field-border);
+  box-shadow: var(--field-shadow);
 }
 .surface-raised {
   background-color: var(--raised-bg);
@@ -313,17 +399,25 @@ body {
   background-color: var(--inset-bg);
   box-shadow: var(--inset-shadow);
 }
-/* Focused fields: keep the 1px border and add a 1px inner ring so the accent
-   highlight reads a little thicker without shifting the layout. */
-.field-inset:focus,
+/* Focused fields: the edge thickens to 2px on screen via a 1px inner line in
+   the same colour, so the text does not shift when a field gains focus. */
 .accent-focus:focus {
   border-color: var(--accent);
 }
 .field-inset:focus {
-  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--accent);
+  border-color: var(--field-focus-border);
+  box-shadow: inset 0 0 0 1px var(--field-focus-ring), var(--field-shadow);
 }
 .accent-focus:focus {
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Invalid fields keep the inset depth but read as danger, including while
+   focused, where the accent border would otherwise take over. Keyed off the
+   aria-invalid attribute so the error state and its semantics stay together. */
+.field-inset[aria-invalid="true"],
+.field-inset[aria-invalid="true"]:focus {
+  border-color: rgb(var(--danger) / 0.75);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger) / 0.45), var(--field-shadow);
 }
 /* Same thickening for selected framed states (cards, swatches) that carry a
    1px accent border. */
@@ -346,8 +440,14 @@ body {
   box-shadow: var(--inset-shadow);
 }
 .segmented-toggle .segmented-option[aria-pressed="true"] {
-  background-color: var(--raised-bg);
+  background-color: transparent;
   color: var(--accent-text);
+  box-shadow: none;
+}
+/* Sliding chip: one shared element moves under the active segment so the
+   selection reads as a physical toggle instead of a repaint. */
+.segmented-thumb {
+  background-color: var(--raised-bg);
   box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
 }
 
@@ -1030,35 +1130,33 @@ input[type="range"]::-webkit-slider-runnable-track {
     rgb(var(--c-strong) / 0.55) var(--slider-progress),
     rgb(var(--c-strong) / 0.55) 100%
   );
-  box-shadow: var(--inset-shadow);
 }
+/* Flat thumb: an accent core inside a thick surface-coloured rim, so it reads
+   as punched through the track instead of a knob sitting on it. Still no drop
+   shadow and no scale on hover. */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
-  border: 2px solid rgb(var(--c-surface));
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 3px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: var(--raised-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: none;
+  transition: box-shadow 0.12s ease;
 }
 input[type="range"]:hover::-webkit-slider-thumb,
 input[type="range"]:focus-visible::-webkit-slider-thumb {
-  transform: scale(1.15);
-  box-shadow:
-    0 0 0 3px rgb(var(--accent-rgb) / 0.18),
-    0 1px 4px rgb(var(--c-overlay) / 0.45);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.18);
 }
 input[type="range"]:active::-webkit-slider-thumb {
-  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.24);
 }
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: rgb(var(--c-strong) / 0.55);
-  box-shadow: var(--inset-shadow);
 }
 input[type="range"]::-moz-range-progress {
   height: 4px;
@@ -1066,20 +1164,17 @@ input[type="range"]::-moz-range-progress {
   background: var(--accent);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgb(var(--c-surface));
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgb(var(--c-surface));
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: var(--raised-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: none;
+  transition: box-shadow 0.12s ease;
 }
 input[type="range"]:hover::-moz-range-thumb,
 input[type="range"]:focus-visible::-moz-range-thumb {
-  transform: scale(1.15);
-  box-shadow:
-    0 0 0 3px rgb(var(--accent-rgb) / 0.18),
-    0 1px 4px rgb(var(--c-overlay) / 0.45);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.18);
 }
 input[type="range"]:disabled {
   opacity: 0.45;
@@ -1528,4 +1623,146 @@ input[type="range"]:disabled {
 .prism-canvas .react-flow__node:hover .prism-canvas-handle,
 .prism-canvas .react-flow__node.selected .prism-canvas-handle {
   opacity: 1;
+}
+
+/* --- Growth module: restrained motion (B tier) --------------------------- */
+@keyframes growth-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.growth-rise { animation: growth-rise 420ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards; }
+
+@keyframes growth-check-ripple {
+  from { opacity: 0.6; transform: scale(0.4); }
+  to   { opacity: 0; transform: scale(2.2); }
+}
+.growth-check-ripple { animation: growth-check-ripple 420ms ease-out forwards; }
+
+@keyframes growth-draw {
+  to { stroke-dashoffset: 0; }
+}
+.growth-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: growth-draw 700ms ease-out 80ms forwards;
+}
+
+@keyframes growth-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.growth-fade { animation: growth-fade 500ms ease-out 150ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-rise,
+  .growth-check-ripple,
+  .growth-draw,
+  .growth-fade {
+    animation: none !important;
+  }
+
+  .growth-draw {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* --- Growth module: staggered lists ----------------------------------- */
+@keyframes growth-rise-sm {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.motion-stagger > * {
+  animation: growth-rise-sm 340ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+.motion-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.motion-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.motion-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.motion-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.motion-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.motion-stagger > *:nth-child(6) { animation-delay: 300ms; }
+.motion-stagger > *:nth-child(7) { animation-delay: 360ms; }
+.motion-stagger > *:nth-child(n + 8) { animation-delay: 420ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-stagger > * {
+    animation: none !important;
+  }
+}
+
+
+/* The view shell only fades; lists own the vertical rise so the stagger reads. */
+@keyframes growth-view-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.growth-view {
+  animation: growth-view-in 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-view {
+    animation: none !important;
+  }
+}
+
+
+/* --- Chronicle curve: draw the line, fade the area, pop the dots ---------- */
+@keyframes curve-draw {
+  to { stroke-dashoffset: 0; }
+}
+.curve-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: curve-draw 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes curve-area {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.curve-area {
+  opacity: 0;
+  animation: curve-area 620ms ease-out 140ms forwards;
+}
+
+@keyframes curve-dot {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: none; }
+}
+.curve-dot {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: curve-dot 260ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curve-draw {
+    animation: none !important;
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+  .curve-area,
+  .curve-dot {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Cards inside the overview's scrollable left column fade only: a translate
+   briefly grows the scroll height and flashes the column scrollbar. */
+@keyframes growth-card-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.growth-card-in {
+  animation: growth-card-in 300ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-card-in {
+    animation: none !important;
+  }
 }

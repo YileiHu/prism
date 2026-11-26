@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "prism_sidebar_collapsed";
 const LEGACY_KEYS = ["prism_vault_sidebar_collapsed", "prism_pdf_sidebar_collapsed"];
@@ -43,4 +43,48 @@ export function toggleSidebarCollapsed() {
 
 export function useSidebarCollapsed(): boolean {
   return useSyncExternalStore(subscribe, () => collapsed, () => collapsed);
+}
+
+/** One module keeps the open/closed state of its sidebar sections in one JSON
+ *  object, so the preference survives switching modules and restarts. */
+function readSectionOpen(storageKey: string, name: string, defaultOpen: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return defaultOpen;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return typeof parsed[name] === "boolean" ? (parsed[name] as boolean) : defaultOpen;
+  } catch {
+    return defaultOpen;
+  }
+}
+
+function writeSectionOpen(storageKey: string, name: string, open: boolean): void {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    parsed[name] = open;
+    localStorage.setItem(storageKey, JSON.stringify(parsed));
+  } catch {
+    // Non-fatal UI preference
+  }
+}
+
+/**
+ * Open/closed state for one collapsible sidebar section, persisted under
+ * `storageKey` (one key per module). `name` is the section's slot in that file.
+ */
+export function useSidebarSection(
+  storageKey: string,
+  name: string,
+  defaultOpen = true,
+): [boolean, () => void] {
+  const [open, setOpen] = useState(() => readSectionOpen(storageKey, name, defaultOpen));
+  const toggle = useCallback(() => {
+    setOpen((previous) => {
+      const next = !previous;
+      writeSectionOpen(storageKey, name, next);
+      return next;
+    });
+  }, [storageKey, name]);
+  return [open, toggle];
 }

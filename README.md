@@ -92,7 +92,9 @@ npm run release:win    # verify + electron:build
 
 技术栈：Electron + React 19 + TypeScript + Vite + Tailwind，主进程使用 better-sqlite3（WAL 模式）持久化事务、网页资源与索引，渲染进程通过 `window.prism` IPC 调用。
 
-面向 AI 与开发者的文档从 [docs/index.md](docs/index.md) 开始：架构总览、主进程、渲染层、数据模型、编辑器、白板、改动配方、验证发布。项目约定见 [AGENTS.md](AGENTS.md)。
+控件总览：开发服务器运行后打开 `http://localhost:5173/showcase.html`（浏览器查看即可，不参与打包）；新增或调整共享控件时同步更新该页。
+
+面向 AI 与开发者的文档从 [docs/index.md](docs/index.md) 开始：架构总览、主进程、渲染层、数据模型、编辑器、白板、改动配方、验证发布。项目约定见 [AGENTS.md](AGENTS.md)。改 UI 或通用逻辑前，先查自动生成的 [共享控件与样式清单](docs/reference/ui-inventory.md) 与 [UI 组件规范](docs/guides/ui-kit.md)。
 
 主要目录：
 

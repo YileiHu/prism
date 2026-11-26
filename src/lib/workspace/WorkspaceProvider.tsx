@@ -29,11 +29,11 @@ import {
 
 const WORKSPACE_KEY = "workspace_v1";
 const RESTORE_KEY = "restore_note_tabs";
-const MODULE_IDS: ReadonlySet<string> = new Set(["gtd", "library", "settings"]);
+const MODULE_IDS: ReadonlySet<string> = new Set(["growth", "library", "settings"]);
 
 // The workspace remembers the full session so a window recreated from the tray
 // can resume it. A cold start deliberately ignores the active document, split
-// and module: every launch lands on the calendar.
+// and module: every launch lands on the growth overview.
 interface PersistedWorkspace {
   version?: number;
   module?: string;
@@ -227,7 +227,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       let tabs: DocTab[] = [];
       let restoredActiveId: string | null = null;
-      let restoredModule: ModuleId = "gtd";
+      let restoredModule: ModuleId = "growth";
       let restoredSplit: SplitState | null = null;
       let restoredLibrary = defaultLibrary(vaults, pdfRepoPath);
 
@@ -251,7 +251,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }
           restoredModule = legacyResourcesModule
             ? "library"
-            : isModuleId(parsed.module) ? parsed.module : "gtd";
+            : isModuleId(parsed.module) ? parsed.module : "growth";
           // A split with no active document was hidden behind a module page;
           // restoring it would mount editors the user cannot see.
           restoredSplit = restoredActiveId ? validSplit(parsed.split, tabs) : null;
@@ -320,7 +320,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ? validLibrary(prev.library, vaults, pdfRepoPath) ?? restoredLibrary
           : restoredLibrary;
         return {
-          module: linkedId ? prev.module : (resume ? restoredModule : "gtd"),
+          module: linkedId ? prev.module : (resume ? restoredModule : "growth"),
           tabs: merged,
           activeId,
           split,

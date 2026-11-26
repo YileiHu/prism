@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import Button from "./Button";
 import DragPreview from "./DragPreview";
 import { useDragClickGuard } from "../lib/useDragClickGuard";
+import { useHorizontalWheel } from "../lib/useHorizontalWheel";
 import {
   DndContext,
   DragOverlay,
@@ -132,7 +133,15 @@ export default function TabStrip({
   onTabContextMenu,
 }: Props) {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const wheelRef = useHorizontalWheel<HTMLDivElement>();
+  const setScrollEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollRef.current = el;
+      wheelRef(el);
+    },
+    [wheelRef],
+  );
   // Which edges are clipped, for the fade hints
   const [overflow, setOverflow] = useState({ left: false, right: false });
 
@@ -148,25 +157,14 @@ export default function TabStrip({
     setOverflow((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
   };
 
-  // Vertical wheel scrolls the tab strip sideways (React's onWheel is passive,
-  // so the listener must be attached natively to call preventDefault)
+  // Overflow fades come from measuring, so they need the element itself.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     updateOverflow();
-    const onWheel = (e: WheelEvent) => {
-      if (el.scrollWidth <= el.clientWidth) return;
-      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    };
     const observer = new ResizeObserver(updateOverflow);
     observer.observe(el);
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      observer.disconnect();
-      el.removeEventListener("wheel", onWheel);
-    };
+    return () => observer.disconnect();
   }, []);
 
   useEffect(updateOverflow, [items]);
@@ -211,7 +209,7 @@ export default function TabStrip({
       >
         <div className="relative flex-1 min-w-0 flex">
           <div
-            ref={scrollRef}
+            ref={setScrollEl}
             onScroll={updateOverflow}
             className="flex-1 flex items-center gap-1.5 px-2 overflow-x-auto scrollbar-none"
           >

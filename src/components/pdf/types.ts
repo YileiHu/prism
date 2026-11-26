@@ -1,13 +1,6 @@
 import { normalizePath } from "../../lib/paths";
 
-export type { PdfDocument } from "../../shared/models";
-
-export interface PdfCollectionData {
-  id: string;
-  name: string;
-  color?: string;
-  pdfPaths: string[];
-}
+export type { PdfDocument, PdfCollectionData, PdfCollectionsFile } from "../../shared/models";
 
 export type PdfSort = "title" | "added" | "modified" | "pages";
 export type PdfSortDir = "asc" | "desc";

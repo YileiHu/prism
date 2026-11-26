@@ -1,5 +1,5 @@
 import { forwardRef, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Layers, Frame, Lock, LockOpen, Palette } from "lucide-react";
+import { Layers, Frame, Lock, LockOpen, Palette } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -7,6 +7,7 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
+import { useSidebarSection } from "../../lib/sidebarState";
 import { useVaultLock } from "../../lib/vaultLock";
 import { librarySelectionKey, readLibrarySelection } from "../../lib/librarySelection";
 import { VAULT_ICON_PRESETS, VaultIcon } from "../../lib/vaultIcons";
@@ -15,6 +16,7 @@ import EmptyState from "../EmptyState";
 import Modal from "../Modal";
 import NavItem from "../NavItem";
 import Sidebar from "../Sidebar";
+import SidebarSection from "../SidebarSection";
 import type { VaultEntry } from "../../types";
 import type { LibraryRef } from "../../lib/workspace/types";
 import { normalizePath } from "../../lib/workspace/types";
@@ -23,55 +25,13 @@ import type { usePdfCollections } from "../pdf/usePdfCollections";
 import type { CollectionData } from "../collectionTypes";
 import { useLibraryData } from "./LibraryDataProvider";
 import GroupNavRow from "./GroupNavRow";
-import ResourceTagList from "./ResourceTagList";
+import CollectionSection from "./CollectionSection";
+import ResourceCollectionList from "./ResourceCollectionList";
 import { toNoteCollectionGroups, toPdfCollectionGroups, type LibraryGroup } from "./libraryGroups";
 import { LIBRARY_SOURCES } from "./librarySources";
 import { CANVAS_VIEW_ID, type NoteLibrary } from "./useNoteLibrary";
 
 const SECTION_KEY = "prism_library_sections";
-
-function readSection(name: "libraries" | "collections"): boolean {
-  try {
-    const raw = localStorage.getItem(SECTION_KEY);
-    if (!raw) return true;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return parsed[name] !== false;
-  } catch {
-    return true;
-  }
-}
-
-function saveSection(name: "libraries" | "collections", open: boolean) {
-  try {
-    const raw = localStorage.getItem(SECTION_KEY);
-    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-    parsed[name] = open;
-    localStorage.setItem(SECTION_KEY, JSON.stringify(parsed));
-  } catch {
-    // Non-fatal UI preference
-  }
-}
-
-function SectionHeader({
-  label,
-  open,
-  onToggle,
-}: {
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="w-full flex-shrink-0 flex items-center gap-1 px-2 pt-3 pb-1.5 text-caption font-medium text-muted hover:text-secondary cursor-pointer"
-    >
-      {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
 
 const LibraryRow = forwardRef<HTMLButtonElement, {
   icon: React.ReactNode;
@@ -242,25 +202,6 @@ function PdfCollectionRow(props: {
   );
 }
 
-function CollectionSection({
-  ids,
-  emptyText,
-  children,
-}: {
-  ids: string[];
-  emptyText: string;
-  children: React.ReactNode;
-}) {
-  if (ids.length === 0) return <EmptyState size="card" text={emptyText} />;
-  return (
-    <div className="sidebar-group">
-      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-        {children}
-      </SortableContext>
-    </div>
-  );
-}
-
 interface Props {
   vaults: VaultEntry[];
   library: LibraryRef;
@@ -292,8 +233,8 @@ export default function LibrarySidebar({
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
   const vaultLock = useVaultLock();
-  const [librariesOpen, setLibrariesOpen] = useState(() => readSection("libraries"));
-  const [collectionsOpen, setCollectionsOpen] = useState(() => readSection("collections"));
+  const [librariesOpen, toggleLibraries] = useSidebarSection(SECTION_KEY, "libraries");
+  const [collectionsOpen, toggleCollections] = useSidebarSection(SECTION_KEY, "collections");
   const [iconTarget, setIconTarget] = useState<VaultEntry | null>(null);
   const pdfMode = library.kind === "pdf";
   const resourcesMode = library.kind === "resources";
@@ -346,25 +287,12 @@ export default function LibrarySidebar({
     onOpenCollections?.();
   };
 
-  // Tags are the web-resources grouping model, so selecting one also points the
-  // library at the resources source (the workspace sidebar uses this too).
-  const selectResourceTag = (tag: string | null) => {
+  // Collections are the web-resources grouping model, so selecting one also
+  // points the library at the resources source (the workspace sidebar uses this too).
+  const selectResourceCollection = (collectionId: number | null) => {
     onSelectLibrary({ kind: "resources" });
-    resourceLib.setActiveTag(tag);
+    resourceLib.setSelectedCollection(collectionId);
     onOpenCollections?.();
-  };
-
-  const toggleLibraries = () => {
-    setLibrariesOpen((open) => {
-      saveSection("libraries", !open);
-      return !open;
-    });
-  };
-  const toggleCollections = () => {
-    setCollectionsOpen((open) => {
-      saveSection("collections", !open);
-      return !open;
-    });
   };
 
   return (
@@ -398,7 +326,7 @@ export default function LibrarySidebar({
         </div>
       }
     >
-      <SectionHeader
+      <SidebarSection
         label={t[LIBRARY_SOURCES.note.sectionLabelKey]}
         open={librariesOpen}
         onToggle={toggleLibraries}
@@ -456,7 +384,7 @@ export default function LibrarySidebar({
         </div>
       )}
 
-      <SectionHeader
+      <SidebarSection
         label={t[resourcesMode ? LIBRARY_SOURCES.resources.groupLabelKey : LIBRARY_SOURCES.note.groupLabelKey]}
         open={collectionsOpen}
         onToggle={toggleCollections}
@@ -521,7 +449,7 @@ export default function LibrarySidebar({
           )}
 
           {resourcesMode && (
-            <ResourceTagList resourceLib={resourceLib} onSelectTag={selectResourceTag} />
+            <ResourceCollectionList resourceLib={resourceLib} onSelectCollection={selectResourceCollection} />
           )}
 
           {pdfMode && (

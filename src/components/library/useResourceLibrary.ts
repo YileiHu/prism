@@ -3,60 +3,68 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { hashColor, resolveTagColor, type PaletteColor } from "../../lib/colors";
 import { librarySelectionKey, readLibrarySelection, writeLibrarySelection } from "../../lib/librarySelection";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
-import type { Resource, TagInfo } from "../../shared/models";
+import type { Resource, ResourceCollection } from "../../shared/models";
 
-export interface ResourceTagGroup {
-  tag: string;
+export interface ResourceCollectionGroup {
+  collection: ResourceCollection;
   resources: Resource[];
   color: PaletteColor;
 }
 
+const LEGACY_TAG_SELECTION_KEY = "last_resource_tag";
+
 // Web resources are the path-less singleton library source. The data lives in
-// SQLite and is only read through IPC; this hook keeps it warm above the
-// library panes so switching sources never refetches or loses the filter.
+// SQLite and is only read through IPC; this hook keeps it warm above the library
+// panes so switching sources never refetches or loses the filter. Collections are
+// single-assignment: a resource may belong to one collection or none.
 export function useResourceLibrary() {
   const [resources, setResources] = useState<Resource[]>([]);
-  const [tags, setTags] = useState<TagInfo[]>([]);
+  const [collections, setCollections] = useState<ResourceCollection[]>([]);
+  const [ungroupedCount, setUngroupedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const [tagsLoaded, setTagsLoaded] = useState(false);
+  const [collectionsLoaded, setCollectionsLoaded] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery);
-  const [activeTag, setActiveTagState] = useState<string | null>(null);
-  const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
+  const [selectedCollectionId, setSelectedCollectionIdState] = useState<number | null>(null);
+  const [collapsedCollections, setCollapsedCollections] = useState<Set<string>>(new Set());
   const selectionKey = librarySelectionKey("resources");
   const selectionRestoredRef = useRef(false);
-  // Guard against out-of-order replies when the query or tag changes quickly.
+  // Guard against out-of-order replies when the query or collection changes.
   const resourcesRequestRef = useRef(0);
-  const tagsRequestRef = useRef(0);
+  const collectionsRequestRef = useRef(0);
 
-  const loadResources = useCallback(async (tagOverride?: string | null) => {
+  const loadResources = useCallback(async (collectionOverride?: number | null) => {
     const request = ++resourcesRequestRef.current;
-    const tag = tagOverride === undefined ? activeTag : tagOverride;
+    const collectionId = collectionOverride === undefined ? selectedCollectionId : collectionOverride;
     try {
       const all: Resource[] = debouncedQuery.trim()
         ? await window.prism.searchResources(debouncedQuery)
         : await window.prism.getResources();
       if (request !== resourcesRequestRef.current) return;
       if (!debouncedQuery.trim()) setTotalCount(all.length);
-      setResources(tag ? all.filter((resource) => resource.tags.includes(tag)) : all);
+      setResources(collectionId === null ? all : all.filter((resource) => resource.collectionId === collectionId));
     } catch {
       // Keep the previous list: a failed refresh must not blank the library.
     } finally {
       if (request === resourcesRequestRef.current) setLoaded(true);
     }
-  }, [debouncedQuery, activeTag]);
+  }, [debouncedQuery, selectedCollectionId]);
 
-  const loadTags = useCallback(async () => {
-    const request = ++tagsRequestRef.current;
+  const loadCollections = useCallback(async () => {
+    const request = ++collectionsRequestRef.current;
     try {
-      const next = await window.prism.getAllTags();
-      if (request !== tagsRequestRef.current) return;
-      setTags(next);
+      const data = await window.prism.getResourceCollections() as {
+        collections: ResourceCollection[];
+        ungroupedCount: number;
+      };
+      if (request !== collectionsRequestRef.current) return;
+      setCollections(data.collections);
+      setUngroupedCount(data.ungroupedCount);
     } catch {
-      // Keep the previous tags; the next mutation or reload retries.
+      // Keep the previous collections; the next mutation or reload retries.
     } finally {
-      if (request === tagsRequestRef.current) setTagsLoaded(true);
+      if (request === collectionsRequestRef.current) setCollectionsLoaded(true);
     }
   }, []);
 
@@ -65,134 +73,166 @@ export function useResourceLibrary() {
   }, [loadResources]);
 
   useEffect(() => {
-    void loadTags();
-  }, [loadTags]);
+    void loadCollections();
+  }, [loadCollections]);
 
-  // Tags load after the first render; restore the remembered tag only once and
-  // only when it still exists.
+  // Collections load after the first render; restore the remembered collection
+  // only once and only when it still exists. The old build stored a tag name, so
+  // fall back to matching a collection by name (migration keeps tag names).
   useEffect(() => {
-    if (!tagsLoaded || selectionRestoredRef.current) return;
+    if (!collectionsLoaded || selectionRestoredRef.current) return;
     selectionRestoredRef.current = true;
-    // A user selection made before the saved tag arrives wins.
-    if (activeTag !== null) return;
-    void readLibrarySelection(selectionKey).then((saved) => {
-      if (!saved) return;
-      if (tags.some((tag) => tag.name === saved)) setActiveTagState(saved);
-      else void writeLibrarySelection(selectionKey, null);
-    });
-  }, [activeTag, selectionKey, tags, tagsLoaded]);
-
-  const setActiveTag = useCallback((tag: string | null) => {
-    setActiveTagState(tag);
-    void writeLibrarySelection(selectionKey, tag);
-  }, [selectionKey]);
-
-  const tagColorMap = useMemo(() => {
-    const map = new Map<string, PaletteColor>();
-    for (const tag of tags) map.set(tag.name, resolveTagColor(tag.name, tag.color));
-    return map;
-  }, [tags]);
-
-  const colorForTag = useCallback(
-    (name: string) => tagColorMap.get(name) ?? hashColor(name),
-    [tagColorMap],
-  );
-
-  // Card view groups follow the sidebar's tag order; an active tag switches the
-  // content to a flat list, so groups are not used then.
-  const tagGroups = useMemo(() => {
-    if (activeTag) return { groups: [] as ResourceTagGroup[], untagged: [] as Resource[] };
-    const grouped = new Map<string, Resource[]>();
-    const untagged: Resource[] = [];
-
-    for (const resource of resources) {
-      if (resource.tags.length === 0) {
-        untagged.push(resource);
-      } else {
-        for (const tag of resource.tags) {
-          const bucket = grouped.get(tag);
-          if (bucket) bucket.push(resource);
-          else grouped.set(tag, [resource]);
+    if (selectedCollectionId !== null) return;
+    void (async () => {
+      const saved = await readLibrarySelection(selectionKey);
+      if (saved) {
+        const match = collections.find((collection) => String(collection.id) === saved)
+          ?? collections.find((collection) => collection.name === saved);
+        if (match) {
+          setSelectedCollectionIdState(match.id);
+          void writeLibrarySelection(selectionKey, String(match.id));
+          return;
         }
       }
+      const legacyTag = await readLibrarySelection(LEGACY_TAG_SELECTION_KEY);
+      if (!legacyTag) {
+        if (saved) void writeLibrarySelection(selectionKey, null);
+        return;
+      }
+      const match = collections.find((collection) => collection.name === legacyTag);
+      if (match) {
+        setSelectedCollectionIdState(match.id);
+        void writeLibrarySelection(selectionKey, String(match.id));
+      }
+    })();
+  }, [collections, collectionsLoaded, selectedCollectionId, selectionKey]);
+
+  const setSelectedCollection = useCallback((id: number | null) => {
+    setSelectedCollectionIdState(id);
+    void writeLibrarySelection(selectionKey, id === null ? "" : String(id));
+  }, [selectionKey]);
+
+  const collectionColorMap = useMemo(() => {
+    const map = new Map<number, PaletteColor>();
+    for (const collection of collections) map.set(collection.id, resolveTagColor(collection.name, collection.color));
+    return map;
+  }, [collections]);
+
+  const colorForCollection = useCallback(
+    (collection: ResourceCollection) => collectionColorMap.get(collection.id) ?? hashColor(collection.name),
+    [collectionColorMap],
+  );
+
+  // Card view groups follow the sidebar's collection order; a selected collection
+  // switches the content to a flat list, so groups are not used then.
+  const collectionGroups = useMemo(() => {
+    if (selectedCollectionId !== null) {
+      return { groups: [] as ResourceCollectionGroup[], ungrouped: [] as Resource[] };
     }
+    const byCollection = new Map<number, Resource[]>();
+    const ungrouped: Resource[] = [];
+    for (const resource of resources) {
+      if (resource.collectionId === null) {
+        ungrouped.push(resource);
+      } else {
+        const bucket = byCollection.get(resource.collectionId);
+        if (bucket) bucket.push(resource);
+        else byCollection.set(resource.collectionId, [resource]);
+      }
+    }
+    const groups = collections
+      .map((collection) => ({
+        collection,
+        resources: byCollection.get(collection.id) ?? [],
+        color: colorForCollection(collection),
+      }))
+      .filter((group) => group.resources.length > 0);
+    return { groups, ungrouped };
+  }, [resources, collections, selectedCollectionId, colorForCollection]);
 
-    const order = new Map(tags.map((tag, index) => [tag.name, index]));
-    const groups = Array.from(grouped.entries())
-      .sort((a, b) => (order.get(a[0]) ?? Number.MAX_SAFE_INTEGER) - (order.get(b[0]) ?? Number.MAX_SAFE_INTEGER))
-      .map(([tag, items]) => ({ tag, resources: items, color: colorForTag(tag) }));
+  const selectedCollection = useMemo(
+    () => (selectedCollectionId === null ? null : collections.find((c) => c.id === selectedCollectionId) ?? null),
+    [collections, selectedCollectionId],
+  );
 
-    return { groups, untagged };
-  }, [resources, activeTag, tags, colorForTag]);
-
-  const toggleTagCollapse = useCallback((tag: string) => {
-    setCollapsedTags((prev) => {
+  const toggleCollectionCollapse = useCallback((id: string) => {
+    setCollapsedCollections((prev) => {
       const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
 
   const reload = useCallback(async () => {
-    await Promise.all([loadResources(), loadTags()]);
-  }, [loadResources, loadTags]);
+    await Promise.all([loadResources(), loadCollections()]);
+  }, [loadResources, loadCollections]);
 
-  const addResource = useCallback(async (url: string, title: string, resourceTags: string[], notes: string) => {
-    const created = await window.prism.addResource(url, title, resourceTags, notes);
-    await Promise.all([loadResources(), loadTags()]);
+  const addResource = useCallback(async (url: string, title: string, notes: string, collectionId: number | null) => {
+    const created = await window.prism.addResource(url, title, notes, collectionId);
+    await Promise.all([loadResources(), loadCollections()]);
     return created;
-  }, [loadResources, loadTags]);
+  }, [loadResources, loadCollections]);
 
   const updateResource = useCallback(
-    async (id: number, url: string, title: string, resourceTags: string[], notes: string) => {
-      const updated = await window.prism.updateResource(id, url, title, resourceTags, notes);
-      await Promise.all([loadResources(), loadTags()]);
+    async (id: number, url: string, title: string, notes: string, collectionId: number | null) => {
+      const updated = await window.prism.updateResource(id, url, title, notes, collectionId);
+      await Promise.all([loadResources(), loadCollections()]);
       return updated;
     },
-    [loadResources, loadTags],
+    [loadResources, loadCollections],
   );
 
   const removeResource = useCallback(async (id: number) => {
     const deleted = await window.prism.deleteResource(id);
-    await Promise.all([loadResources(), loadTags()]);
+    await Promise.all([loadResources(), loadCollections()]);
     return deleted;
-  }, [loadResources, loadTags]);
+  }, [loadResources, loadCollections]);
 
-  const setTagColor = useCallback(async (name: string, color: string) => {
-    await window.prism.setTagColor(name, color);
-    await loadTags();
-  }, [loadTags]);
+  const moveResources = useCallback(async (ids: number[], collectionId: number | null) => {
+    const moved = await window.prism.moveResourcesToCollection(ids, collectionId);
+    await Promise.all([loadResources(), loadCollections()]);
+    return moved;
+  }, [loadResources, loadCollections]);
 
-  const renameTag = useCallback(async (oldName: string, newName: string) => {
-    await window.prism.renameTag(oldName, newName);
-    // Renaming onto an existing tag merges them, so the selection follows the
-    // surviving name instead of silently filtering by a deleted tag.
-    const nextActiveTag = activeTag === oldName ? newName : activeTag;
-    setActiveTag(nextActiveTag);
-    await Promise.all([loadResources(nextActiveTag), loadTags()]);
-  }, [activeTag, loadResources, loadTags, setActiveTag]);
+  const createCollection = useCallback(async (name: string) => {
+    const created = await window.prism.createResourceCollection(name) as ResourceCollection;
+    await loadCollections();
+    setSelectedCollection(created.id);
+    await loadResources(created.id);
+    return created;
+  }, [loadCollections, loadResources, setSelectedCollection]);
 
-  const deleteTag = useCallback(async (name: string) => {
-    await window.prism.deleteTag(name);
-    const nextActiveTag = activeTag === name ? null : activeTag;
-    setActiveTag(nextActiveTag);
-    await Promise.all([loadResources(nextActiveTag), loadTags()]);
-  }, [activeTag, loadResources, loadTags, setActiveTag]);
+  const renameCollection = useCallback(async (id: number, name: string) => {
+    await window.prism.renameResourceCollection(id, name);
+    await loadCollections();
+  }, [loadCollections]);
 
-  // Tag order is global; only the dragged subset changes, and a failed write
-  // restores the previous order.
-  const reorderTags = useCallback(async (from: number, to: number) => {
-    const previous = tags;
-    const next = arrayMove(tags, from, to);
-    setTags(next);
+  const setCollectionColor = useCallback(async (id: number, color: string) => {
+    await window.prism.setResourceCollectionColor(id, color);
+    await loadCollections();
+  }, [loadCollections]);
+
+  const deleteCollection = useCallback(async (id: number) => {
+    await window.prism.deleteResourceCollection(id);
+    const nextSelection = selectedCollectionId === id ? null : selectedCollectionId;
+    if (nextSelection !== selectedCollectionId) setSelectedCollection(nextSelection);
+    await Promise.all([loadCollections(), loadResources(nextSelection)]);
+  }, [loadCollections, loadResources, selectedCollectionId, setSelectedCollection]);
+
+  // Collection order is global; only the dragged subset changes, and a failed
+  // write restores the previous order.
+  const reorderCollections = useCallback(async (from: number, to: number) => {
+    const previous = collections;
+    const next = arrayMove(collections, from, to);
+    setCollections(next);
     try {
-      await window.prism.reorderTags(next.map((tag) => tag.name));
+      await window.prism.reorderResourceCollections(next.map((collection) => collection.id));
     } catch (error) {
-      setTags(previous);
+      setCollections(previous);
       throw error;
     }
-  }, [tags]);
+  }, [collections]);
 
   // Rows keep the slots they already occupy in the global order; the caller
   // passes the reordered subset.
@@ -213,27 +253,31 @@ export function useResourceLibrary() {
 
   return {
     resources,
-    tags,
+    collections,
+    ungroupedCount,
     loaded,
-    tagsLoaded,
+    collectionsLoaded,
     totalCount,
     searchQuery,
     debouncedQuery,
     setSearchQuery,
-    activeTag,
-    setActiveTag,
-    colorForTag,
-    tagGroups,
-    collapsedTags,
-    toggleTagCollapse,
+    selectedCollectionId,
+    selectedCollection,
+    setSelectedCollection,
+    colorForCollection,
+    collectionGroups,
+    collapsedCollections,
+    toggleCollectionCollapse,
     reload,
     addResource,
     updateResource,
     removeResource,
-    setTagColor,
-    renameTag,
-    deleteTag,
-    reorderTags,
+    moveResources,
+    createCollection,
+    renameCollection,
+    deleteCollection,
+    setCollectionColor,
+    reorderCollections,
     reorderResources,
   };
 }

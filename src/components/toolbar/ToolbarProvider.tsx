@@ -11,6 +11,8 @@ import {
 export interface ToolbarContribution {
   title?: ReactNode;
   subtitle?: ReactNode;
+  /** Section switcher next to the title; never collapses into the overflow menu. */
+  tabs?: ReactNode;
   controls?: ReactNode;
   actions?: ReactNode;
 }
@@ -34,6 +36,7 @@ class ToolbarStore {
       prev &&
       prev.title === contribution.title &&
       prev.subtitle === contribution.subtitle &&
+      prev.tabs === contribution.tabs &&
       prev.controls === contribution.controls &&
       prev.actions === contribution.actions
     ) {

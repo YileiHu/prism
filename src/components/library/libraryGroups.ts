@@ -1,6 +1,6 @@
 import type { CollectionData } from "../collectionTypes";
 import type { PdfCollectionData } from "../pdf/types";
-import type { TagInfo } from "../../shared/models";
+import type { ResourceCollection } from "../../shared/models";
 
 // Read-only view model for every group-like sidebar/card entity. The source
 // stores stay independent: this only normalizes id/name/color/count so the
@@ -34,12 +34,12 @@ export function toPdfCollectionGroups(collections: PdfCollectionData[]): Library
   }));
 }
 
-export function toResourceTagGroups(tags: TagInfo[]): LibraryGroup<TagInfo>[] {
-  return tags.map((tag) => ({
-    id: tag.name,
-    name: tag.name,
-    color: tag.color,
-    count: tag.count,
-    source: tag,
+export function toResourceCollectionGroups(collections: ResourceCollection[]): LibraryGroup<ResourceCollection>[] {
+  return collections.map((collection) => ({
+    id: String(collection.id),
+    name: collection.name,
+    color: collection.color,
+    count: collection.count,
+    source: collection,
   }));
 }

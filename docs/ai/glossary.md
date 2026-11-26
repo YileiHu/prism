@@ -7,7 +7,7 @@
 | 中文 | 代码/类型 | 主要位置 |
 |---|---|---|
 | 仓库 / 资料库 | `LibraryView` / module `library` | `src/components/library/LibraryView.tsx` |
-| 事务 / GTD | `GtdView` / module `gtd` | `src/components/gtd/GtdView.tsx` |
+| 养成 / 成长 | `GrowthView` / module `growth` | `src/components/growth/GrowthView.tsx` |
 | 资料库来源 | `LibraryRef`（`note` / `canvas` / `pdf` / `resources`） | `src/lib/workspace/types.ts` |
 | 资料库分组 | `LibraryGroup` / `libraryGroups.ts` | `src/components/library/libraryGroups.ts` |
 | 分组行 / 卡片 / 对话框 | `GroupNavRow` / `SectionCard` / `CollectionDialogs` | `src/components/library/` |
@@ -46,23 +46,39 @@
 | 连线 | `CanvasEdge` / `ArrowEdge` | `src/components/canvas/edges/ArrowEdge.tsx` |
 | 预设 | `CanvasPreset` / `PresetBar` | `src/shared/settings.ts`、`src/components/canvas/PresetBar.tsx` |
 
-## 事务
+## 任务（养成模块内）
 
 | 中文 | 代码 | 主要位置 |
 |---|---|---|
-| 收集箱 | `groupGtdTasks().inbox`（无日期且未归项目） | `src/components/gtd/GtdCalendarInbox.tsx` |
-| 日历（默认首页） | `GtdCalendar` / `GtdCalendarAgenda` | `src/components/gtd/GtdCalendar.tsx` |
-| 任务 | `GtdTask` | `src/shared/models.ts` |
-| 项目 | `GtdProject` | `src/components/gtd/GtdProjectDetail.tsx` |
-| 起始日期 | `scheduledDate` | `src/components/gtd/DueDateCalendar.tsx` |
-| 截止日期 | `dueDate` | `src/components/gtd/DueDateCalendar.tsx` |
-| 日期区间 | `taskDateRange` / `isTaskActiveOn` | `src/lib/gtd.ts` |
-| 逾期 | `isTaskOverdue`（只看截止） | `src/lib/gtd.ts` |
-| 已完成 | `completedAt` | `src/components/gtd/GtdCompleted.tsx` |
+| 任务 | `GrowthTask` | `src/shared/models.ts`、`src/components/growth/GrowthTasksCard.tsx` |
+| 任务详情 | `GrowthTaskModal` | `src/components/growth/GrowthTaskModal.tsx` |
+| 未安排 | 无日期的任务分组 | `src/lib/taskDates.ts` |
+| 起始日期 | `scheduledDate` | `src/components/DateCalendar.tsx` |
+| 截止日期 | `dueDate` | `src/components/DateCalendar.tsx` |
+| 日期区间 | `taskDateRange` / `isTaskActiveOn` / `bucketGrowthTasks` | `src/lib/taskDates.ts` |
+| 逾期 | `isTaskOverdue`（只看截止） | `src/lib/taskDates.ts` |
+| 已完成 | `completedAt` | `src/components/growth/GrowthTasksCard.tsx` |
 | 全局快速记录 | `quickCapture` / `quick-capture:open` / `quick-capture.html` | `src/quickCapture.tsx`、`electron/main.ts` |
 | 快速记录小窗 | `showQuickCaptureWindow` / `quick-capture.html` | `electron/main.ts`、`src/quickCapture.tsx` |
 
-> 设置里的快捷键行叫「全局快速记录」，指同一个功能；小窗 UI 标题用「快速记录」，文档指代界面时称「快速记录小窗」。不再用「全局捕获」「快速捕获」。代码标识符保持 `quickCapture`（对应英文 Quick capture），不与中文逐字绑定。
+> 设置里的快捷键行叫「全局快速记录」，指同一个功能；小窗 UI 标题用「快速记录任务」，文档指代界面时称「快速记录小窗」。不再用「全局捕获」「快速捕获」「收集箱」。代码标识符保持 `quickCapture`（对应英文 Quick capture），不与中文逐字绑定。
+
+## 养成（对象关系）
+
+| 中文 | 代码 | 主要位置 |
+|---|---|---|
+| 能力 / 养成能力 | `GrowthCapability` | `src/shared/models.ts`、`src/components/growth/GrowthCapabilityCard.tsx` |
+| 挑战 / 验证 | `GrowthChallenge` | `src/components/growth/GrowthChallengeBoard.tsx`、`GrowthChallengeDetail.tsx` |
+| 赛季 | `GrowthSeason` | `src/components/growth/GrowthSeasonPoster.tsx` |
+| 预测 / 预估 | `GrowthPrediction`（`predicted` / `actual`） | `src/components/growth/GrowthPredictionModal.tsx`、`src/lib/growth.ts` |
+| 自知度 | `selfAccuracy` / `accuracy` | `src/lib/growth.ts` |
+| 校准 | `reviewGrowthCapability` | `src/components/growth/GrowthReviewModal.tsx` |
+| 证据 | `GrowthEvidence` | `src/components/growth/GrowthEvidenceModal.tsx` |
+| 作品 | `GrowthArtifact` | `src/components/growth/GrowthArtifactCard.tsx` |
+| 领域 | `GrowthDomain` | `src/components/growth/GrowthBoard.tsx` |
+| 上下文链接 | `GrowthPredictionLink` / `GrowthTaskDefaults` | `src/components/growth/types.ts` |
+
+> 对象链：任务 → 挑战 → 赛季，三者都指向能力；预测挂在能力上，并可选挂在挑战或任务上。任务完成、预测补实际都不改等级；只有校准与挑战过关改分。详见 [养成架构](../architecture/growth.md#对象关系)。
 
 ## 编辑器
 

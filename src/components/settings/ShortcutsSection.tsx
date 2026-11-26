@@ -187,7 +187,7 @@ export default function ShortcutsSection() {
                 />
                 <Button
                   variant="ghost"
-                  size="icon-xs"
+                  size="icon-sm"
                   title={t["settings.shortcutReset"]}
                   disabled={shortcuts[action] === DEFAULT_SHORTCUTS[action]}
                   onClick={() => update(action, DEFAULT_SHORTCUTS[action])}

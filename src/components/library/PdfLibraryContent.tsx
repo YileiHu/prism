@@ -18,11 +18,14 @@ import { useToolbarContribution, type ToolbarContribution } from "../toolbar/Too
 import LibraryTitle from "./LibraryTitle";
 import SearchLimitHint from "./SearchLimitHint";
 import Button from "../Button";
+import BatchActionBar, { type BatchAction } from "../BatchActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import { DropdownMenu, DropdownMenuItem } from "../DropdownMenu";
 import EmptyState from "../EmptyState";
 import SearchInput from "../SearchInput";
+import SelectModeButton from "../SelectModeButton";
 import Spinner from "../Spinner";
+import { useMultiSelect } from "../../lib/useMultiSelect";
 import PdfGridView from "../pdf/PdfGridView";
 import { usePdfDocuments } from "../pdf/PdfDocumentsProvider";
 import type { usePdfCollections } from "../pdf/usePdfCollections";
@@ -32,6 +35,12 @@ interface Props {
   cols: ReturnType<typeof usePdfCollections>;
   onOpenSettings: () => void;
   onNewCollection: () => void;
+}
+
+interface ConfirmState {
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void | Promise<void>;
 }
 
 export default function PdfLibraryContent({
@@ -44,6 +53,7 @@ export default function PdfLibraryContent({
   const pdf = usePdfDocuments();
   const { openDoc, removeDocs } = useWorkspace();
   const [deleteDocTarget, setDeleteDocTarget] = useState<PdfDocument | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const sortAnchorRef = useRef<HTMLButtonElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
@@ -70,6 +80,81 @@ export default function PdfLibraryContent({
   const openPdf = (doc: PdfDocument) => {
     openDoc(makePdfDoc(pdf.repoPath, doc.relPath, doc.title));
   };
+
+  const pdfSelection = useMultiSelect({
+    scopeKey: `pdf|${pdf.repoPath}|${selectedCollection?.id ?? ""}|${pdf.search}`,
+    keys: displayed.map((doc) => doc.id),
+    containerRef: gridScrollRef,
+  });
+
+  const pdfBatchActions: BatchAction[] = [];
+  if (pdfSelection.count > 0) {
+    const moveTargets = cols.collections.filter((collection) => collection.id !== selectedCollection?.id);
+    if (moveTargets.length > 0) {
+      pdfBatchActions.push({
+        key: "moveToCollection",
+        label: t["collections.moveTo"],
+        variant: "primary",
+        menu: moveTargets.map((collection) => ({
+          key: collection.id,
+          label: collection.name,
+          onClick: () => {
+            const relPaths = displayed
+              .filter((doc) => pdfSelection.isSelected(doc.id))
+              .map((doc) => doc.relPath);
+            cols.movePaths(collection.id, relPaths);
+            showToast(t["collections.movedBatch"].replace("{count}", String(relPaths.length)).replace("{name}", collection.name));
+            pdfSelection.clear();
+          },
+        })),
+      });
+    }
+    pdfBatchActions.push({
+      key: "removeFromCollection",
+      label: t["collections.removeFrom"],
+      onClick: () => {
+        const relPaths = displayed
+          .filter((doc) => pdfSelection.isSelected(doc.id))
+          .map((doc) => doc.relPath);
+        cols.removePathsFromAll(relPaths);
+        showToast(t["collections.removedBatch"].replace("{count}", String(relPaths.length)));
+        pdfSelection.clear();
+      },
+    });
+    pdfBatchActions.push({
+      key: "delete",
+      label: t["pdf.trash"],
+      variant: "ghost-danger",
+      onClick: () => {
+        const targets = displayed.filter((doc) => pdfSelection.isSelected(doc.id));
+        if (targets.length === 0) return;
+        setConfirm({
+          message: t["vault.batchDeleteConfirm"].replace("{count}", String(targets.length)),
+          confirmLabel: t["pdf.trash"],
+          onConfirm: async () => {
+            try {
+              const result = await pdf.removeDocuments(targets.map((doc) => doc.id));
+              const succeededIds = new Set(
+                result.results.filter((entry) => entry.success).map((entry) => entry.id),
+              );
+              const removed = targets.filter((doc) => succeededIds.has(doc.id));
+              if (removed.length > 0) {
+                removeDocs(removed.map((doc) => pdfDocId(pdf.repoPath, doc.relPath)));
+                showToast(t["batch.deleted"].replace("{count}", String(removed.length)));
+              }
+              const failed = targets.length - removed.length;
+              if (failed > 0) {
+                showToast(t["batch.deleteFailed"].replace("{count}", String(failed)), "error");
+              }
+            } catch (error) {
+              showToast(t["pdf.deleteFailed"].replace("{error}", String(error)), "error");
+            }
+            pdfSelection.exit();
+          },
+        });
+      },
+    });
+  }
 
   const confirmDeleteDoc = async () => {
     if (!deleteDocTarget) return;
@@ -151,6 +236,10 @@ export default function PdfLibraryContent({
     ),
     actions: (
       <>
+        <SelectModeButton
+          active={pdfSelection.active}
+          onToggle={pdfSelection.active ? pdfSelection.exit : pdfSelection.enter}
+        />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -178,8 +267,8 @@ export default function PdfLibraryContent({
       </>
     ),
   }), [
-    count, onNewCollection, pdf, searchColor(titleColor),
-    sortOpen, t, title,
+    count, onNewCollection, pdf, pdfSelection.active, pdfSelection.enter, pdfSelection.exit,
+    searchColor(titleColor), sortOpen, t, title,
   ]);
 
   useToolbarContribution("module:library", toolbar);
@@ -240,13 +329,16 @@ export default function PdfLibraryContent({
       {pdf.limitHit && (
         <SearchLimitHint limit={pdf.visible.length} messageKey="pdf.resultLimitHint" />
       )}
-      <div ref={gridScrollRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={gridScrollRef} tabIndex={-1} className="flex-1 overflow-y-auto p-4 focus:outline-none">
         <PdfGridView
           scrollRef={gridScrollRef}
           documents={displayed}
           collections={cols.collections}
           activeCollection={selectedCollection}
           loading={pdf.scanning}
+          selecting={pdfSelection.active}
+          selectedIds={pdfSelection.selected}
+          onToggleSelect={(doc, event) => pdfSelection.toggle(doc.id, { shiftKey: event.shiftKey })}
           emptyText={
             pdf.search.trim()
               ? t["pdf.emptySearch"]
@@ -255,15 +347,11 @@ export default function PdfLibraryContent({
                 : t["pdf.emptyRepo"]
           }
           onOpen={openPdf}
-          onAddToCollection={(doc, collectionId) => {
+          onMoveToCollection={(doc, collectionId) => {
             const target = cols.collections.find((collection) => collection.id === collectionId);
-            const added = cols.addPaths(collectionId, [doc.relPath]);
             if (!target) return;
-            showToast(
-              added > 0
-                ? t["pdf.addToCollectionDone"].replace("{name}", target.name)
-                : t["collections.alreadyExists"],
-            );
+            cols.movePaths(collectionId, [doc.relPath]);
+            showToast(t["collections.moved"].replace("{name}", target.name));
           }}
           onRemoveFromCollection={(doc) => {
             if (selectedCollection) cols.removePath(selectedCollection.id, doc.relPath);
@@ -274,12 +362,29 @@ export default function PdfLibraryContent({
         />
       </div>
 
+      {pdfSelection.active && (
+        <BatchActionBar
+          selectedCount={pdfSelection.count}
+          actions={pdfBatchActions}
+          onSelectAll={pdfSelection.selectAll}
+          onExit={pdfSelection.exit}
+        />
+      )}
+
       <ConfirmDialog
         open={deleteDocTarget !== null}
         message={t["pdf.trashConfirm"].replace("{name}", deleteDocTarget?.title ?? "")}
         confirmLabel={t["pdf.trash"]}
         onConfirm={confirmDeleteDoc}
         onClose={() => setDeleteDocTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={confirm !== null}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={async () => { await confirm?.onConfirm(); }}
+        onClose={() => setConfirm(null)}
       />
     </div>
   );

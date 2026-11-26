@@ -1,12 +1,15 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { ExternalLink, Edit3, Link2, Plus, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Edit3, FolderPlus, Link2, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import { useToast } from "../../lib/toast";
+import { useMultiSelect } from "../../lib/useMultiSelect";
+import { selectionEdgeAt, type SelectionEdge } from "../../lib/selectionEdge";
 import type { PaletteColor } from "../../lib/colors";
-import type { Resource, TagInfo } from "../../shared/models";
+import type { Resource, ResourceCollection } from "../../shared/models";
 import Button from "../Button";
 import Badge from "../Badge";
+import BatchActionBar, { type BatchAction } from "../BatchActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import Input, { Textarea } from "../Input";
@@ -14,11 +17,13 @@ import ItemRow from "../ItemRow";
 import Modal from "../Modal";
 import SearchInput from "../SearchInput";
 import SectionCard from "../SectionCard";
+import SelectButton from "../SelectButton";
+import SelectModeButton from "../SelectModeButton";
 import { SkeletonRows } from "../Skeleton";
 import SortableList from "../SortableList";
-import TagInput from "../TagInput";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import type { MenuItem } from "../ContextMenu";
+import CreateCollectionModal from "../CreateCollectionModal";
 import LibraryTitle from "./LibraryTitle";
 import SearchLimitHint from "./SearchLimitHint";
 import { useLibraryData } from "./LibraryDataProvider";
@@ -39,32 +44,43 @@ function isUniqueViolation(error: unknown): boolean {
 
 function ResourceRowView({
   r,
-  onOpenTag,
+  collection,
+  selecting,
+  selected,
+  selectionEdge,
   onStartEdit,
   onDelete,
-  colorForTag,
-  flat,
+  onToggle,
+  colorForCollection,
 }: {
   r: Resource;
-  onOpenTag: (tag: string) => void;
+  collection: ResourceCollection | null;
+  selecting: boolean;
+  selected: boolean;
+  selectionEdge?: SelectionEdge;
   onStartEdit: () => void;
   onDelete: () => void;
-  colorForTag: (name: string) => PaletteColor;
-  flat?: boolean;
+  onToggle: (event: React.MouseEvent<HTMLDivElement>) => void;
+  colorForCollection: (collection: ResourceCollection) => PaletteColor;
 }) {
   const { t } = useT();
 
   const menuItems: MenuItem[] = [
-    { label: t["menu.openInBrowser"], icon: <ExternalLink size={14} />, onClick: () => window.prism.openUrl(r.url) },
+    { label: t["menu.openInBrowser"], icon: <Link2 size={14} />, onClick: () => window.prism.openUrl(r.url) },
     { label: t["menu.edit"], icon: <Edit3 size={14} />, onClick: onStartEdit },
     { label: t["menu.delete"], icon: <Trash2 size={14} />, onClick: onDelete, danger: true },
   ];
 
   return (
     <ItemRow
-      variant="list"
-      className={flat ? "border-b border-line/30" : "rounded-control"}
-      onPrimaryClick={() => window.prism.openUrl(r.url)}
+      onPrimaryClick={(event) => {
+        if (selecting) onToggle(event as React.MouseEvent<HTMLDivElement>);
+        else window.prism.openUrl(r.url);
+      }}
+      selected={selected}
+      selectable={selecting}
+      checked={selected}
+      selectionEdge={selectionEdge}
       menuItems={menuItems}
       tooltip={r.notes ? `${r.title}\n${r.notes}\n${r.url}` : r.url}
       title={
@@ -73,49 +89,40 @@ function ResourceRowView({
           {r.notes && <span className="ml-2 font-normal text-faint">{r.notes}</span>}
         </>
       }
-      meta={
+      meta={selecting ? undefined : (
         <>
-          <button
-            onClick={(event) => { event.stopPropagation(); window.prism.openUrl(r.url); }}
-            className="text-caption text-faint hover:text-tertiary truncate flex items-center gap-1 flex-shrink-0 max-w-[160px]"
-          >
+          <span className="text-caption text-faint truncate flex items-center gap-1 flex-shrink-0 max-w-[160px]">
             <Link2 size={10} />
             {extractDomain(r.url)}
-          </button>
-          {r.tags.length > 0 && (
+          </span>
+          {collection && (
             <span className="hidden md:flex items-center gap-1 flex-shrink-0 max-w-[240px] overflow-hidden">
-              {r.tags.slice(0, 3).map((tag) => {
-                const color = colorForTag(tag);
-                return (
-                  <Badge
-                    key={tag}
-                    palette={color}
-                    onClick={(event) => { event.stopPropagation(); onOpenTag(tag); }}
-                    className="cursor-pointer hover:opacity-80"
-                  >
-                    {tag}
-                  </Badge>
-                );
-              })}
-              {r.tags.length > 3 && <span className="text-meta text-faint">+{r.tags.length - 3}</span>}
+              <Badge palette={colorForCollection(collection)}>{collection.name}</Badge>
             </span>
           )}
         </>
-      }
+      )}
     />
   );
 }
 
 interface ResourceListHandlers {
   onReorder: (next: Resource[]) => void;
-  onOpenTag: (tag: string) => void;
   onStartEdit: (resource: Resource) => void;
   onDelete: (resource: Resource) => void;
-  colorForTag: (name: string) => PaletteColor;
+  selecting: boolean;
+  selectedIds: ReadonlySet<number>;
+  onToggleSelect: (resource: Resource, event: React.MouseEvent<HTMLDivElement>) => void;
+  collectionsById: Map<number, ResourceCollection>;
+  colorForCollection: (collection: ResourceCollection) => PaletteColor;
 }
 
-function ResourceList({ items, flat, handlers }: { items: Resource[]; flat?: boolean; handlers: ResourceListHandlers }) {
-  const { onReorder, onOpenTag, onStartEdit, onDelete, colorForTag } = handlers;
+function ResourceList({ items, handlers }: { items: Resource[]; handlers: ResourceListHandlers }) {
+  const {
+    onReorder, onStartEdit, onDelete, selecting, selectedIds, onToggleSelect,
+    collectionsById, colorForCollection,
+  } = handlers;
+  const itemKeys = useMemo(() => items.map((resource) => resource.id), [items]);
   return (
     <SortableList
       items={items}
@@ -126,18 +133,21 @@ function ResourceList({ items, flat, handlers }: { items: Resource[]; flat?: boo
         next.splice(to, 0, moved);
         onReorder(next);
       }}
-      renderItem={(resource) => (
+      renderItem={(resource, index) => (
         <ResourceRowView
           r={resource}
-          flat={flat}
-          onOpenTag={onOpenTag}
+          collection={resource.collectionId === null ? null : collectionsById.get(resource.collectionId) ?? null}
+          selecting={selecting}
+          selected={selectedIds.has(resource.id)}
+          selectionEdge={selectionEdgeAt(itemKeys, index, selectedIds) ?? undefined}
           onStartEdit={() => onStartEdit(resource)}
           onDelete={() => onDelete(resource)}
-          colorForTag={colorForTag}
+          onToggle={(event) => onToggleSelect(resource, event)}
+          colorForCollection={colorForCollection}
         />
       )}
       renderOverlay={(resource) => (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-body text-primary">
+        <div className="flex items-center gap-2 px-2 py-1.5 text-body text-primary">
           <span className="truncate">{resource.title}</span>
           <span className="ml-auto text-caption text-faint flex-shrink-0">{extractDomain(resource.url)}</span>
         </div>
@@ -152,7 +162,6 @@ function ResourceSection({
   tintColor,
   collapsed,
   onToggle,
-  headerActions,
   items,
   handlers,
   className,
@@ -162,7 +171,6 @@ function ResourceSection({
   tintColor?: PaletteColor;
   collapsed: boolean;
   onToggle: () => void;
-  headerActions?: ReactNode;
   items: Resource[];
   handlers: ResourceListHandlers;
   className?: string;
@@ -175,7 +183,6 @@ function ResourceSection({
       tintColor={tintColor}
       collapsed={collapsed}
       onToggle={onToggle}
-      headerActions={headerActions}
     >
       <ResourceList items={items} handlers={handlers} />
     </SectionCard>
@@ -186,15 +193,14 @@ interface ResourceFormValues {
   url: string;
   title: string;
   notes: string;
-  tags: string[];
+  collectionId: number | null;
 }
 
 function ResourceFields({
   values,
   onChange,
   error,
-  suggestions,
-  colorForTag,
+  collections,
   autoFocusField,
   enterField,
   onEnter,
@@ -202,8 +208,7 @@ function ResourceFields({
   values: ResourceFormValues;
   onChange: (next: ResourceFormValues) => void;
   error: string;
-  suggestions: TagInfo[];
-  colorForTag: (name: string) => PaletteColor;
+  collections: ResourceCollection[];
   autoFocusField?: "url" | "title";
   enterField?: "url" | "title";
   onEnter?: () => void;
@@ -251,13 +256,14 @@ function ResourceFields({
         />
       </div>
       <div>
-        <label className="field-label">{t["resources.tagsLabel"]}</label>
-        <TagInput
-          tags={values.tags}
-          onChange={(tags) => onChange({ ...values, tags })}
-          suggestions={suggestions}
-          placeholder={t["resources.tags"]}
-          colorForTag={colorForTag}
+        <label className="field-label">{t["resources.collectionLabel"]}</label>
+        <SelectButton
+          value={values.collectionId === null ? "" : String(values.collectionId)}
+          options={collections.map((collection) => ({ value: String(collection.id), label: collection.name }))}
+          emptyLabel={t["collections.ungrouped"]}
+          onChange={(value) => onChange({ ...values, collectionId: value === "" ? null : Number(value) })}
+          ariaLabel={t["resources.collectionLabel"]}
+          className="w-full"
         />
       </div>
       {error && <p className="text-caption text-danger">{error}</p>}
@@ -272,28 +278,36 @@ export default function ResourcesLibraryContent() {
   const { resourceLib } = useLibraryData();
   const {
     resources,
-    tags,
+    collections,
     loaded,
     searchQuery,
     setSearchQuery,
-    activeTag,
-    setActiveTag,
-    colorForTag,
-    tagGroups,
-    collapsedTags,
-    toggleTagCollapse,
+    selectedCollectionId,
+    selectedCollection,
+    setSelectedCollection,
+    colorForCollection,
+    collectionGroups,
+    collapsedCollections,
+    toggleCollectionCollapse,
     addResource,
     updateResource,
     removeResource,
+    moveResources,
+    createCollection,
     reorderResources,
   } = resourceLib;
+
+  const collectionsById = useMemo(
+    () => new Map(collections.map((collection) => [collection.id, collection])),
+    [collections],
+  );
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [modalUrl, setModalUrl] = useState("");
   const [modalTitle, setModalTitle] = useState("");
   const [modalNotes, setModalNotes] = useState("");
-  const [modalTags, setModalTags] = useState<string[]>([]);
+  const [modalCollectionId, setModalCollectionId] = useState<number | null>(null);
   const [modalError, setModalError] = useState("");
 
   // Edit modal state
@@ -301,11 +315,105 @@ export default function ResourcesLibraryContent() {
   const [editUrl, setEditUrl] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editNotes, setEditNotes] = useState("");
-  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editCollectionId, setEditCollectionId] = useState<number | null>(null);
   const [editError, setEditError] = useState("");
+
+  // Create collection modal
+  const [creatingCollection, setCreatingCollection] = useState(false);
 
   // Delete confirm state
   const [deleting, setDeleting] = useState<Resource | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Keys follow what is actually on screen: grouped sections in "All", the flat
+  // filtered list inside a collection. Shift ranges must match the visual order.
+  const orderedResources = useMemo(
+    () => (selectedCollectionId !== null
+      ? resources
+      : [...collectionGroups.groups.flatMap((group) => group.resources), ...collectionGroups.ungrouped]),
+    [selectedCollectionId, resources, collectionGroups],
+  );
+  const resourceSelection = useMultiSelect({
+    scopeKey: `${selectedCollectionId ?? ""}|${resourceLib.debouncedQuery}`,
+    keys: orderedResources.map((resource) => resource.id),
+    containerRef: scrollRef,
+  });
+
+  const selectedIds = Array.from(resourceSelection.selected);
+
+  const resourceBatchActions: BatchAction[] = [];
+  if (resourceSelection.count > 0) {
+    const moveTargets = collections.filter((collection) => collection.id !== selectedCollectionId);
+    if (moveTargets.length > 0) {
+      resourceBatchActions.push({
+        key: "moveToCollection",
+        label: t["collections.moveTo"],
+        variant: "primary",
+        menu: moveTargets.map((collection) => ({
+          key: String(collection.id),
+          label: collection.name,
+          onClick: () => {
+            void moveResources(selectedIds, collection.id)
+              .then(() => {
+                showToast(t["collections.movedBatch"]
+                  .replace("{count}", String(selectedIds.length))
+                  .replace("{name}", collection.name));
+                resourceSelection.clear();
+              })
+              .catch(() => showToast(t["common.actionFailed"], "error"));
+          },
+        })),
+      });
+    }
+    resourceBatchActions.push({
+      key: "removeFromCollection",
+      label: t["collections.removeFrom"],
+      onClick: () => {
+        void moveResources(selectedIds, null)
+          .then(() => {
+            showToast(t["collections.removedBatch"].replace("{count}", String(selectedIds.length)));
+            resourceSelection.clear();
+          })
+          .catch(() => showToast(t["common.actionFailed"], "error"));
+      },
+    });
+    resourceBatchActions.push({
+      key: "delete",
+      label: t["batch.delete"],
+      variant: "ghost-danger",
+      onClick: () => setBatchDeleteOpen(true),
+    });
+  }
+
+  const handleBatchDelete = async () => {
+    setBatchDeleteOpen(false);
+    const ids = Array.from(resourceSelection.selected);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await removeResource(id);
+      } catch {
+        failed += 1;
+      }
+    }
+    if (failed === 0) showToast(t["common.deleted"]);
+    else showToast(t["common.deleteFailed"], "error");
+    resourceSelection.exit();
+  };
+
+  const handleCreateCollection = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      await createCollection(trimmed);
+    } catch (error) {
+      showToast(isUniqueViolation(error) ? t["resources.collectionExists"] : String((error as Error)?.message ?? error), "error");
+      return;
+    }
+    setCreatingCollection(false);
+    showToast(t["collections.created"].replace("{name}", trimmed));
+  };
 
   const handleSaveNew = async () => {
     if (!modalUrl.trim()) return;
@@ -313,7 +421,7 @@ export default function ResourcesLibraryContent() {
     const normalizedUrl = HAS_SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`;
     const title = modalTitle.trim() || (await window.prism.fetchPageTitle(normalizedUrl));
     try {
-      await addResource(normalizedUrl, title, modalTags, modalNotes.trim());
+      await addResource(normalizedUrl, title, modalNotes.trim(), modalCollectionId);
     } catch (error) {
       setModalError(isUniqueViolation(error) ? t["resources.urlExists"] : String((error as Error)?.message ?? error));
       return;
@@ -327,7 +435,7 @@ export default function ResourcesLibraryContent() {
     setModalUrl("");
     setModalTitle("");
     setModalNotes("");
-    setModalTags([]);
+    setModalCollectionId(selectedCollectionId);
     setModalError("");
   };
 
@@ -348,7 +456,7 @@ export default function ResourcesLibraryContent() {
     setEditUrl(resource.url);
     setEditTitle(resource.title);
     setEditNotes(resource.notes);
-    setEditTags([...resource.tags]);
+    setEditCollectionId(resource.collectionId);
     setEditError("");
   };
 
@@ -357,7 +465,7 @@ export default function ResourcesLibraryContent() {
     setEditUrl("");
     setEditTitle("");
     setEditNotes("");
-    setEditTags([]);
+    setEditCollectionId(null);
     setEditError("");
   };
 
@@ -368,8 +476,8 @@ export default function ResourcesLibraryContent() {
         editResource.id,
         editUrl.trim(),
         editTitle.trim() || editUrl,
-        editTags,
         editNotes.trim(),
+        editCollectionId,
       );
     } catch (error) {
       setEditError(isUniqueViolation(error) ? t["resources.urlExists"] : String((error as Error)?.message ?? error));
@@ -389,25 +497,31 @@ export default function ResourcesLibraryContent() {
 
   const listHandlers: ResourceListHandlers = {
     onReorder: handleReorder,
-    onOpenTag: setActiveTag,
     onStartEdit: openEditModal,
     onDelete: setDeleting,
-    colorForTag,
+    selecting: resourceSelection.active,
+    selectedIds: resourceSelection.selected,
+    onToggleSelect: (resource, event) => resourceSelection.toggle(resource.id, { shiftKey: event.shiftKey }),
+    collectionsById,
+    colorForCollection,
   };
+
+  const titleColor = selectedCollection ? colorForCollection(selectedCollection) : null;
+  const headerTitle = selectedCollection ? selectedCollection.name : t["library.allResources"];
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <LibraryTitle
-        title={activeTag ?? t["library.resourcesLibrary"]}
-        color={activeTag ? colorForTag(activeTag) : null}
+        title={headerTitle}
+        color={titleColor}
         count={resources.length}
-        action={activeTag ? (
+        action={selectedCollection ? (
           <button
             type="button"
-            onClick={() => setActiveTag(null)}
+            onClick={() => setSelectedCollection(null)}
             className="text-caption text-muted hover:text-secondary"
           >
-            {t["resources.allTags"]}
+            {t["library.allResources"]}
           </button>
         ) : undefined}
       />
@@ -421,17 +535,35 @@ export default function ResourcesLibraryContent() {
       />
     ),
     actions: (
-      <Button variant="ghost" size="icon-sm" onClick={() => setShowModal(true)} title={t["resources.add"]}>
-        <Plus size={16} />
-      </Button>
+      <>
+        <SelectModeButton
+          active={resourceSelection.active}
+          onToggle={resourceSelection.active ? resourceSelection.exit : resourceSelection.enter}
+        />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setCreatingCollection(true)}
+          title={t["resources.newCollection"]}
+        >
+          <FolderPlus size={15} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => { setModalCollectionId(selectedCollectionId); setShowModal(true); }} title={t["resources.add"]}>
+          <Plus size={16} />
+        </Button>
+      </>
     ),
-  }), [activeTag, colorForTag, resources.length, searchQuery, setActiveTag, setSearchQuery, t]);
+  }), [
+    headerTitle, resourceSelection.active, resourceSelection.enter, resourceSelection.exit,
+    resources.length, searchQuery, selectedCollection, selectedCollectionId, setSearchQuery,
+    setSelectedCollection, t, titleColor,
+  ]);
 
   useToolbarContribution("module:library", toolbar);
 
   return (
     <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
         {resourceLib.debouncedQuery.trim() && resources.length >= settings.search_result_limit && (
           <SearchLimitHint
             limit={settings.search_result_limit}
@@ -442,58 +574,59 @@ export default function ResourcesLibraryContent() {
         {loaded && resources.length === 0 && (
           <EmptyState
             size="module"
-            text={searchQuery || activeTag ? t["resources.emptySearch"] : t["resources.empty"]}
-            cta={!searchQuery && !activeTag
-              ? { label: t["resources.add"], onClick: () => setShowModal(true), icon: <Plus size={14} /> }
+            text={searchQuery || selectedCollection ? t["resources.emptySearch"] : t["resources.empty"]}
+            cta={!searchQuery && !selectedCollection
+              ? { label: t["resources.add"], onClick: () => { setModalCollectionId(null); setShowModal(true); }, icon: <Plus size={14} /> }
               : undefined}
           />
         )}
 
         {/* Card view (All) */}
-        {loaded && !activeTag && resources.length > 0 && (
+        {loaded && selectedCollectionId === null && resources.length > 0 && (
           <div className="p-4">
-            {tagGroups.groups.map(({ tag, resources: items, color }) => (
+            {collectionGroups.groups.map(({ collection, resources: items, color }) => (
               <ResourceSection
-                key={tag}
+                key={collection.id}
                 className="mb-3"
-                title={tag}
+                title={collection.name}
                 count={items.length}
                 tintColor={color}
-                collapsed={collapsedTags.has(tag)}
-                onToggle={() => toggleTagCollapse(tag)}
-                headerActions={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={(event) => { event.stopPropagation(); setActiveTag(tag); }}
-                    title={tag}
-                    aria-label={tag}
-                    className="!text-faint hover:!text-tertiary"
-                  >
-                    <ExternalLink size={12} />
-                  </Button>
-                }
+                collapsed={collapsedCollections.has(String(collection.id))}
+                onToggle={() => toggleCollectionCollapse(String(collection.id))}
                 items={items}
                 handlers={listHandlers}
               />
             ))}
-            {tagGroups.untagged.length > 0 && (
+            {collectionGroups.ungrouped.length > 0 && (
               <ResourceSection
                 className="mb-3"
                 title={<span className="uppercase tracking-wide text-secondary">{t["collections.ungrouped"]}</span>}
-                count={tagGroups.untagged.length}
-                collapsed={collapsedTags.has("__untagged__")}
-                onToggle={() => toggleTagCollapse("__untagged__")}
-                items={tagGroups.untagged}
+                count={collectionGroups.ungrouped.length}
+                collapsed={collapsedCollections.has("__ungrouped__")}
+                onToggle={() => toggleCollectionCollapse("__ungrouped__")}
+                items={collectionGroups.ungrouped}
                 handlers={listHandlers}
               />
             )}
           </div>
         )}
 
-        {/* Flat list (tag filtered) */}
-        {loaded && activeTag && <ResourceList items={resources} flat handlers={listHandlers} />}
+        {/* Flat list (collection filtered) */}
+        {loaded && selectedCollectionId !== null && (
+          <div className="p-2">
+            <ResourceList items={resources} handlers={listHandlers} />
+          </div>
+        )}
       </div>
+
+      {resourceSelection.active && (
+        <BatchActionBar
+          selectedCount={resourceSelection.count}
+          actions={resourceBatchActions}
+          onSelectAll={resourceSelection.selectAll}
+          onExit={resourceSelection.exit}
+        />
+      )}
 
       <Modal
         open={showModal}
@@ -503,21 +636,20 @@ export default function ResourcesLibraryContent() {
         footer={
           <>
             <Button variant="secondary" size="sm" onClick={closeModal}>{t["resources.cancel"]}</Button>
-            <Button variant="primary" size="md" onClick={handleSaveNew} disabled={!modalUrl.trim()}>{t["resources.save"]}</Button>
+            <Button variant="primary" size="sm" onClick={handleSaveNew} disabled={!modalUrl.trim()}>{t["resources.save"]}</Button>
           </>
         }
       >
         <ResourceFields
-          values={{ url: modalUrl, title: modalTitle, notes: modalNotes, tags: modalTags }}
+          values={{ url: modalUrl, title: modalTitle, notes: modalNotes, collectionId: modalCollectionId }}
           onChange={(next) => {
             setModalUrl(next.url);
             setModalTitle(next.title);
             setModalNotes(next.notes);
-            setModalTags(next.tags);
+            setModalCollectionId(next.collectionId);
           }}
           error={modalError}
-          suggestions={tags}
-          colorForTag={colorForTag}
+          collections={collections}
           autoFocusField="url"
           enterField="url"
           onEnter={handleSaveNew}
@@ -532,32 +664,47 @@ export default function ResourcesLibraryContent() {
         footer={
           <>
             <Button variant="secondary" size="sm" onClick={closeEditModal}>{t["resources.cancel"]}</Button>
-            <Button variant="primary" size="md" onClick={handleSaveEdit} disabled={!editUrl.trim()}>{t["resources.save"]}</Button>
+            <Button variant="primary" size="sm" onClick={handleSaveEdit} disabled={!editUrl.trim()}>{t["resources.save"]}</Button>
           </>
         }
       >
         <ResourceFields
-          values={{ url: editUrl, title: editTitle, notes: editNotes, tags: editTags }}
+          values={{ url: editUrl, title: editTitle, notes: editNotes, collectionId: editCollectionId }}
           onChange={(next) => {
             setEditUrl(next.url);
             setEditTitle(next.title);
             setEditNotes(next.notes);
-            setEditTags(next.tags);
+            setEditCollectionId(next.collectionId);
           }}
           error={editError}
-          suggestions={tags}
-          colorForTag={colorForTag}
+          collections={collections}
           autoFocusField="title"
           enterField="title"
           onEnter={handleSaveEdit}
         />
       </Modal>
 
+      {creatingCollection && (
+        <CreateCollectionModal
+          title={t["resources.newCollection"]}
+          onSave={(name) => { void handleCreateCollection(name); }}
+          onClose={() => setCreatingCollection(false)}
+        />
+      )}
+
       <ConfirmDialog
         open={deleting !== null}
         message={t["resources.deleteConfirm"]}
         onConfirm={handleDelete}
         onClose={() => setDeleting(null)}
+      />
+
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        message={t["resources.batchDeleteConfirm"].replace("{count}", String(resourceSelection.count))}
+        confirmLabel={t["batch.delete"]}
+        onConfirm={handleBatchDelete}
+        onClose={() => setBatchDeleteOpen(false)}
       />
     </div>
   );

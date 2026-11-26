@@ -9,7 +9,7 @@ export type LibrarySelectionSource = "note" | "pdf" | "resources";
 export function librarySelectionKey(source: LibrarySelectionSource, scope = ""): string {
   if (source === "note") return `last_coll_${scope}`;
   if (source === "pdf") return `last_pdf_coll_${normalizePath(scope)}`;
-  return "last_resource_tag";
+  return "last_resource_coll";
 }
 
 export async function readLibrarySelection(key: string): Promise<string> {

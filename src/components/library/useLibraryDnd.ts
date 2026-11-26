@@ -82,7 +82,7 @@ export function useLibraryDnd({ vaults, note, pdfDocuments, pdfCols }: Params) {
     if (data?.kind === "note") {
       if (!overId.startsWith("coll-")) return;
       const paths = Array.isArray(data.paths) ? data.paths as string[] : [];
-      if (paths.length > 0) note.handleDropNote(overId.slice(5), paths);
+      if (paths.length > 0) note.handleMoveNotesToCollection(overId.slice(5), paths);
       return;
     }
     if (data?.kind === "vault") {
@@ -108,10 +108,8 @@ export function useLibraryDnd({ vaults, note, pdfDocuments, pdfCols }: Params) {
       const doc = pdfDocuments.find((entry) => entry.id === data.id);
       const collection = pdfCols.collections.find((entry) => entry.id === overId.slice(8));
       if (doc && collection) {
-        const added = pdfCols.addPaths(collection.id, [doc.relPath]);
-        showToast(added > 0
-          ? t["pdf.addToCollectionDone"].replace("{name}", collection.name)
-          : t["collections.alreadyExists"]);
+        pdfCols.movePaths(collection.id, [doc.relPath]);
+        showToast(t["collections.moved"].replace("{name}", collection.name));
       }
       return;
     }

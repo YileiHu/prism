@@ -1,4 +1,5 @@
 import { FolderOpen, ImageIcon, RotateCcw, Trash2, FolderMinus, BookOpen, PlusCircle } from "lucide-react";
+import type { MouseEvent } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
@@ -6,6 +7,7 @@ import { useContextMenu } from "../../lib/useContextMenu";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
 import { resolveTagColor } from "../../lib/colors";
 import type { MenuItem } from "../ContextMenu";
+import SelectionCheck from "../SelectionCheck";
 import PdfCover from "./PdfCover";
 import { formatFileSize, type PdfCollectionData, type PdfDocument } from "./types";
 
@@ -14,8 +16,11 @@ interface Props {
   collections: PdfCollectionData[];
   memberCollections: PdfCollectionData[];
   activeCollection: PdfCollectionData | null;
+  selecting: boolean;
+  selected: boolean;
   onOpen: () => void;
-  onAddToCollection: (collectionId: string) => void;
+  onToggleSelect: (event: MouseEvent<HTMLDivElement>) => void;
+  onMoveToCollection: (collectionId: string) => void;
   onRemoveFromCollection: () => void;
   onDelete: () => void;
   onShowInFolder: () => void;
@@ -27,8 +32,11 @@ export default function PdfCard({
   collections,
   memberCollections,
   activeCollection,
+  selecting,
+  selected,
   onOpen,
-  onAddToCollection,
+  onToggleSelect,
+  onMoveToCollection,
   onRemoveFromCollection,
   onDelete,
   onShowInFolder,
@@ -38,9 +46,12 @@ export default function PdfCard({
   const showToast = useToast();
   const { onContextMenu } = useContextMenu();
 
+  // Dragging a card into a collection is the range gesture; in select mode the
+  // click toggles instead so the two never fight over the same drag.
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({
     id: `pdfdoc-${doc.id}`,
     data: { kind: "pdf-doc", id: doc.id, relPath: doc.relPath },
+    disabled: selecting,
   });
   const clickGuard = useDragClickGuard(isDragging);
 
@@ -79,13 +90,13 @@ export default function PdfCard({
       { label: t["pdf.open"], icon: <BookOpen size={14} />, onClick: onOpen },
       { label: t["pdf.showInFolder"], icon: <FolderOpen size={14} />, onClick: onShowInFolder },
       {
-        label: t["pdf.addToCollection"],
+        label: t["collections.moveTo"],
         icon: <PlusCircle size={14} />,
         children: collections.length > 0
           ? collections.map((c) => ({
               label: c.name,
               checked: memberCollections.some((m) => m.id === c.id),
-              onClick: () => onAddToCollection(c.id),
+              onClick: () => onMoveToCollection(c.id),
             }))
           : [{ label: t["collections.none"] }],
       },
@@ -116,10 +127,15 @@ export default function PdfCard({
       {...listeners}
       {...clickGuard}
       className={`group relative cursor-pointer select-none ${isDragging ? "opacity-40" : ""}`}
-      onClick={onOpen}
+      onClick={(event) => {
+        if (selecting) onToggleSelect(event);
+        else onOpen();
+      }}
       onContextMenu={(e) => onContextMenu(e, menuItems())}
     >
-      <div className="relative aspect-[3/4] rounded-card overflow-hidden border border-line/60 bg-surface shadow-sm transition-[transform,box-shadow] duration-150 group-hover:-translate-y-0.5 group-hover:shadow-popover">
+      <div className={`relative aspect-[3/4] rounded-card overflow-hidden border bg-surface shadow-sm transition-[transform,box-shadow] duration-150 group-hover:-translate-y-0.5 group-hover:shadow-popover ${
+        selected ? "border-accent ring-2 ring-accent" : "border-line/60"
+      }`}>
         <PdfCover
           doc={doc}
           onGenerated={(_id, version, pageCount) => {
@@ -132,7 +148,13 @@ export default function PdfCard({
           }}
         />
 
-        {memberCollections.length > 0 && (
+        {selecting && (
+          <div className="absolute left-2 top-2 z-10">
+            <SelectionCheck checked={selected} />
+          </div>
+        )}
+
+        {!selecting && memberCollections.length > 0 && (
           <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
             {memberCollections.slice(0, 3).map((c) => (
               <span

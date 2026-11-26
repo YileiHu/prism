@@ -6,15 +6,15 @@ import {
   FileText,
   Frame,
   Library,
-  ListChecks,
   Minus,
   PartyPopper,
   Settings2,
+  Sprout,
   Square,
   X,
 } from "lucide-react";
 import Settings from "./components/Settings";
-import GtdView from "./components/gtd/GtdView";
+import GrowthView from "./components/growth/GrowthView";
 import LibraryView from "./components/library/LibraryView";
 import DocumentWorkspace from "./components/workspace/DocumentWorkspace";
 import { LibraryDataProvider } from "./components/library/LibraryDataProvider";
@@ -39,8 +39,6 @@ import { toggleSidebarCollapsed, useSidebarCollapsed } from "./lib/sidebarState"
 import { libraryVaultPath, makeCanvasDoc, makeNoteDoc, normalizePath, type ModuleId } from "./lib/workspace/types";
 import { usePdfDocuments } from "./components/pdf/PdfDocumentsProvider";
 import { type VaultEntry } from "./types";
-import type { GtdFocus, GtdFocusRequest } from "./components/gtd/types";
-import type { GtdProjectLink } from "./shared/models";
 import { type MenuItem } from "./components/ContextMenu";
 import "./lib/api";
 
@@ -49,8 +47,8 @@ import "./lib/api";
 const RESUME_WORKSPACE =
   new URLSearchParams(window.location.search).get("restore-workspace") === "1";
 
-const MODULES: { id: ModuleId; icon: typeof ListChecks; labelKey: keyof Translation }[] = [
-  { id: "gtd", icon: ListChecks, labelKey: "nav.gtd" },
+const MODULES: { id: ModuleId; icon: typeof Sprout; labelKey: keyof Translation }[] = [
+  { id: "growth", icon: Sprout, labelKey: "nav.growth" },
   { id: "library", icon: Library, labelKey: "nav.library" },
 ];
 
@@ -75,7 +73,6 @@ export default function App() {
   const [showChangelog, setShowChangelog] = useState(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
-  const [gtdFocus, setGtdFocus] = useState<GtdFocus | null>(null);
   const splashHidden = useRef(false);
   const vaultsRef = useRef(vaults);
   vaultsRef.current = vaults;
@@ -101,9 +98,9 @@ export default function App() {
     return () => window.removeEventListener(QUICK_CAPTURE_EVENT, open);
   }, []);
 
-  // A task saved from the separate capture window refreshes the hidden GTD pane.
+  // A task saved from the separate capture window refreshes the growth module.
   useEffect(() => window.prism.onQuickCaptureSaved(() => {
-    window.dispatchEvent(new Event("gtd-changed"));
+    window.dispatchEvent(new Event("growth-changed"));
   }), []);
 
   // A vault lock closes its document tabs — the files are unreadable again.
@@ -212,41 +209,6 @@ export default function App() {
       : "";
 
   useGlobalShortcuts(shortcutVault, shortcutVault !== "");
-
-  const handleNavigateToGtd = (request: GtdFocusRequest) => {
-    setGtdFocus({ ...request, seq: Date.now() });
-    showModule("gtd");
-  };
-
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectId?: number; archived?: boolean }>).detail;
-      if (typeof detail?.projectId !== "number") return;
-      handleNavigateToGtd({
-        view: "project",
-        projectId: detail.projectId,
-        archived: detail.archived,
-      });
-    };
-    window.addEventListener("prism:open-project", handler);
-    return () => window.removeEventListener("prism:open-project", handler);
-  }, []);
-
-  const openProjectLink = useCallback((link: GtdProjectLink) => {
-    if (link.missing) return;
-    const target = vaultsRef.current.find(
-      (vault) => normalizePath(vault.path) === normalizePath(link.vaultPath),
-    );
-    if (!target) return;
-    const doc = link.kind === "note"
-      ? makeNoteDoc(target.path, link.filePath, link.title)
-      : makeCanvasDoc(target.path, link.filePath, link.title);
-    if (vaultLock.isLocked(target.path)) {
-      vaultLock.requestUnlock(target.path, () => openDoc(doc));
-    } else {
-      openDoc(doc);
-    }
-  }, [openDoc, vaultLock]);
 
   const openLinkedNote = useCallback((detail: { path: string; title?: string }) => {
     const target = vaultsRef.current.find((vault) => {
@@ -437,13 +399,8 @@ export default function App() {
               />
 
               <main className="flex-1 overflow-hidden relative app-main">
-                <div style={paneStyle(moduleActive === "gtd")} className={moduleActive === "gtd" ? "pane-enter" : ""}>
-                  <GtdView
-                    active={moduleActive === "gtd"}
-                    focus={gtdFocus}
-                    vaults={vaults}
-                    onOpenProjectLink={openProjectLink}
-                  />
+                <div style={paneStyle(moduleActive === "growth")} className={moduleActive === "growth" ? "pane-enter" : ""}>
+                  <GrowthView active={moduleActive === "growth"} />
                 </div>
                 <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
                   <LibraryView active={moduleActive === "library"} onOpenSettings={() => showModule("settings")} />

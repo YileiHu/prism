@@ -4,7 +4,7 @@
 
 注册表在 `src/shared/settings.ts`：默认值、校验与编解码都从这里出发。新增设置项后重新运行 `npm run docs`。
 
-共 **41** 个注册项。
+共 **40** 个注册项。
 
 | 键 | 类型 | 默认值 | 范围 / 选项 | 设置界面 |
 |---|---|---|---|---|
@@ -16,7 +16,6 @@
 | `private_lock_minutes` | number | 10 | min 1 / max 120 / step 1 | `VaultsSection.tsx` |
 | `attachments_dir` | string | "attachments" | — | `VaultsSection.tsx` |
 | `canvas_dir` | string | "canvases" | — | `VaultsSection.tsx` |
-| `project_vault_path` | string | "" | — | `GtdSection.tsx` |
 | `autosave_delay` | number | 1000 | min 300 / max 3000 / step 100 | `EditorSection.tsx` |
 | `default_view` | enum | "read" | read / edit | `EditorSection.tsx` |
 | `indent_width` | number | 4 | min 2 / max 8 / step 2 | `EditorSection.tsx` |

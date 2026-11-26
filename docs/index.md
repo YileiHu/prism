@@ -8,6 +8,8 @@
 |---|---|
 | 第一次接手项目 | 本页 → [架构总览](architecture/overview.md) → `quickstart` 技能 |
 | 改一个具体功能 | 本页「任务定位」→ 对应 `architecture/*` → 源码 |
+| 找可复用控件/函数/样式 | [ui-inventory](reference/ui-inventory.md) → [ui-kit](guides/ui-kit.md) → `grep` 现有调用点 |
+| 看控件实物、对比尺寸/状态 | 运行 `npm run electron:dev` 后打开 `http://localhost:5173/showcase.html` |
 | 新增跨层能力（IPC/DB/设置） | [recipes](guides/recipes.md) → 对应 skill → `reference/*` |
 | 查 API / 设置键 / 表结构 | [IPC](reference/ipc.md) / [设置](reference/settings.md) / [数据库](reference/database.md) |
 | 发布打包 | [verify-and-release](guides/verify-and-release.md) → `release-and-package` 技能 |
@@ -32,10 +34,12 @@
 | PDF 库、阅读器、封面、收藏集 | [features](architecture/features.md) | `src/components/library/PdfLibraryContent.tsx`、`src/components/pdf/PdfReader.tsx` |
 | 白板库、画布、节点/边/容器 | [canvas](architecture/canvas.md) | `src/components/canvas/CanvasEditor.tsx`、`src/lib/canvas/model.ts` |
 | AI / MCP 画白板 | [ai-canvas](architecture/ai-canvas.md) | `integrations/prism-canvas-mcp/server/*`、`integrations/prism-canvas-mcp/cordis.patch.yml` |
-| 事务：日历/收集箱/项目/完成日志 | [features](architecture/features.md) | `src/components/gtd/GtdView.tsx`、`src/lib/gtd.ts`、`electron/database.ts` |
-| 网页资源、标签、标题抓取 | [features](architecture/features.md) | `src/components/library/ResourcesLibraryContent.tsx`、`src/components/library/useResourceLibrary.ts`、`electron/main.ts` |
+| 任务：日期、分组、完成、快速记录 | [features](architecture/features.md) | `src/components/growth/GrowthTasksCard.tsx`、`src/lib/taskDates.ts`、`electron/database.ts` |
+| 养成：能力量表 / 挑战・赛季・作品（内容与展示）/ 自知 / 编年史 | [growth](architecture/growth.md) | `src/components/growth/GrowthView.tsx`、`src/lib/growth.ts`、`electron/database.ts` |
+| 网页资源、收藏集、标题抓取 | [features](architecture/features.md) | `src/components/library/ResourcesLibraryContent.tsx`、`src/components/library/useResourceLibrary.ts`、`electron/main.ts` |
 | Markdown 阅读/编辑、块容器、嵌入 | [editor](architecture/editor.md) | `src/components/editor/NoteEditor.tsx`、`src/components/editor/livePreview.ts` |
 | 设置项、设置页、快捷键 | [ui-kit](guides/ui-kit.md)、[recipes](guides/recipes.md) | `src/shared/settings.ts`、`src/components/settings/*` |
+| 找可复用控件/函数/样式 | [ui-kit](guides/ui-kit.md)、[ui-inventory](reference/ui-inventory.md) | `src/components/`、`src/lib/` |
 | 关闭行为、托盘、开机启动 | [main-process](architecture/main-process.md) | `electron/main.ts`、`src/components/settings/GeneralSection.tsx` |
 | IPC 通道、数据库、跨进程模型 | [main-process](architecture/main-process.md)、[data-model](architecture/data-model.md) | `electron/main.ts`、`electron/preload.ts`、`electron/database.ts`、`src/shared/models.ts` |
 | 私密仓库、解锁、加密迁移 | [main-process](architecture/main-process.md) | `electron/privateVault.ts`、`src/lib/vaultLock.tsx` |
@@ -53,7 +57,8 @@
 | [主进程](architecture/main-process.md) | IPC、vault/PDF 扫描、watcher、私密仓库、协议、窗口 |
 | [渲染层](architecture/renderer.md) | Provider、App 外壳、工作区、侧栏槽位、工具栏、异步模式 |
 | [数据模型](architecture/data-model.md) | SQLite、sidecar、设置、workspace、路径约定、事件 |
-| [功能域](architecture/features.md) | 资料库、PDF、白板库、GTD、网页资源、设置 |
+| [功能域](architecture/features.md) | 资料库、PDF、白板库、任务、网页资源、设置 |
+| [养成](architecture/growth.md) | 能力量表、挑战/赛季/作品（内容记录与卡片墙展示）、预测与自知度 |
 | [编辑器](architecture/editor.md) | Markdown 双管线、块会话、容器、嵌入、自动保存 |
 | [白板](architecture/canvas.md) | 画布格式、模型、编辑器、资料库分组、冲突 |
 | [AI 白板桥接](architecture/ai-canvas.md) | MCP 服务、vault 发现、工具/布局、DSH 安装与写入安全 |
@@ -75,6 +80,7 @@
 | [设置](reference/settings.md) | `src/shared/settings.ts`、`src/components/settings/*.tsx` |
 | [数据库](reference/database.md) | `electron/database.ts` |
 | [代码地图](reference/code-map.md) | `src/**`、`electron/**`、`scripts/**` |
+| [共享控件与样式清单](reference/ui-inventory.md) | `src/components/*.tsx`、`src/lib/**`、`src/index.css`、`tailwind.config.js` |
 
 ### 记忆与历史
 

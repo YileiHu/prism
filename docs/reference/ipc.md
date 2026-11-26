@@ -6,24 +6,31 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 
 ## 总览
 
-- Renderer 方法：**104**（invoke 96 / event 8）
-- main 处理器：**96**
+- Renderer 方法：**131**（invoke 123 / event 8）
+- main 处理器：**123**
 - main 推送事件：**8**
 
 源码：[preload.ts](../../electron/preload.ts) · [main.ts](../../electron/main.ts)
 
 ## Renderer 方法
 
-### Resources
+### Resources (single-assignment collections)
 
 | Renderer 方法 | 通道 | 方向 | 参数 | main handler |
 |---|---|---|---|---|
-| `addResource` | `resources:add` | renderer → main | url: string, title: string, tags: string[], notes: string | ✓ |
+| `addResource` | `resources:add` | renderer → main | url: string, title: string, notes: string, collectionId: number \| null | ✓ |
 | `getResources` | `resources:list` | renderer → main | — | ✓ |
-| `updateResource` | `resources:update` | renderer → main | id: number, url: string, title: string, tags: string[], notes: string | ✓ |
+| `updateResource` | `resources:update` | renderer → main | id: number, url: string, title: string, notes: string, collectionId: number \| null | ✓ |
 | `deleteResource` | `resources:delete` | renderer → main | id: number | ✓ |
+| `moveResourcesToCollection` | `resources:move-to-collection` | renderer → main | ids: number[], collectionId: number \| null | ✓ |
 | `searchResources` | `resources:search` | renderer → main | query: string | ✓ |
 | `reorderResources` | `resources:reorder` | renderer → main | orderedIds: number[] | ✓ |
+| `getResourceCollections` | `resource-collections:list` | renderer → main | — | ✓ |
+| `createResourceCollection` | `resource-collections:create` | renderer → main | name: string, color = "" | ✓ |
+| `renameResourceCollection` | `resource-collections:rename` | renderer → main | id: number, name: string | ✓ |
+| `setResourceCollectionColor` | `resource-collections:set-color` | renderer → main | id: number, color: string | ✓ |
+| `reorderResourceCollections` | `resource-collections:reorder` | renderer → main | orderedIds: number[] | ✓ |
+| `deleteResourceCollection` | `resource-collections:delete` | renderer → main | id: number | ✓ |
 | `fetchPageTitle` | `fetch:title` | renderer → main | url: string | ✓ |
 | `openUrl` | `resources:open-url` | renderer → main | url: string | ✓ |
 
@@ -81,41 +88,61 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 | `setSetting` | `settings:set` | renderer → main | key: string, value: string | ✓ |
 | `getAllSettings` | `settings:get-all` | renderer → main | — | ✓ |
 
-### Tags
+### Growth tasks
 
 | Renderer 方法 | 通道 | 方向 | 参数 | main handler |
 |---|---|---|---|---|
-| `getAllTags` | `tags:list` | renderer → main | — | ✓ |
-| `reorderTags` | `tags:reorder` | renderer → main | orderedNames: string[] | ✓ |
-| `setTagColor` | `tags:set-color` | renderer → main | name: string, color: string | ✓ |
-| `renameTag` | `tags:rename` | renderer → main | oldName: string, newName: string | ✓ |
-| `deleteTag` | `tags:delete` | renderer → main | name: string | ✓ |
+| `getGrowthTasks` | `growth:tasks` | renderer → main | — | ✓ |
+| `addGrowthTask` | `growth:add-task` | renderer → main | input: GrowthTaskInput | ✓ |
+| `updateGrowthTask` | `growth:update-task` | renderer → main | id: number, patch: GrowthTaskPatch | ✓ |
+| `completeGrowthTask` | `growth:complete-task` | renderer → main | id: number | ✓ |
+| `reopenGrowthTask` | `growth:reopen-task` | renderer → main | id: number | ✓ |
+| `deleteGrowthTask` | `growth:delete-task` | renderer → main | id: number | ✓ |
+| `clearCompletedGrowthTasks` | `growth:clear-completed-tasks` | renderer → main | — | ✓ |
 
-### GTD
+### Growth (养成)
 
 | Renderer 方法 | 通道 | 方向 | 参数 | main handler |
 |---|---|---|---|---|
-| `getGtdOpenTasks` | `gtd:open-tasks` | renderer → main | — | ✓ |
-| `getGtdCompletedTasks` | `gtd:completed-tasks` | renderer → main | limit?: number | ✓ |
-| `getGtdProjectTasks` | `gtd:project-tasks` | renderer → main | projectId: number | ✓ |
-| `getGtdProjects` | `gtd:projects` | renderer → main | archived: boolean | ✓ |
-| `addGtdTask` | `gtd:add-task` | renderer → main | title: string, projectId?: number \| null, scheduledDate?: string \| null | ✓ |
-| `updateGtdTask` | `gtd:update-task` | renderer → main | id: number, patch: GtdTaskPatch | ✓ |
-| `completeGtdTask` | `gtd:complete-task` | renderer → main | id: number | ✓ |
-| `reopenGtdTask` | `gtd:reopen-task` | renderer → main | id: number | ✓ |
-| `deleteGtdTask` | `gtd:delete-task` | renderer → main | id: number | ✓ |
-| `clearCompletedGtdTasks` | `gtd:clear-completed` | renderer → main | — | ✓ |
-| `reorderGtdProjectTasks` | `gtd:reorder-project-tasks` | renderer → main | projectId: number, orderedIds: number[] | ✓ |
-| `reorderGtdInboxTasks` | `gtd:reorder-inbox` | renderer → main | orderedIds: number[] | ✓ |
-| `reorderGtdProjects` | `gtd:reorder-projects` | renderer → main | orderedIds: number[] | ✓ |
-| `addGtdProject` | `gtd:add-project` | renderer → main | title: string | ✓ |
-| `updateGtdProject` | `gtd:update-project` | renderer → main | id: number, patch: { title?: string; description?: string; color?: string } | ✓ |
-| `setGtdProjectArchived` | `gtd:archive-project` | renderer → main | id: number, archived: boolean | ✓ |
-| `deleteGtdProject` | `gtd:delete-project` | renderer → main | id: number | ✓ |
-| `getGtdProjectDocs` | `gtd:project-docs` | renderer → main | projectId: number | ✓ |
-| `getGtdProjectLinkIndex` | `gtd:project-link-index` | renderer → main | — | ✓ |
-| `setGtdProjectLink` | `gtd:set-project-link` | renderer → main | projectId: number, kind: GtdProjectLinkKind, filePath: string, title: string, | ✓ |
-| `removeGtdProjectLink` | `gtd:remove-project-link` | renderer → main | linkId: number | ✓ |
+| `getGrowthState` | `growth:state` | renderer → main | — | ✓ |
+| `createGrowthDomain` | `growth:create-domain` | renderer → main | name: string, weight: number, theme?: string | ✓ |
+| `updateGrowthDomain` | `growth:update-domain` | renderer → main | id: number, patch: { name?: string; weight?: number; theme?: string } | ✓ |
+| `createGrowthCapability` | `growth:create-capability` | renderer → main | input: GrowthCapabilityInput | ✓ |
+| `updateGrowthCapability` | `growth:update-capability` | renderer → main | id: number, patch: GrowthCapabilityPatch | ✓ |
+| `reviewGrowthCapability` | `growth:review-capability` | renderer → main | id: number, input: GrowthReviewInput | ✓ |
+| `deleteGrowthCapability` | `growth:delete-capability` | renderer → main | id: number | ✓ |
+| `listGrowthEvidence` | `growth:list-evidence` | renderer → main | capabilityId: number | ✓ |
+| `addGrowthEvidence` | `growth:add-evidence` | renderer → main | capabilityId: number, input: GrowthEvidenceInput | ✓ |
+| `deleteGrowthEvidence` | `growth:delete-evidence` | renderer → main | id: number | ✓ |
+| `listGrowthSnapshots` | `growth:list-snapshots` | renderer → main | capabilityId: number | ✓ |
+| `createGrowthSeason` | `growth:create-season` | renderer → main | input: GrowthSeasonInput | ✓ |
+| `updateGrowthSeason` | `growth:update-season` | renderer → main | id: number, patch: GrowthSeasonPatch | ✓ |
+| `closeGrowthSeason` | `growth:close-season` | renderer → main | id: number, outcome: string | ✓ |
+| `deleteGrowthSeason` | `growth:delete-season` | renderer → main | id: number | ✓ |
+| `pickGrowthCover` | `growth:pick-cover` | renderer → main | title?: string | ✓ |
+| `deleteGrowthCover` | `growth:delete-cover` | renderer → main | name: string | ✓ |
+| `createGrowthChallenge` | `growth:create-challenge` | renderer → main | input: GrowthChallengeInput | ✓ |
+| `updateGrowthChallenge` | `growth:update-challenge` | renderer → main | id: number, patch: GrowthChallengePatch | ✓ |
+| `deleteGrowthChallenge` | `growth:delete-challenge` | renderer → main | id: number | ✓ |
+| `resolveGrowthChallenge` | `growth:resolve-challenge` | renderer → main | id: number, input: GrowthResolveInput | ✓ |
+| `createGrowthArtifact` | `growth:create-artifact` | renderer → main | input: GrowthArtifactInput | ✓ |
+| `updateGrowthArtifact` | `growth:update-artifact` | renderer → main | id: number, patch: GrowthArtifactPatch | ✓ |
+| `deleteGrowthArtifact` | `growth:delete-artifact` | renderer → main | id: number | ✓ |
+| `addGrowthPrediction` | `growth:add-prediction` | renderer → main | input: GrowthPredictionInput | ✓ |
+| `settleGrowthPrediction` | `growth:settle-prediction` | renderer → main | id: number, actual: number | ✓ |
+| `deleteGrowthPrediction` | `growth:delete-prediction` | renderer → main | id: number | ✓ |
+| `addGrowthSelfModel` | `growth:add-self-model` | renderer → main | input: GrowthSelfModelInput | ✓ |
+| `updateGrowthSelfModel` | `growth:update-self-model` | renderer → main | id: number, patch: GrowthSelfModelPatch | ✓ |
+| `deleteGrowthSelfModel` | `growth:delete-self-model` | renderer → main | id: number | ✓ |
+| `addGrowthFeedback` | `growth:add-feedback` | renderer → main | input: GrowthFeedbackInput | ✓ |
+| `updateGrowthFeedback` | `growth:update-feedback` | renderer → main | id: number, input: GrowthFeedbackInput | ✓ |
+| `deleteGrowthFeedback` | `growth:delete-feedback` | renderer → main | id: number | ✓ |
+| `getGrowthTimeline` | `growth:timeline` | renderer → main | — | ✓ |
+| `exportGrowthData` | `growth:export-data` | renderer → main | title: string | ✓ |
+| `previewGrowthImport` | `growth:preview-import` | renderer → main | title: string | ✓ |
+| `commitGrowthImport` | `growth:commit-import` | renderer → main | token: string | ✓ |
+| `saveGrowthAnnualNote` | `growth:save-annual` | renderer → main | input: GrowthAnnualNoteInput | ✓ |
+| `deleteGrowthAnnualNote` | `growth:delete-annual` | renderer → main | year: number | ✓ |
 
 ### Global shortcuts
 

@@ -12,6 +12,13 @@ import {
   deleteResource,
   reorderResources,
   searchResources,
+  moveResources,
+  getResourceCollections,
+  createResourceCollection,
+  renameResourceCollection,
+  setResourceCollectionColor,
+  reorderResourceCollections,
+  deleteResourceCollection,
   syncVaultNotes,
   insertNote,
   renameNoteInDb,
@@ -24,37 +31,7 @@ import {
   getSetting,
   setSetting,
   getAllSettings,
-  getAllTags,
-  reorderTags,
-  setTagColor,
-  renameTag,
-  deleteTag,
-  addGtdTask,
-  getGtdOpenTasks,
-  getGtdCompletedTasks,
-  getGtdProjectTasks,
-  getGtdProjects,
-  updateGtdTask,
-  completeGtdTask,
-  reopenGtdTask,
-  deleteGtdTask,
-  clearCompletedGtdTasks,
-  reorderGtdProjectTasks,
-  reorderGtdInboxTasks,
-  reorderGtdProjects,
-  addGtdProject,
-  updateGtdProject,
-  setGtdProjectArchived,
-  deleteGtdProject,
-  getGtdProject,
-  getGtdProjectLinkIndex,
-  getGtdProjectLinks,
-  setGtdProjectLink,
-  removeGtdProjectLink,
-  renameGtdProjectLinkPath,
-  type GtdProjectLinkRow,
   type VaultNote,
-  renameNoteEntry,
   purgeVaultNotes,
   listPdfDocuments,
   getPdfDocumentsByPaths,
@@ -68,18 +45,86 @@ import {
   setPdfPageCount,
   deletePdfDocuments,
   type PdfUpsertRow,
+  getGrowthState,
+  createGrowthDomain,
+  updateGrowthDomain,
+  createGrowthCapability,
+  updateGrowthCapability,
+  reviewGrowthCapability,
+  deleteGrowthCapability,
+  getGrowthEvidence,
+  addGrowthEvidence,
+  deleteGrowthEvidence,
+  getGrowthSnapshots,
+  createGrowthSeason,
+  updateGrowthSeason,
+  closeGrowthSeason,
+  deleteGrowthSeason,
+  createGrowthChallenge,
+  updateGrowthChallenge,
+  deleteGrowthChallenge,
+  resolveGrowthChallenge,
+  createGrowthArtifact,
+  updateGrowthArtifact,
+  deleteGrowthArtifact,
+  addGrowthPrediction,
+  settleGrowthPrediction,
+  deleteGrowthPrediction,
+  addGrowthSelfModel,
+  updateGrowthSelfModel,
+  deleteGrowthSelfModel,
+  addGrowthFeedback,
+  updateGrowthFeedback,
+  deleteGrowthFeedback,
+  saveGrowthAnnualNote,
+  deleteGrowthAnnualNote,
+  getGrowthTimeline,
+  exportGrowthBackup,
+  importGrowthBackup,
+  growthBackupCounts,
+  growthHasAnyData,
+  listGrowthMediaFiles,
+  isGrowthMediaFileReferenced,
+  getGrowthTasks,
+  addGrowthTask,
+  updateGrowthTask,
+  completeGrowthTask,
+  reopenGrowthTask,
+  deleteGrowthTask,
+  clearCompletedGrowthTasks,
 } from "./database";
 import type {
   AppLaunchState,
   CanvasFile,
   CanvasSaveResult,
   GlobalShortcutStatus,
-  GtdProjectDocsPayload,
-  GtdProjectLink,
-  GtdProjectLinkKind,
-  GtdTaskPatch,
+  GrowthAnnualNoteInput,
+  GrowthArtifactInput,
+  GrowthArtifactPatch,
+  GrowthBackup,
+  GrowthBackupExportResult,
+  GrowthBackupImportResult,
+  GrowthBackupPreview,
+  GrowthCapabilityInput,
+  GrowthCapabilityPatch,
+  GrowthChallengeInput,
+  GrowthChallengePatch,
+  GrowthEvidenceInput,
+  GrowthFeedbackInput,
+  GrowthPredictionInput,
+  GrowthResolveInput,
+  GrowthReviewInput,
+  GrowthSeasonInput,
+  GrowthSeasonPatch,
+  GrowthSelfModelInput,
+  GrowthSelfModelPatch,
+  GrowthTaskInput,
+  GrowthTaskPatch,
   NoteBrief,
+  NoteCollectionsFile,
+  PdfCollectionsFile,
 } from "../src/shared/models";
+import { dedupeNoteCollections, dedupePdfCollections } from "../src/shared/collectionUniqueness";
 import {
   DEFAULT_SHORTCUTS,
   GLOBAL_SHORTCUT_ACTIONS,
@@ -402,6 +447,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "prism-cover", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "prism-pdf", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   { scheme: "prism-asset", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  { scheme: "prism-growth-cover", privileges: { supportFetchAPI: true, stream: true } },
 ]);
 
 // ---- Window state persistence ----
@@ -551,6 +597,27 @@ function createWindow(reopen = false): void {
       }
     }
   });
+
+  // The app removes the application menu on Windows/Linux, which also removes
+  // Electron's default reload / devtools accelerators. Restore them in dev so a
+  // stale renderer can be refreshed without restarting the whole dev server.
+  if (!app.isPackaged) {
+    win.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+      const key = input.key.toLowerCase();
+      const modifier = input.control || input.meta;
+      if (key === "f5" || (modifier && key === "r")) {
+        event.preventDefault();
+        if (modifier && input.shift) win.webContents.reloadIgnoringCache();
+        else win.webContents.reload();
+        return;
+      }
+      if (key === "f12" || (modifier && input.shift && key === "i")) {
+        event.preventDefault();
+        win.webContents.toggleDevTools();
+      }
+    });
+  }
 
   if (process.env.NODE_ENV === "development" || process.argv.includes("--dev")) {
     win.loadURL(`http://localhost:5173${reopen ? "?restore-workspace=1" : ""}`);
@@ -1481,48 +1548,33 @@ async function createCanvasFile(
   return { path: target.path, title: target.title, modifiedAt: stat.mtimeMs };
 }
 
-function toGtdProjectLink(row: GtdProjectLinkRow): GtdProjectLink {
-  const owner = findOwningVault(row.file_path);
-  const exists = fs.existsSync(row.file_path);
-  const validKind =
-    row.kind === "note"
-      ? row.file_path.toLowerCase().endsWith(".md")
-      : row.file_path.toLowerCase().endsWith(".json") &&
-        !!owner &&
-        isAllowedCanvasPath(owner, row.file_path);
-  return {
-    id: row.id,
-    kind: row.kind,
-    vaultPath: owner ?? row.vault_path,
-    filePath: row.file_path,
-    title: row.title,
-    missing: !exists || !owner || !validKind,
-  };
-}
-
-function getGtdProjectDocsPayload(projectId: number): GtdProjectDocsPayload {
-  return {
-    links: getGtdProjectLinks(projectId).map(toGtdProjectLink),
-  };
-}
-
 function registerIpcHandlers(): void {
-  // Resources
-  ipcMain.handle("resources:add", (_e, url: string, title: string, tags: string[], notes: string) => {
-    return addResource(url, title, tags, notes);
+  // Resources (single-assignment collections; tags were migrated to collections)
+  ipcMain.handle("resources:add", (_e, url: string, title: string, notes: string, collectionId: number | null) => {
+    return addResource(url, title, notes, collectionId ?? null);
   });
 
   ipcMain.handle("resources:list", () => getResources());
 
-  ipcMain.handle("resources:update", (_e, id: number, url: string, title: string, tags: string[], notes: string) => {
-    return updateResource(id, url, title, tags, notes);
+  ipcMain.handle("resources:update", (_e, id: number, url: string, title: string, notes: string, collectionId: number | null) => {
+    return updateResource(id, url, title, notes, collectionId ?? null);
   });
 
   ipcMain.handle("resources:delete", (_e, id: number) => deleteResource(id));
 
+  ipcMain.handle("resources:move-to-collection", (_e, ids: number[], collectionId: number | null) =>
+    moveResources(ids, collectionId ?? null));
+
   ipcMain.handle("resources:search", (_e, query: string) => searchResources(query, searchResultLimit()));
 
   ipcMain.handle("resources:reorder", (_e, orderedIds: number[]) => reorderResources(orderedIds));
+
+  ipcMain.handle("resource-collections:list", () => getResourceCollections());
+  ipcMain.handle("resource-collections:create", (_e, name: string, color: string) => createResourceCollection(name, color ?? ""));
+  ipcMain.handle("resource-collections:rename", (_e, id: number, name: string) => renameResourceCollection(id, name));
+  ipcMain.handle("resource-collections:set-color", (_e, id: number, color: string) => setResourceCollectionColor(id, color));
+  ipcMain.handle("resource-collections:reorder", (_e, orderedIds: number[]) => reorderResourceCollections(orderedIds));
+  ipcMain.handle("resource-collections:delete", (_e, id: number) => deleteResourceCollection(id));
 
   ipcMain.handle("fetch:title", async (_e, url: string) => fetchPageTitle(url));
 
@@ -1536,7 +1588,10 @@ function registerIpcHandlers(): void {
     if (isPrivateVault(vaultPath)) requireUnlocked(vaultPath);
     return {
       notes: isPrivateVault(vaultPath) ? privateNoteBriefs(vaultPath) : getNoteList(vaultPath),
-      collections: readSidecar(path.join(vaultPath, ".prism"), "collections.json"),
+      // Single-assignment collections: dedupe legacy duplicates on the way out.
+      collections: dedupeNoteCollections(
+        readSidecar<NoteCollectionsFile>(path.join(vaultPath, ".prism"), "collections.json"),
+      ),
       canvases: listCanvasFiles(vaultPath),
     };
   });
@@ -1597,9 +1652,7 @@ function registerIpcHandlers(): void {
       fs.renameSync(oldPath, newPath);
     }
     if (isPrivate) {
-      // Not indexed, but project links may point at this path — keep them in sync.
       markPrivateWrite(vaultPath);
-      renameNoteEntry(oldPath, newPath, finalTitle);
       const stat = await fs.promises.stat(newPath);
       return {
         id: syntheticNoteId(newPath),
@@ -1612,7 +1665,6 @@ function registerIpcHandlers(): void {
       };
     }
     const updated = renameNoteInDb(oldPath, newPath, finalTitle);
-    renameNoteEntry(oldPath, newPath, finalTitle);
     if (updated) return updated;
     // Note wasn't indexed yet (e.g. created externally) — index it now
     const content = fs.readFileSync(newPath, "utf-8");
@@ -1783,7 +1835,6 @@ function registerIpcHandlers(): void {
     if (!isSamePath(newPath, canvasPath)) {
       fs.renameSync(canvasPath, newPath);
     }
-    renameGtdProjectLinkPath(canvasPath, newPath, finalTitle);
     const stat = fs.statSync(newPath);
     return { path: newPath, title: finalTitle, modifiedAt: stat.mtimeMs };
   });
@@ -1820,65 +1871,141 @@ function registerIpcHandlers(): void {
     if (resolveColorScheme(getSetting("color_mode")) === "system") applyNativeColorMode("system");
   });
 
-  // Tags
-  ipcMain.handle("tags:list", () => getAllTags());
-  ipcMain.handle("tags:reorder", (_e, orderedNames: string[]) => reorderTags(orderedNames));
-  ipcMain.handle("tags:set-color", (_e, name: string, color: string) => setTagColor(name, color));
-  ipcMain.handle("tags:rename", (_e, oldName: string, newName: string) => renameTag(oldName, newName));
-  ipcMain.handle("tags:delete", (_e, name: string) => deleteTag(name));
-
-  // GTD
-  ipcMain.handle("gtd:open-tasks", () => getGtdOpenTasks());
-  ipcMain.handle("gtd:completed-tasks", (_e, limit?: number) => getGtdCompletedTasks(limit ?? 200));
-  ipcMain.handle("gtd:project-tasks", (_e, projectId: number) => getGtdProjectTasks(projectId));
-  ipcMain.handle("gtd:projects", (_e, archived: boolean) => getGtdProjects(archived));
-  ipcMain.handle(
-    "gtd:add-task",
-    (_e, title: string, projectId: number | null = null, scheduledDate: string | null = null) =>
-      addGtdTask(title, projectId, scheduledDate),
+  // Growth tasks: the only scheduled commitments in the app.
+  ipcMain.handle("growth:tasks", () => getGrowthTasks());
+  ipcMain.handle("growth:add-task", (_e, input: GrowthTaskInput) => addGrowthTask(input));
+  ipcMain.handle("growth:update-task", (_e, id: number, patch: GrowthTaskPatch) =>
+    updateGrowthTask(id, patch),
   );
-  ipcMain.handle("gtd:update-task", (_e, id: number, patch: GtdTaskPatch) => updateGtdTask(id, patch));
-  ipcMain.handle("gtd:complete-task", (_e, id: number) => completeGtdTask(id));
-  ipcMain.handle("gtd:reopen-task", (_e, id: number) => reopenGtdTask(id));
-  ipcMain.handle("gtd:delete-task", (_e, id: number) => deleteGtdTask(id));
-  ipcMain.handle("gtd:clear-completed", () => clearCompletedGtdTasks());
-  ipcMain.handle("gtd:reorder-project-tasks", (_e, projectId: number, orderedIds: number[]) => reorderGtdProjectTasks(projectId, orderedIds));
-  ipcMain.handle("gtd:reorder-inbox", (_e, orderedIds: number[]) =>
-    reorderGtdInboxTasks(Array.isArray(orderedIds) ? orderedIds.map(Number) : []),
-  );
-  ipcMain.handle("gtd:reorder-projects", (_e, orderedIds: number[]) =>
-    reorderGtdProjects(Array.isArray(orderedIds) ? orderedIds.map(Number) : []),
-  );
-  ipcMain.handle("gtd:add-project", (_e, title: string) => addGtdProject(title));
-  ipcMain.handle("gtd:update-project", (_e, id: number, patch: { title?: string; description?: string; color?: string }) => updateGtdProject(id, patch));
-  ipcMain.handle("gtd:archive-project", (_e, id: number, archived: boolean) => setGtdProjectArchived(id, archived));
-  ipcMain.handle("gtd:delete-project", (_e, id: number) => deleteGtdProject(id));
+  ipcMain.handle("growth:complete-task", (_e, id: number) => completeGrowthTask(id));
+  ipcMain.handle("growth:reopen-task", (_e, id: number) => reopenGrowthTask(id));
+  ipcMain.handle("growth:delete-task", (_e, id: number) => deleteGrowthTask(id));
+  ipcMain.handle("growth:clear-completed-tasks", () => clearCompletedGrowthTasks());
 
-  ipcMain.handle("gtd:project-docs", (_e, projectId: number) => getGtdProjectDocsPayload(projectId));
-  ipcMain.handle("gtd:project-link-index", () => getGtdProjectLinkIndex());
-
-  ipcMain.handle(
-    "gtd:set-project-link",
-    (_e, projectId: number, kind: GtdProjectLinkKind, filePath: string, title: string) => {
-      if (kind !== "note" && kind !== "canvas") throw new Error("INVALID_PROJECT_LINK_KIND");
-      const project = getGtdProject(projectId);
-      if (project.archivedAt) throw new Error("GTD project is archived");
-      const vaultPath = findOwningVault(filePath);
-      if (!vaultPath) throw new Error("FILE_OUTSIDE_VAULT");
-      if (!fs.existsSync(filePath)) throw new Error("FILE_MISSING");
-      if (kind === "note") {
-        if (!filePath.toLowerCase().endsWith(".md")) throw new Error("INVALID_NOTE_FILE");
-      } else {
-        assertCanvasFile(filePath);
-      }
-      const cleanTitle = title?.trim() || path.basename(filePath, path.extname(filePath));
-      return toGtdProjectLink(
-        setGtdProjectLink(projectId, kind, vaultPath, filePath, cleanTitle),
-      );
-    },
+  // Growth (养成): the capability scale. Every payload is narrowed here so a
+  // malformed renderer call fails fast instead of writing half a row; the
+  // review handler is the only one that can change level/confidence.
+  ipcMain.handle("growth:state", () => getGrowthState());
+  // Copy a picked image into the app data dir; the renderer stores only the
+  // generated file name on the season row.
+  ipcMain.handle("growth:pick-cover", (_e, title?: string) =>
+    pickImageTo(growthCoversDir, {
+      title: typeof title === "string" && title.trim() ? title.trim() : "Select Image",
+      maxBytes: 60 * 1024 * 1024,
+      maxWidth: 2400,
+      jpegQuality: 82,
+    }),
   );
-
-  ipcMain.handle("gtd:remove-project-link", (_e, linkId: number) => removeGtdProjectLink(linkId));
+  ipcMain.handle("growth:delete-cover", (_e, name: string) =>
+    deleteGrowthCover(String(name ?? "")),
+  );
+  ipcMain.handle("growth:create-domain", (_e, name: string, weight: number, theme?: string) =>
+    createGrowthDomain(String(name ?? ""), Number(weight), theme),
+  );
+  ipcMain.handle("growth:update-domain", (_e, id: number, patch: { name?: string; weight?: number; theme?: string }) =>
+    updateGrowthDomain(Number(id), {
+      name: typeof patch?.name === "string" ? patch.name : undefined,
+      weight: patch?.weight,
+      theme: typeof patch?.theme === "string" ? patch.theme : undefined,
+    }),
+  );
+  ipcMain.handle("growth:create-capability", (_e, input: GrowthCapabilityInput) =>
+    createGrowthCapability(input),
+  );
+  ipcMain.handle("growth:update-capability", (_e, id: number, patch: GrowthCapabilityPatch) =>
+    updateGrowthCapability(Number(id), patch ?? {}),
+  );
+  ipcMain.handle("growth:review-capability", (_e, id: number, input: GrowthReviewInput) =>
+    reviewGrowthCapability(Number(id), input),
+  );
+  ipcMain.handle("growth:delete-capability", async (_e, id: number) => {
+    const files = deleteGrowthCapability(Number(id));
+    await deleteGrowthMediaFiles(files);
+  });
+  ipcMain.handle("growth:list-evidence", (_e, capabilityId: number) =>
+    getGrowthEvidence(Number(capabilityId)),
+  );
+  ipcMain.handle("growth:add-evidence", (_e, capabilityId: number, input: GrowthEvidenceInput) =>
+    addGrowthEvidence(Number(capabilityId), input),
+  );
+  ipcMain.handle("growth:delete-evidence", (_e, id: number) => deleteGrowthEvidence(Number(id)));
+  ipcMain.handle("growth:list-snapshots", (_e, capabilityId: number) =>
+    getGrowthSnapshots(Number(capabilityId)),
+  );
+  ipcMain.handle("growth:create-season", (_e, input: GrowthSeasonInput) => createGrowthSeason(input));
+  ipcMain.handle("growth:update-season", (_e, id: number, patch: GrowthSeasonPatch) =>
+    updateGrowthSeason(Number(id), patch ?? {}),
+  );
+  ipcMain.handle("growth:close-season", (_e, id: number, outcome: string) =>
+    closeGrowthSeason(Number(id), String(outcome ?? "")),
+  );
+  ipcMain.handle("growth:delete-season", async (_e, id: number) => {
+    const files = deleteGrowthSeason(Number(id));
+    await deleteGrowthMediaFiles(files);
+  });
+  ipcMain.handle("growth:create-challenge", (_e, input: GrowthChallengeInput) =>
+    createGrowthChallenge(input),
+  );
+  ipcMain.handle("growth:update-challenge", (_e, id: number, patch: GrowthChallengePatch) =>
+    updateGrowthChallenge(Number(id), patch ?? {}),
+  );
+  ipcMain.handle("growth:delete-challenge", (_e, id: number) =>
+    deleteGrowthChallenge(Number(id)),
+  );
+  ipcMain.handle("growth:resolve-challenge", (_e, id: number, input: GrowthResolveInput) =>
+    resolveGrowthChallenge(Number(id), input),
+  );
+  ipcMain.handle("growth:create-artifact", (_e, input: GrowthArtifactInput) =>
+    createGrowthArtifact(input),
+  );
+  ipcMain.handle("growth:update-artifact", (_e, id: number, patch: GrowthArtifactPatch) =>
+    updateGrowthArtifact(Number(id), patch ?? {}),
+  );
+  ipcMain.handle("growth:delete-artifact", async (_e, id: number) => {
+    const files = deleteGrowthArtifact(Number(id));
+    await deleteGrowthMediaFiles(files);
+  });
+  ipcMain.handle("growth:add-prediction", (_e, input: GrowthPredictionInput) =>
+    addGrowthPrediction(input),
+  );
+  ipcMain.handle("growth:settle-prediction", (_e, id: number, actual: number) =>
+    settleGrowthPrediction(Number(id), Number(actual)),
+  );
+  ipcMain.handle("growth:delete-prediction", (_e, id: number) =>
+    deleteGrowthPrediction(Number(id)),
+  );
+  ipcMain.handle("growth:add-self-model", (_e, input: GrowthSelfModelInput) =>
+    addGrowthSelfModel(input),
+  );
+  ipcMain.handle("growth:update-self-model", (_e, id: number, patch: GrowthSelfModelPatch) =>
+    updateGrowthSelfModel(Number(id), patch ?? {}),
+  );
+  ipcMain.handle("growth:delete-self-model", (_e, id: number) =>
+    deleteGrowthSelfModel(Number(id)),
+  );
+  ipcMain.handle("growth:add-feedback", (_e, input: GrowthFeedbackInput) =>
+    addGrowthFeedback(input),
+  );
+  ipcMain.handle("growth:update-feedback", (_e, id: number, input: GrowthFeedbackInput) =>
+    updateGrowthFeedback(Number(id), input),
+  );
+  ipcMain.handle("growth:delete-feedback", (_e, id: number) => deleteGrowthFeedback(Number(id)));
+  ipcMain.handle("growth:timeline", () => getGrowthTimeline());
+  ipcMain.handle("growth:export-data", (_e, title: string) =>
+    exportGrowthBackupFile(String(title ?? "")),
+  );
+  ipcMain.handle("growth:preview-import", (_e, title: string) =>
+    previewGrowthImport(String(title ?? "")),
+  );
+  ipcMain.handle("growth:commit-import", (_e, token: string) =>
+    commitGrowthImport(String(token)),
+  );
+  ipcMain.handle("growth:save-annual", (_e, input: GrowthAnnualNoteInput) =>
+    saveGrowthAnnualNote(input),
+  );
+  ipcMain.handle("growth:delete-annual", (_e, year: number) =>
+    deleteGrowthAnnualNote(Number(year)),
+  );
 
   // Global shortcuts: registration state feeds the "could not register"
   // warning in the shortcuts settings. The capture popup itself is opened by
@@ -1970,7 +2097,9 @@ function registerIpcHandlers(): void {
   // Note collections
   ipcMain.handle("note-collections:load", (_e, vaultPath: string) => {
     requireVaultRoot(vaultPath);
-    return readSidecar(path.join(vaultPath, ".prism"), "collections.json");
+    return dedupeNoteCollections(
+      readSidecar<NoteCollectionsFile>(path.join(vaultPath, ".prism"), "collections.json"),
+    );
   });
 
   ipcMain.handle("note-collections:save", (_e, vaultPath: string, data: any) => {
@@ -2098,7 +2227,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("pdf-collections:load", () => {
     const repo = pdfRepoPath;
     if (!repo) return null;
-    return readSidecar(path.join(repo, ".prism"), "pdf-collections.json");
+    return dedupePdfCollections(
+      readSidecar<PdfCollectionsFile>(path.join(repo, ".prism"), "pdf-collections.json"),
+    );
   });
 
   ipcMain.handle("pdf-collections:save", (_e, repoPath: string, data: any) => {
@@ -2259,6 +2390,309 @@ function registerAssetProtocol(): void {
   });
 }
 
+// Seasons can carry a theme photo. Growth data lives in SQLite, not in a vault,
+// so covers are copied into the app data dir and served from a dedicated
+// scheme. File names are generated here, which keeps path traversal impossible.
+function growthCoversDir(): string {
+  const dir = path.join(app.getPath("userData"), "growth-covers");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// ---- Growth: JSON backup (portable, ignores vault/PDF files) ----
+const GROWTH_BACKUP_FORMAT = "prism-growth";
+const MAX_GROWTH_BACKUP_BYTES = 60 * 1024 * 1024;
+
+interface PendingGrowthImport {
+  token: string;
+  bundle: GrowthBackup;
+  fileName: string;
+}
+
+let pendingGrowthImport: PendingGrowthImport | null = null;
+
+function isGrowthBackup(value: unknown): value is GrowthBackup {
+  if (!value || typeof value !== "object") return false;
+  const source = value as Record<string, unknown>;
+  if (source.format !== GROWTH_BACKUP_FORMAT) return false;
+  if (Number(source.version) !== 3) throw new Error("GROWTH_IMPORT_VERSION");
+  if (typeof source.covers !== "object" || source.covers === null || Array.isArray(source.covers)) {
+    return false;
+  }
+  return [
+    "domains",
+    "capabilities",
+    "evidence",
+    "snapshots",
+    "seasons",
+    "challenges",
+    "artifacts",
+    "tasks",
+    "predictions",
+    "selfModel",
+    "feedback",
+    "annualNotes",
+  ].every((key) => Array.isArray(source[key]));
+}
+
+/** Read every media file referenced by a growth row; missing files are skipped. */
+function attachGrowthCovers(bundle: GrowthBackup): GrowthBackup {
+  const covers: Record<string, string> = {};
+  const seen = new Set<string>();
+  // Seasons and works share the app-managed media directory; both are embedded
+  // so a backup restores the visual state, not just the rows.
+  const names = listGrowthMediaFiles();
+  for (const name of names) {
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes("..")) continue;
+    const ext = path.extname(name).slice(1).toLowerCase();
+    const mime = ASSET_MIME[ext];
+    if (!mime || !mime.startsWith("image/")) continue;
+    try {
+      const data = fs.readFileSync(path.join(growthCoversDir(), name));
+      covers[name] = `data:${mime};base64,${data.toString("base64")}`;
+    } catch {
+      // A deleted cover should not block the backup.
+    }
+  }
+  return { ...bundle, covers };
+}
+
+function growthBackupsDir(): string {
+  const dir = path.join(app.getPath("userData"), "growth-backups");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+async function exportGrowthBackupFile(title: string): Promise<GrowthBackupExportResult> {
+  if (!mainWindow) return { canceled: true };
+  const bundle = attachGrowthCovers(exportGrowthBackup());
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: title || undefined,
+    defaultPath: `prism-growth-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  await fs.promises.writeFile(result.filePath, JSON.stringify(bundle, null, 2), "utf8");
+  return {
+    canceled: false,
+    fileName: path.basename(result.filePath),
+    counts: growthBackupCounts(bundle),
+  };
+}
+
+function writeGrowthCoverData(dataUrl: string): string {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(dataUrl);
+  if (!match) throw new Error("GROWTH_IMPORT_INVALID:cover");
+  const mime = match[1].toLowerCase();
+  const ext = Object.entries(ASSET_MIME).find(([, value]) => value === mime)?.[0];
+  if (!ext || !mime.startsWith("image/")) throw new Error("GROWTH_IMPORT_INVALID:cover");
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length === 0 || buffer.length > 20 * 1024 * 1024) {
+    throw new Error("GROWTH_IMPORT_INVALID:cover");
+  }
+  const name = `growth-import-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(growthCoversDir(), name), buffer);
+  return name;
+}
+
+async function previewGrowthImport(title: string): Promise<GrowthBackupPreview | null> {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: title || undefined,
+    properties: ["openFile"],
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  const filePath = result.canceled ? null : result.filePaths[0];
+  if (!filePath) return null;
+  const stat = await fs.promises.stat(filePath);
+  if (stat.size > MAX_GROWTH_BACKUP_BYTES) throw new Error("GROWTH_IMPORT_TOO_LARGE");
+  const raw = await fs.promises.readFile(filePath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("GROWTH_IMPORT_INVALID");
+  }
+  if (!isGrowthBackup(parsed)) throw new Error("GROWTH_IMPORT_INVALID");
+  const counts = growthBackupCounts(parsed);
+  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  pendingGrowthImport = { token, bundle: parsed, fileName: path.basename(filePath) };
+  return {
+    token,
+    fileName: path.basename(filePath),
+    exportedAt: typeof parsed.exportedAt === "string" ? parsed.exportedAt : "",
+    appVersion: typeof parsed.appVersion === "string" ? parsed.appVersion : "",
+    counts,
+    hasExistingData: growthHasAnyData(),
+  };
+}
+
+async function commitGrowthImport(token: string): Promise<GrowthBackupImportResult> {
+  const pending = pendingGrowthImport;
+  if (!pending || pending.token !== token) throw new Error("GROWTH_IMPORT_EXPIRED");
+
+  const current = attachGrowthCovers(exportGrowthBackup());
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupFileName = `growth-before-import-${stamp}.json`;
+  await fs.promises.writeFile(
+    path.join(growthBackupsDir(), backupFileName),
+    JSON.stringify(current, null, 2),
+    "utf8",
+  );
+
+  const coverMap: Record<string, string> = {};
+  const written: string[] = [];
+  try {
+    for (const [oldName, dataUrl] of Object.entries(pending.bundle.covers)) {
+      const newName = writeGrowthCoverData(dataUrl);
+      coverMap[oldName] = newName;
+      written.push(newName);
+    }
+    const counts = importGrowthBackup(pending.bundle, coverMap);
+    pendingGrowthImport = null;
+    // Replacing the media rows orphans the previous files; collect them now
+    // instead of waiting for the next app launch.
+    await gcGrowthMediaFiles().catch(() => undefined);
+    return { counts, backupFileName };
+  } catch (error) {
+    for (const name of written) {
+      await fs.promises.unlink(path.join(growthCoversDir(), name)).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+interface PickImageOptions {
+  /** Localised dialog title. */
+  title: string;
+  /** Optional size cap; falls back to the attachment limit. */
+  maxBytes?: number;
+  /** Downscale anything wider than this before copying (never touches the source). */
+  maxWidth?: number;
+  /** JPEG quality used when downscaling; PNG keeps lossless encoding. */
+  jpegQuality?: number;
+}
+
+/** Re-encode a large photo into a smaller copy; returns null when unnecessary. */
+async function compressedCopy(
+  source: string,
+  stat: { size: number },
+  options: PickImageOptions,
+): Promise<{ name: string; buffer: Buffer } | null> {
+  if (!options.maxWidth) return null;
+  const image = nativeImage.createFromPath(source);
+  if (image.isEmpty()) return null;
+  const size = image.getSize();
+  const tooWide = size.width > options.maxWidth;
+  const tooHeavy = stat.size > 2 * 1024 * 1024;
+  if (!tooWide && !tooHeavy) return null;
+  const resized = tooWide
+    ? image.resize({ width: options.maxWidth, quality: "good" })
+    : image;
+  const targetSize = resized.getSize();
+  if (targetSize.width <= 0 || targetSize.height <= 0) return null;
+  const keepPng = path.extname(source).slice(1).toLowerCase() === "png";
+  const ext = keepPng ? "png" : "jpg";
+  const buffer = keepPng ? resized.toPNG() : resized.toJPEG(options.jpegQuality ?? 82);
+  return { name: `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`, buffer };
+}
+
+/**
+ * Copies a user-picked image into `targetDir()` and returns the generated file
+ * name. Shared by every "pick an image" flow so filters, size checks and the
+ * naming scheme stay in one place. Compression only rewrites the copy.
+ */
+async function pickImageTo(
+  targetDir: () => string,
+  options: PickImageOptions,
+): Promise<string | null> {
+  if (!mainWindow) return null;
+  const imageExts = Object.keys(ASSET_MIME).filter((ext) => ASSET_MIME[ext].startsWith("image/"));
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    title: options.title,
+    filters: [{ name: "Images", extensions: imageExts }],
+  });
+  const source = result.canceled ? null : result.filePaths[0];
+  if (!source) return null;
+  const ext = path.extname(source).slice(1).toLowerCase();
+  if (!ASSET_MIME[ext] || !ASSET_MIME[ext].startsWith("image/")) {
+    throw new Error("UNSUPPORTED_TYPE");
+  }
+  const stat = await fs.promises.stat(source);
+  if (stat.size > (options.maxBytes ?? MAX_ATTACHMENT_BYTES)) throw new Error("FILE_TOO_LARGE");
+  const compressed = await compressedCopy(source, stat, options);
+  if (compressed) {
+    await fs.promises.writeFile(path.join(targetDir(), compressed.name), compressed.buffer);
+    return compressed.name;
+  }
+  const name = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  await fs.promises.copyFile(source, path.join(targetDir(), name));
+  return name;
+}
+
+/**
+ * Removes one generated media file. A saved record may still reference it (for
+ * example when the renderer cleans up an old pick after save), so the reference
+ * check is the final guard against deleting a live image.
+ */
+async function deleteGrowthCover(name: string): Promise<void> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes("..")) return;
+  if (isGrowthMediaFileReferenced(name)) return;
+  await fs.promises.unlink(path.join(growthCoversDir(), name)).catch(() => undefined);
+}
+
+async function deleteGrowthMediaFiles(files: string[]): Promise<void> {
+  for (const name of new Set(files)) {
+    if (!name) continue;
+    await deleteGrowthCover(name);
+  }
+}
+
+/**
+ * One startup sweep for files left behind by a crash, a failed import or an
+ * owner deleted through a cascade. It must not run while dialogs are open:
+ * newly picked files are drafts and are not in growth_media yet.
+ */
+async function gcGrowthMediaFiles(): Promise<void> {
+  const referenced = new Set(listGrowthMediaFiles());
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(growthCoversDir(), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || referenced.has(entry.name)) continue;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.name) || entry.name.includes("..")) {
+      continue;
+    }
+    await fs.promises.unlink(path.join(growthCoversDir(), entry.name)).catch(() => undefined);
+  }
+}
+
+function registerGrowthCoverProtocol(): void {
+  protocol.handle("prism-growth-cover", async (request) => {
+    try {
+      const raw = request.url.replace(/^prism-growth-cover:\/*/, "").split(/[?#]/)[0];
+      const name = decodeURIComponent(raw);
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes("..")) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const mime = ASSET_MIME[path.extname(name).slice(1).toLowerCase()];
+      if (!mime || !mime.startsWith("image/")) return new Response("unsupported", { status: 415 });
+      const data = await fs.promises.readFile(path.join(growthCoversDir(), name));
+      return new Response(new Uint8Array(data), {
+        headers: { "content-type": mime, "cache-control": "public, max-age=86400" },
+      });
+    } catch {
+      return new Response("not found", { status: 404 });
+    }
+  });
+}
+
 function pdfCorsHeaders(): Record<string, string> {
   return {
     "access-control-allow-origin": "*",
@@ -2415,9 +2849,12 @@ if (!hasSingleInstanceLock) {
     });
   }
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
     initDatabase();
+    // Finish the orphan sweep before any window can pick a new draft file.
+    // A failed sweep must not keep the app from starting.
+    await gcGrowthMediaFiles().catch(() => undefined);
     setIdleMinutesProvider(() => Number(getSetting("private_lock_minutes")) || 10);
     setLockListener((vaultPath) => mainWindow?.webContents.send("vault:locked", vaultPath));
     setUnlockListener((vaultPath) => mainWindow?.webContents.send("vault:unlocked", vaultPath));
@@ -2427,6 +2864,7 @@ if (!hasSingleInstanceLock) {
     // Never let the close-to-tray handler block an OS shutdown/logoff.
     powerMonitor.on("shutdown", () => { isQuitting = true; });
     registerAssetProtocol();
+    registerGrowthCoverProtocol();
     registerCoverProtocol();
     registerPdfProtocol();
     registerPdfjsAssetProtocol();

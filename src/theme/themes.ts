@@ -149,6 +149,19 @@ const lightSurfacesFor = (v: Omit<SurfacePalette, "surface" | "elevated" | "over
   ...v,
 });
 
+/**
+ * Cards sit on a tinted paper instead of pure white, so a themed light mode
+ * carries its accent into the card layer too. 3% is enough to read as "paper"
+ * next to the white field layer without looking like a colour cast.
+ */
+const PAPER_ACCENT_RATIO = 0.03;
+
+function tintPaper(accent: string, ratio = PAPER_ACCENT_RATIO): string {
+  const n = parseInt(accent.slice(1), 16);
+  const mix = (channel: number) => Math.round(channel * ratio + 255 * (1 - ratio));
+  return `${mix((n >> 16) & 255)} ${mix((n >> 8) & 255)} ${mix(n & 255)}`;
+}
+
 // Neutral gray (Slate theme and generic fallback)
 export const lightSurfaces: SurfacePalette = lightSurfacesFor({
   base: "246 246 247",
@@ -274,7 +287,7 @@ const aeroLightSurfaces: SurfacePalette = {
   strong: "176 204 224",
 };
 
-export const themes: ThemeColors[] = [
+const themeDefs: ThemeColors[] = [
   {
     id: "violet",
     name: "紫罗兰",
@@ -436,3 +449,14 @@ export const themes: ThemeColors[] = [
     },
   },
 ];
+
+export const themes: ThemeColors[] = themeDefs.map((theme) => ({
+  ...theme,
+  light: {
+    ...theme.light,
+    surfaces: {
+      ...theme.light.surfaces,
+      surface: tintPaper(theme.primary),
+    },
+  },
+}));

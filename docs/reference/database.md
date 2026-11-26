@@ -2,11 +2,20 @@
 
 # 数据库参考
 
-SQLite 文件位于 Electron `userData/prism.db`，WAL 模式。本文件直接抽取建表语句，共 **9** 张表；语义与迁移说明见 `docs/architecture/data-model.md`。
+SQLite 文件位于 Electron `userData/prism.db`，WAL 模式。本文件直接抽取建表语句，共 **18** 张表；语义与迁移说明见 `docs/architecture/data-model.md`。
 
 源码：[database.ts](../../electron/database.ts)
 
 ## 表
+
+### `resource_collections`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+name TEXT NOT NULL UNIQUE,
+color TEXT NOT NULL DEFAULT '',
+sort_order INTEGER NOT NULL DEFAULT 0
+```
 
 ### `resources`
 
@@ -16,26 +25,8 @@ url TEXT NOT NULL UNIQUE,
 title TEXT NOT NULL DEFAULT '',
 notes TEXT NOT NULL DEFAULT '',
 sort_order INTEGER NOT NULL DEFAULT 0,
+collection_id INTEGER REFERENCES resource_collections(id) ON DELETE SET NULL,
 created_at TEXT NOT NULL DEFAULT (datetime('now'))
-```
-
-### `tags`
-
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-name TEXT NOT NULL UNIQUE,
-sort_order INTEGER NOT NULL DEFAULT 0,
-color TEXT NOT NULL DEFAULT ''
-```
-
-### `resource_tags`
-
-```sql
-resource_id INTEGER NOT NULL,
-tag_id INTEGER NOT NULL,
-PRIMARY KEY (resource_id, tag_id),
-FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
-FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 ```
 
 ### `notes`
@@ -57,49 +48,6 @@ key TEXT PRIMARY KEY,
 value TEXT NOT NULL DEFAULT ''
 ```
 
-### `gtd_projects`
-
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-title TEXT NOT NULL,
-description TEXT NOT NULL DEFAULT '',
-color TEXT NOT NULL DEFAULT '',
-sort_order INTEGER NOT NULL DEFAULT 0,
-created_at TEXT NOT NULL DEFAULT (datetime('now')),
-archived_at TEXT
-```
-
-### `gtd_tasks`
-
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-title TEXT NOT NULL,
-notes TEXT NOT NULL DEFAULT '',
-project_id INTEGER,
-scheduled_date TEXT,
-due_date TEXT,
-completed_at TEXT,
-created_at TEXT NOT NULL DEFAULT (datetime('now')),
-sort_order INTEGER NOT NULL DEFAULT 0,
-inbox_order INTEGER NOT NULL DEFAULT 0,
-FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE SET NULL
-```
-
-### `gtd_project_links`
-
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-project_id INTEGER NOT NULL,
-kind TEXT NOT NULL CHECK (kind IN ('note','canvas')),
-vault_path TEXT NOT NULL,
-file_path TEXT NOT NULL,
-title TEXT NOT NULL,
-created_at TEXT NOT NULL DEFAULT (datetime('now')),
-sort_order INTEGER NOT NULL DEFAULT 0,
-UNIQUE (project_id, file_path),
-FOREIGN KEY (project_id) REFERENCES gtd_projects(id) ON DELETE CASCADE
-```
-
 ### `pdf_documents`
 
 ```sql
@@ -118,39 +66,246 @@ cover_dirty INTEGER NOT NULL DEFAULT 0,
 added_at TEXT NOT NULL DEFAULT (datetime('now'))
 ```
 
+### `growth_domains`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+name TEXT NOT NULL UNIQUE,
+weight REAL NOT NULL DEFAULT 0.15,
+theme TEXT NOT NULL DEFAULT 'violet',
+sort_order INTEGER NOT NULL DEFAULT 0,
+created_at TEXT NOT NULL DEFAULT (datetime('now'))
+```
+
+### `growth_capabilities`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+domain_id INTEGER NOT NULL,
+parent_id INTEGER,
+name TEXT NOT NULL,
+level INTEGER NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 6),
+confidence INTEGER NOT NULL DEFAULT 1 CHECK (confidence BETWEEN 0 AND 5),
+half_life TEXT NOT NULL DEFAULT 'mid' CHECK (half_life IN ('long','mid','short')),
+portability TEXT NOT NULL DEFAULT 'high' CHECK (portability IN ('high','low')),
+status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','observe','archived')),
+target_level INTEGER CHECK (target_level BETWEEN 1 AND 6),
+target_date TEXT,
+evidence_definition TEXT NOT NULL DEFAULT '',
+notes TEXT NOT NULL DEFAULT '',
+last_evidence_at TEXT,
+last_reviewed_at TEXT,
+sort_order INTEGER NOT NULL DEFAULT 0,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (domain_id) REFERENCES growth_domains(id) ON DELETE RESTRICT,
+FOREIGN KEY (parent_id) REFERENCES growth_capabilities(id) ON DELETE SET NULL
+```
+
+### `growth_evidence`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+capability_id INTEGER NOT NULL,
+kind TEXT NOT NULL CHECK (kind IN ('artifact','feedback','metric','usage')),
+title TEXT NOT NULL,
+detail TEXT NOT NULL DEFAULT '',
+url TEXT NOT NULL DEFAULT '',
+happened_on TEXT,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE CASCADE
+```
+
+### `growth_snapshots`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+capability_id INTEGER NOT NULL,
+level INTEGER NOT NULL,
+confidence INTEGER NOT NULL,
+note TEXT NOT NULL DEFAULT '',
+taken_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE CASCADE
+```
+
+### `growth_seasons`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+title TEXT NOT NULL,
+focus TEXT NOT NULL DEFAULT '',
+start_date TEXT NOT NULL,
+end_date TEXT NOT NULL,
+theme TEXT NOT NULL DEFAULT 'violet',
+closed_at TEXT,
+outcome TEXT NOT NULL DEFAULT '',
+created_at TEXT NOT NULL DEFAULT (datetime('now'))
+```
+
+### `growth_challenges`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+capability_id INTEGER,
+season_id INTEGER,
+title TEXT NOT NULL,
+description TEXT NOT NULL DEFAULT '',
+goal TEXT NOT NULL DEFAULT '',
+criteria TEXT NOT NULL DEFAULT '',
+reflection TEXT NOT NULL DEFAULT '',
+body TEXT NOT NULL DEFAULT '',
+difficulty_level INTEGER NOT NULL DEFAULT 3 CHECK (difficulty_level BETWEEN 1 AND 6),
+status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','passed','failed','abandoned')),
+attribution TEXT CHECK (attribution IN ('stats','buff')),
+result_note TEXT NOT NULL DEFAULT '',
+resolved_on TEXT,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE CASCADE,
+FOREIGN KEY (season_id) REFERENCES growth_seasons(id) ON DELETE SET NULL
+```
+
+### `growth_artifacts`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+capability_id INTEGER,
+challenge_id INTEGER,
+title TEXT NOT NULL,
+kind TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('demo','article','repo','doc','other')),
+url TEXT NOT NULL DEFAULT '',
+note TEXT NOT NULL DEFAULT '',
+body TEXT NOT NULL DEFAULT '',
+created_on TEXT,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE CASCADE,
+FOREIGN KEY (challenge_id) REFERENCES growth_challenges(id) ON DELETE SET NULL
+```
+
+### `growth_tasks`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+title TEXT NOT NULL,
+notes TEXT NOT NULL DEFAULT '',
+capability_id INTEGER,
+challenge_id INTEGER,
+scheduled_date TEXT,
+due_date TEXT,
+completed_at TEXT,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE SET NULL,
+FOREIGN KEY (challenge_id) REFERENCES growth_challenges(id) ON DELETE SET NULL
+```
+
+### `growth_predictions`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+kind TEXT NOT NULL CHECK (kind IN ('time','difficulty','mood')),
+subject TEXT NOT NULL,
+predicted REAL NOT NULL,
+actual REAL,
+predicted_on TEXT NOT NULL,
+note TEXT NOT NULL DEFAULT '',
+capability_id INTEGER,
+challenge_id INTEGER,
+task_id INTEGER,
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+FOREIGN KEY (capability_id) REFERENCES growth_capabilities(id) ON DELETE SET NULL,
+FOREIGN KEY (challenge_id) REFERENCES growth_challenges(id) ON DELETE SET NULL,
+FOREIGN KEY (task_id) REFERENCES growth_tasks(id) ON DELETE SET NULL
+```
+
+### `growth_self_model`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+section TEXT NOT NULL CHECK (section IN
+  ('energy','motivation','procrastination','bias','learning','social','values','blindspots')),
+statement TEXT NOT NULL,
+evidence TEXT NOT NULL DEFAULT '',
+confidence INTEGER NOT NULL DEFAULT 1 CHECK (confidence BETWEEN 0 AND 5),
+updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+created_at TEXT NOT NULL DEFAULT (datetime('now'))
+```
+
+### `growth_feedback`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+source TEXT NOT NULL DEFAULT '',
+strengths TEXT NOT NULL DEFAULT '',
+weakness TEXT NOT NULL DEFAULT '',
+friction TEXT NOT NULL DEFAULT '',
+calibration TEXT NOT NULL DEFAULT '',
+received_on TEXT NOT NULL,
+created_at TEXT NOT NULL DEFAULT (datetime('now'))
+```
+
+### `growth_annual_notes`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+year INTEGER NOT NULL UNIQUE,
+summary TEXT NOT NULL DEFAULT '',
+kept TEXT NOT NULL DEFAULT '',
+dropped TEXT NOT NULL DEFAULT '',
+milestones TEXT NOT NULL DEFAULT '[]',
+next_focus TEXT NOT NULL DEFAULT '',
+updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+```
+
+### `growth_media`
+
+```sql
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+owner_type TEXT NOT NULL,
+owner_id INTEGER NOT NULL,
+file TEXT NOT NULL,
+transform TEXT NOT NULL DEFAULT '',
+sort_order INTEGER NOT NULL DEFAULT 0,
+is_cover INTEGER NOT NULL DEFAULT 0 CHECK (is_cover IN (0, 1)),
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+UNIQUE (owner_type, owner_id, file)
+```
+
 ## 索引
 
 | 索引 | 表 | 列 |
 |---|---|---|
 | `idx_notes_modified` | `notes` | modified_at DESC |
-| `idx_gtd_projects_archived` | `gtd_projects` | archived_at, created_at DESC |
-| `idx_gtd_tasks_project` | `gtd_tasks` | project_id, sort_order |
-| `idx_gtd_tasks_scheduled` | `gtd_tasks` | scheduled_date |
-| `idx_gtd_tasks_due` | `gtd_tasks` | due_date |
-| `idx_gtd_tasks_completed` | `gtd_tasks` | completed_at |
-| `idx_gtd_project_links_project` | `gtd_project_links` | project_id, sort_order |
 | `idx_pdf_documents_repo` | `pdf_documents` | repo_path |
 | `idx_pdf_documents_modified` | `pdf_documents` | modified_at DESC |
 | `idx_pdf_documents_repo_rel` | `pdf_documents` | repo_path, rel_path COLLATE NOCASE |
 | `idx_pdf_documents_repo_title` | `pdf_documents` | repo_path, title COLLATE NOCASE |
+| `idx_growth_capabilities_domain` | `growth_capabilities` | domain_id, status, sort_order |
+| `idx_growth_evidence_cap` | `growth_evidence` | capability_id, happened_on DESC |
+| `idx_growth_snapshots_cap` | `growth_snapshots` | capability_id, taken_at DESC |
+| `idx_growth_challenges_cap` | `growth_challenges` | capability_id, status |
+| `idx_growth_challenges_season` | `growth_challenges` | season_id, status |
+| `idx_growth_artifacts_cap` | `growth_artifacts` | capability_id, created_at DESC |
+| `idx_growth_tasks_capability` | `growth_tasks` | capability_id, completed_at |
+| `idx_growth_tasks_scheduled` | `growth_tasks` | scheduled_date |
+| `idx_growth_tasks_due` | `growth_tasks` | due_date |
+| `idx_growth_tasks_completed` | `growth_tasks` | completed_at |
+| `idx_growth_predictions_on` | `growth_predictions` | predicted_on DESC |
+| `idx_growth_media_owner` | `growth_media` | owner_type, owner_id, sort_order |
+| `idx_growth_media_file` | `growth_media` | file |
+| `idx_growth_tasks_challenge` | `growth_tasks` | challenge_id |
+| `idx_growth_predictions_capability` | `growth_predictions` | capability_id, predicted_on DESC |
+| `idx_growth_predictions_challenge` | `growth_predictions` | challenge_id |
+| `idx_growth_predictions_task` | `growth_predictions` | task_id |
 | `idx_notes_vault` | `notes` | vault_path |
-| `idx_gtd_projects_sort` | `gtd_projects` | archived_at, sort_order |
-| `idx_gtd_tasks_inbox_order` | `gtd_tasks` | inbox_order |
 | `idx_resources_sort` | `resources` | sort_order |
-| `idx_tags_sort` | `tags` | sort_order |
+| `idx_resources_collection` | `resources` | collection_id |
 
 ## 迁移语句
 
+- `resource_collections | RENAME TO ${parked}`)`
+- `resource_collections_legacy | RENAME TO resource_collections")`
+- `resource_collections__parked | RENAME TO resource_collections")`
 - `obsidian_notes | RENAME TO notes`
 - `notes | ADD COLUMN vault_path TEXT NOT NULL DEFAULT ''`
-- `gtd_items | ADD COLUMN description TEXT NOT NULL DEFAULT ''")`
-- `gtd_items | ADD COLUMN color TEXT NOT NULL DEFAULT ''")`
-- `gtd_items | ADD COLUMN due_date TEXT")`
-- `gtd_items | RENAME COLUMN done_at TO archived_at")`
-- `gtd_actions | ADD COLUMN due_date TEXT")`
-- `gtd_projects | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
-- `gtd_tasks | ADD COLUMN inbox_order INTEGER NOT NULL DEFAULT 0")`
 - `resources | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
 - `resources | ADD COLUMN notes TEXT NOT NULL DEFAULT ''")`
-- `tags | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
-- `tags | ADD COLUMN color TEXT NOT NULL DEFAULT ''")`
+- `resources | ADD COLUMN collection_id INTEGER REFERENCES resource_collections(id) ON DELETE SET NULL")`

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FolderMinus, FolderOpen, ListPlus, Maximize2, Minimize2, Frame, Pencil, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
@@ -11,11 +11,14 @@ import { buildColorMenuItem } from "../ColorPicker";
 import type { MenuItem } from "../ContextMenu";
 import type { CanvasFile } from "../../shared/models";
 import Button from "../Button";
+import BatchActionBar, { type BatchAction } from "../BatchActionBar";
 import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import RenameModal from "../RenameModal";
+import SelectModeButton from "../SelectModeButton";
 import { SkeletonRows } from "../Skeleton";
 import CollectionDetail, { type NoteInfo } from "../CollectionDetail";
+import { useMultiSelect } from "../../lib/useMultiSelect";
 import CreateGroupModal from "../CreateGroupModal";
 import CreateCanvasModal from "../canvas/CreateCanvasModal";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
@@ -96,6 +99,86 @@ export default function CanvasLibraryContent() {
     () => ungroupedPaths.map(toNoteInfo),
     [ungroupedPaths, resolveFile, vaultPath],
   );
+
+  const collectionScrollRef = useRef<HTMLDivElement>(null);
+  const canvasKeys = useMemo(
+    () => [
+      ...groupViews.flatMap((group) => group.notes.map((note) => note.relPath)),
+      ...ungroupedNotes.map((note) => note.relPath),
+    ],
+    [groupViews, ungroupedNotes],
+  );
+  const canvasSelection = useMultiSelect({
+    scopeKey: `canvas|${vaultPath}`,
+    keys: canvasKeys,
+    containerRef: collectionScrollRef,
+  });
+
+  const canvasBatchActions: BatchAction[] = [];
+  if (canvasSelection.count > 0) {
+    const selectedPaths = Array.from(canvasSelection.selected);
+    const anyGrouped = selectedPaths.some((rel) => groups.some((group) => group.paths.includes(rel)));
+    if (anyGrouped) {
+      canvasBatchActions.push({
+        key: "removeFromGroup",
+        label: t["canvas.removeFromGroup"],
+        onClick: () => {
+          for (const rel of selectedPaths) {
+            const group = groups.find((candidate) => candidate.paths.includes(rel));
+            if (group) removePath(rel, group.id);
+          }
+          canvasSelection.clear();
+        },
+      });
+    }
+    canvasBatchActions.push({
+      key: "delete",
+      label: t["canvas.delete"],
+      variant: "ghost-danger",
+      onClick: () => {
+        const targets = selectedPaths.flatMap((rel) => {
+          const file = resolveFile(rel);
+          return file ? [file] : [];
+        });
+        const skipped = selectedPaths.length - targets.length;
+        if (targets.length === 0) {
+          showToast(t["batch.deleteFailed"].replace("{count}", String(skipped)), "error");
+          return;
+        }
+        setConfirm({
+          message: t["vault.batchDeleteConfirm"].replace("{count}", String(targets.length)),
+          confirmLabel: t["canvas.delete"],
+          onConfirm: async () => {
+            const removed: CanvasFile[] = [];
+            let failed = 0;
+            for (const file of targets) {
+              try {
+                await canvas.remove(file);
+                removed.push(file);
+              } catch {
+                failed += 1;
+              }
+            }
+            if (removed.length > 0) {
+              const rels = removed.flatMap((file) => {
+                const rel = relativePathInsideVault(file.path, vaultPath);
+                return rel ? [rel] : [];
+              });
+              removePaths(rels);
+              const removedAbs = new Set(removed.map((file) => normalizePath(file.path)));
+              for (const tab of state.tabs) {
+                if (tab.kind === "canvas" && removedAbs.has(normalizePath(tab.path))) closeDoc(tab.id);
+              }
+              showToast(t["batch.deleted"].replace("{count}", String(removed.length)));
+            }
+            if (failed > 0) showToast(t["batch.deleteFailed"].replace("{count}", String(failed)), "error");
+            if (skipped > 0) showToast(t["batch.deleteFailed"].replace("{count}", String(skipped)), "error");
+            canvasSelection.exit();
+          },
+        });
+      },
+    });
+  }
 
   const handleRenameCanvas = async (title: string) => {
     if (!renameTarget) return;
@@ -235,6 +318,10 @@ export default function CanvasLibraryContent() {
         >
           {allExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </Button>
+        <SelectModeButton
+          active={canvasSelection.active}
+          onToggle={canvasSelection.active ? canvasSelection.exit : canvasSelection.enter}
+        />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -246,7 +333,8 @@ export default function CanvasLibraryContent() {
       </>
     ),
   }), [
-    allExpanded, canvas.files.length, groups, t,
+    allExpanded, canvas.files.length, canvasSelection.active, canvasSelection.enter,
+    canvasSelection.exit, groups, t,
     // handleToggleAll closes over the same state; recomputing on group list is enough
   ]);
 
@@ -291,6 +379,19 @@ export default function CanvasLibraryContent() {
             if (file) openCanvasFile(file);
           }}
           emptyGroupText={t["canvas.dropHere"]}
+          scrollRef={collectionScrollRef}
+          selecting={canvasSelection.active}
+          selectedKeys={canvasSelection.selected}
+          onToggleItem={(relPath, event) => canvasSelection.toggle(relPath, { shiftKey: event.shiftKey })}
+        />
+      )}
+
+      {canvasSelection.active && (
+        <BatchActionBar
+          selectedCount={canvasSelection.count}
+          actions={canvasBatchActions}
+          onSelectAll={canvasSelection.selectAll}
+          onExit={canvasSelection.exit}
         />
       )}
 

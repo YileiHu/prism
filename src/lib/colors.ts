@@ -69,6 +69,20 @@ export function tagColor(key: TagColorKey): TagColorOption {
   return TAG_COLORS.find((c) => c.key === key) ?? TAG_COLORS[0];
 }
 
+/** Stable grade palette shared by the radar and level indicators. */
+export const GRADE_COLOR_KEYS: Record<string, TagColorKey> = {
+  C: "slate",
+  B: "green",
+  A: "blue",
+  S: "violet",
+  SS: "gold",
+  SSS: "brick",
+};
+
+export function gradeColor(grade: string): TagColorOption {
+  return tagColor(GRADE_COLOR_KEYS[grade] ?? "slate");
+}
+
 // Tags store a palette `bar` hex in the DB; anything unrecognized falls back
 // to the deterministic hash color.
 export function resolveTagColor(name: string, bar?: string | null): PaletteColor {

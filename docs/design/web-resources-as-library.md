@@ -41,6 +41,18 @@
 - 标签不是收藏集：多标签是资源的固有模型，转成路径集合会丢失语义和迁移成本；因此侧栏标题显示「标签」。
 - 资源内容会随来源切换卸载，滚动位置不保留；与笔记/PDF 内容一致。
 
+## 2026-11 修订：标签改为收藏集
+
+本节推翻上文「用收藏集替换标签」的否决结论，并说明为什么现在成立：
+
+- **单一分类取代多标签**：资源按「一条只属于一个收藏集」组织，和笔记/PDF 收藏集语义一致，「未分组」= 没有收藏集。标签的多值模型无法表达「移动」，批量整理只能反复增删标签。
+- **复用既有交互**：侧栏行/拖拽/右键/对话框/选择记忆全部复用（`GroupNavRow`、`CollectionSection`、`CollectionDialogs`、`librarySelection`），资源侧只新增一个数据源适配（`useResourceLibrary` → DB）。
+- **存储不跨来源复用**：资源没有库根，仍留在 SQLite；新增 `resource_collections` 表与 `resources.collection_id` 单列外键（`ON DELETE SET NULL`）来保证唯一归属，不引入 sidecar。
+- **迁移**：旧 `tags` 逐个变成收藏集，多标签资源归入 `tags.sort_order` 最前的标签，无标签资源保持未分组；迁移完成后删除 `tags` / `resource_tags`（一次性、不可逆，已确认）。
+- 旧记忆键 `last_resource_tag` 保留为一次性回退来源，新的选择写入 `last_resource_coll`。
+
+上文「被否决的方案」表中的「用收藏集替换标签」一行因此失效，仅作为历史记录保留。
+
 ## 被否决的方案
 
 | 方案 | 做法 | 否决理由 |
@@ -52,23 +64,23 @@
 
 ## 数据流
 
-1. 启动：`LibraryDataProvider` 挂载 → `useResourceLibrary` 调 `getResources()` + `getAllTags()`；`workspace_v1.library` 校验后恢复上次来源。
+1. 启动：`LibraryDataProvider` 挂载 → `useResourceLibrary` 调 `getResources()` + `getResourceCollections()`；`workspace_v1.library` 校验后恢复上次来源。
 2. 选来源：侧栏行/工作区侧栏 → `setLibrary({ kind: "resources" })` → `LibraryView` 渲染 `ResourcesLibraryContent`。
-3. 选标签：`ResourceTagList` → 父级 `onSelectTag` 同时把 library 指向资源并设置 `activeTag`，再触发 `onOpenCollections`（工作区侧栏场景切回资料库模块）。
-4. 写操作：内容区/标签区复用 `resources:*` IPC；hook 重新拉取列表与标签，侧栏计数和内容一起更新。
+3. 选收藏集：`ResourceCollectionList` → 父级 `onSelectCollection` 同时把 library 指向资源并设置 `selectedCollectionId`，再触发 `onOpenCollections`（工作区侧栏场景切回资料库模块）。
+4. 写操作：内容区/收藏集区复用 `resources:*` / `resource-collections:*` IPC；hook 重新拉取列表与收藏集，侧栏计数和内容一起更新。
 5. 持久化：只有 `workspace_v1.library` / `module` 变化；没有 watcher、没有 main → renderer 推送。
 
 ## 不变量
 
 - 网页资源是唯一、无路径的来源；不进入 `vault_paths`，不参与扫描、watcher、私密仓库、路径安全、侧车文件。
-- 资源视图只读写 `resources` / `tags` / `resource_tags`。
-- URL 唯一；标签颜色只从 `resolveTagColor` / `hashColor` 取。
-- 分组顺序跟随侧栏标签顺序，不另建顺序。
-- 搜索词与卡片折叠状态是会话内存状态；选中标签持久化到 `last_resource_tag`（与笔记/PDF 收藏集选择一致）。
+- 资源视图只读写 `resources` / `resource_collections`（`tags` / `resource_tags` 已随迁移删除）。
+- URL 唯一；一条资源最多属于一个收藏集（`collection_id` 单列）；颜色只从 `resolveTagColor` / `hashColor` 取。
+- 收藏集顺序跟随 `resource_collections.sort_order`，资源全局顺序跟随 `resources.sort_order`，不另建顺序。
+- 搜索词与卡片折叠状态是会话内存状态；选中收藏集持久化到 `last_resource_coll`（首次读取回退旧 `last_resource_tag`，与笔记/PDF 收藏集选择一致）。
 
 ## 非目标
 
 - 不把资源做成工作区标签页或内嵌浏览器。
 - 不做资源导出/导入的可同步仓库。
 - 不把资源接入项目资料链接或笔记嵌入（后续可选）。
-- 不新增设置项、IPC 通道或数据库表。
+- 不新增设置项；新增的 `resource-collections:*` IPC 与两张表仅服务于本次收藏集改造。

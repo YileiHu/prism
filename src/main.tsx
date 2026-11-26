@@ -6,7 +6,6 @@ import { SettingsProvider } from "./lib/settings";
 import { ToolbarProvider } from "./components/toolbar/ToolbarProvider";
 import { PdfDocumentsProvider } from "./components/pdf/PdfDocumentsProvider";
 import { VaultLockProvider } from "./lib/vaultLock";
-import { ProjectLinksProvider } from "./lib/projectLinks";
 import { WorkspaceProvider } from "./lib/workspace/WorkspaceProvider";
 import { ContextMenuProvider } from "./lib/useContextMenu";
 import App from "./App";
@@ -21,13 +20,11 @@ createRoot(document.getElementById("root")!).render(
           <ToolbarProvider>
             <PdfDocumentsProvider>
               <VaultLockProvider>
-                <ProjectLinksProvider>
-                  <WorkspaceProvider>
-                    <ContextMenuProvider>
-                      <App />
-                    </ContextMenuProvider>
-                  </WorkspaceProvider>
-                </ProjectLinksProvider>
+                <WorkspaceProvider>
+                  <ContextMenuProvider>
+                    <App />
+                  </ContextMenuProvider>
+                </WorkspaceProvider>
               </VaultLockProvider>
             </PdfDocumentsProvider>
           </ToolbarProvider>

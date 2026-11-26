@@ -128,53 +128,6 @@ export function TextField({
   );
 }
 
-export function NumberInput({
-  value,
-  min,
-  max,
-  step,
-  suffix,
-  onChange,
-}: {
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  suffix?: string;
-  onChange: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  const commit = () => {
-    const parsed = Number(draft);
-    if (!Number.isFinite(parsed)) {
-      setDraft(String(value));
-      return;
-    }
-    const clamped = Math.min(max, Math.max(min, parsed));
-    setDraft(String(clamped));
-    if (clamped !== value) onChange(clamped);
-  };
-  return (
-    <div className="flex items-center gap-1.5">
-      <Input
-        type="number"
-        value={draft}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-        className="w-24 text-primary"
-      />
-      {suffix && <span className="text-caption text-muted">{suffix}</span>}
-    </div>
-  );
-}
-
 // Slider previews while dragging and persists on release/keyup. The displayed
 // value tracks the draft so the label updates during the drag.
 export function Slider({

@@ -70,7 +70,7 @@ export default function UnlockVaultModal({ open, vaultName, onClose, onUnlock }:
         />
         {error && <p className="mt-2 text-caption text-danger">{error}</p>}
         <div className="flex justify-end gap-2 mt-5">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>
             {t["private.cancel"]}
           </Button>
           <Button type="submit" variant="primary" size="sm" disabled={busy || !password}>

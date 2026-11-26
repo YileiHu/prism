@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Blocks, CalendarRange, FilePlus, FolderKanban, Frame, Globe, GripVertical, House, Layers, Lock, MessageSquareText, Network, Power, Zap } from "lucide-react";
+import { Blocks, BookOpen, Brain, CalendarRange, FilePlus, FolderKanban, Frame, Globe, GripVertical, House, Layers, ListTodo, Lock, MessageSquareText, Network, PackageCheck, Power, Sprout, Trophy, Zap } from "lucide-react";
 import type { TagColorKey } from "../lib/colors";
 
 export interface ChangelogHighlight {
@@ -21,6 +21,102 @@ export interface ChangelogEntry {
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "1.0.0",
+    date: "2026-11-26",
+    summary:
+      "1.0.0 是 Prism 的第一个大版本。养成模块从能力量表、赛季挑战、元认知到编年史完整落地，原来的事务（GTD）模块并入养成，顶级导航收敛为「养成 / 资料库 / 设置」。这个版本也完成了养成从数据、备份到界面的收口：能力是唯一评分锚点，任务只负责执行，预测只负责校准，所有分数都能追溯到证据或挑战。",
+    highlights: [
+      {
+        icon: Sprout,
+        palette: "green",
+        title: "能力量表：从自我感觉变成可校准的分数",
+        description: "领域、能力、证据、校准连成一条链；分数只由证据和挑战推动，不由心情推动。",
+        items: [
+          "6 个默认领域按权重聚合；能力挂在唯一领域下，可设目标等级/日期与前置能力",
+          "等级内部 1–6，界面显示 C / B / A / S / SS / SSS；置信 C0–C5 显示为五格星条",
+          "上调需本次校准前的新证据、一次最多一级；A 以上每级还要求已通过挑战",
+          "超过 90 / 180 天没有新证据时置信读时衰减，历史快照保留当时的判断",
+          "归档、技能树（同领域最多两层）与「清档」视图（长半衰期 × 高可携带 + 随身资产比）",
+        ],
+      },
+      {
+        icon: Trophy,
+        palette: "violet",
+        title: "赛季、挑战与作品：把成长做成可验证的项目",
+        description: "赛季提供时间盒，挑战提供外部验证，作品留下能带走的证明。",
+        items: [
+          "赛季有主题色、海报、主线、起止与结算结论；可切换历史赛季、右键删除",
+          "挑战记录概述 / 目标 / 通过标准 / 过程 / 复盘；结算必须选归因（自己 / 平台）",
+          "通过挑战自动升级（不超过挑战难度）并补置信、快照与一条 usage 证据；未通过不动分",
+          "作品卡片墙 + 详情：封面、图片画廊、一句话介绍、Markdown 说明、链接",
+          "图片统一存 growth_media，赛季封面支持拖动/缩放裁剪，作品画廊按顺序展示",
+        ],
+      },
+      {
+        icon: Brain,
+        palette: "blue",
+        title: "元认知：先猜，再做，再校准",
+        description: "预测记录判断，说明书解释模式，他评校正盲区；三者都不进能力分。",
+        items: [
+          "预测分估时 / 难度 / 情绪三类，开始前只记预估，做完补实际；超 90 天未补仍留在待兑现",
+          "自知度、8 周误差趋势、最近 5 次偏差提示与误差时间轴",
+          "自我说明书 8 段（能量 / 动机 / 拖延 / 偏差 / 学习 / 社交 / 价值观 / 盲区），每条带证据与置信",
+          "他评记录三问 + 与自评的最大偏差；点卡片或右键菜单编辑、删除",
+        ],
+      },
+      {
+        icon: BookOpen,
+        palette: "teal",
+        title: "编年史与年度一页",
+        description: "把校准、赛季和作品放回时间里看；年份是分册，不是筛选。",
+        items: [
+          "年份分册：当前年 / 全部，曲线按月末最近快照求平均，新能力不回溯拉低历史",
+          "赛季以海报存档形式出现，悬停展开挑战路径与结算结论",
+          "年度一页自动汇总年末分、变化、赛季/作品/升级次数与代表作，再写「变成了什么 / 三件大事 / 最该记住与丢掉 / 明年一件事」",
+          "空编年史不显示年份下拉与编辑按钮，时间轴加载时先显示骨架",
+        ],
+      },
+      {
+        icon: ListTodo,
+        palette: "brick",
+        title: "事务并入养成",
+        description: "不再维护两套行动入口：任务只管下一步，能力与挑战负责长期方向。",
+        items: [
+          "移除独立事务（GTD）模块、项目 / 项目资料 / 月历网格；顶级模块只剩养成、资料库、设置",
+          "任务成为应用里唯一排日期的行动：开始 / 截止区间、逾期 / 今天 / 未来 7 天 / 更晚 / 未安排",
+          "任务可挂能力与挑战，挑战补齐能力；完成 / 重开 / 删除走行内勾选与右键菜单",
+          "快速记录小窗直接写任务；冷启动默认进入养成-能力总览",
+          "旧 gtd_* 表保留为孤儿表，不再读写",
+        ],
+      },
+      {
+        icon: PackageCheck,
+        palette: "gold",
+        title: "1.0 的收口",
+        description: "数据、备份、界面和文档一起收口，养成从开发版变成可长期使用的模块。",
+        items: [
+          "养成 schema 收敛到终态：13 张 growth_* 表（含 growth_media）；删除历史迁移、兼容列与孤儿表",
+          "导出/导入 v3：领域、能力、证据、快照、赛季、挑战、作品、任务、预测、说明书、他评、年度页与全部媒体；导入前自动备份、只做替换",
+          "统一文档型弹窗、共享控件、无卡片空态与轻动效；元认知工具栏按分区显示标题与图标",
+          "清理测试数据与死代码，补齐架构文档、数据模型与导出说明；npm run verify 通过",
+          "版本从 0.5.4 直接进入 1.0.0",
+        ],
+      },
+    ],
+    changes: [
+      "新增 growth_domains / capabilities / evidence / snapshots / seasons / challenges / artifacts / tasks / predictions / self_model / feedback / annual_notes / media 13 张表",
+      "移除事务模块 UI 与 gtd:* IPC、gtd_* 建表与读写；旧库同名表作为孤儿表保留，不自动迁移",
+      "growth:state 返回全部未兑现预测 + 近 90 天已兑现；growth:timeline 返回全部快照，曲线由渲染层派生",
+      "能力 / 挑战 / 作品详情与编辑统一迁入 Modal layout=\"document\"；新增 SelectButton pill、ChipTabs、ItemRow 等共享件",
+      "图片存 userData/growth-covers，经 prism-growth-cover:// 读取；growth_media 记录 owner、排序、封面与裁剪",
+      "备份格式 prism-growth v3；旧 v1/v2 备份不再导入；导入前写 growth-backups/ 自动备份",
+      "新增 docs/architecture/growth.md；同步 data-model / renderer / index 与生成物",
+      "默认 6 个领域按 i18n 名称种子；冷启动落在养成-能力总览",
+      "新增快速记录小窗写入 growth_tasks；任务完成时若有待兑现预测，toast 提供「补实际」",
+      "无自动化测试；UI 由手动验收，npm run verify 覆盖类型、IPC、i18n、文档与复用检查",
+    ],
+  },
   {
     version: "0.5.4",
     date: "2026-11-22",

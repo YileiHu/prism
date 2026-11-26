@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, GitCommit, PartyPopper, Sparkles } from "lucide-react";
 import Modal from "./Modal";
-import Badge from "./Badge";
+import SelectButton from "./SelectButton";
+import GlowBadge from "./GlowBadge"; // accent glow for the version chip
 import changelog, { type ChangelogHighlight } from "../data/changelog";
 import { useT } from "../i18n";
 import { tagColor } from "../lib/colors";
@@ -11,14 +12,61 @@ interface ChangelogModalProps {
   onClose: () => void;
 }
 
+const sectionId = (version: string) => `changelog-v${version}`;
+
 export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
   const { t } = useT();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [activeVersion, setActiveVersion] = useState(changelog[0]?.version ?? "");
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Every release starts collapsed so the summary list stays scannable.
   useEffect(() => {
-    if (open) setExpanded(new Set());
+    if (!open) return;
+    setExpanded(new Set());
+    setActiveVersion(changelog[0]?.version ?? "");
   }, [open]);
+
+  // The dropdown lives in the pinned Modal header; scrolling the body keeps
+  // its value in sync with the version currently being read.
+  useEffect(() => {
+    if (!open) return;
+    const scroller = contentRef.current?.parentElement;
+    if (!scroller) return;
+    let frame = 0;
+    const updateActive = () => {
+      frame = 0;
+      const line = scroller.getBoundingClientRect().top + 72;
+      let current = changelog[0]?.version ?? "";
+      for (const entry of changelog) {
+        const section = document.getElementById(sectionId(entry.version));
+        if (section && section.getBoundingClientRect().top <= line) {
+          current = entry.version;
+        }
+      }
+      setActiveVersion((previous) => (previous === current ? previous : current));
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(updateActive);
+    };
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    schedule();
+    return () => {
+      scroller.removeEventListener("scroll", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [open]);
+
+  const jumpTo = (version: string) => {
+    const target = document.getElementById(sectionId(version));
+    if (!target) return;
+    setActiveVersion(version);
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  };
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
@@ -38,18 +86,33 @@ export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
       onClose={onClose}
       title={t["changelog.title"]}
       icon={PartyPopper}
-      width="780px"
+      layout="document"
       position="center"
+      headerActions={
+        <SelectButton
+          ariaLabel={t["changelog.jumpToVersion"]}
+          variant="pill"
+          align="right"
+          className="w-36"
+          value={activeVersion}
+          options={changelog.map((entry) => ({
+            value: entry.version,
+            label: `v${entry.version}`,
+          }))}
+          onChange={jumpTo}
+        />
+      }
     >
-      <div className="max-h-[72vh] overflow-y-auto overflow-x-hidden pr-1">
+      <div ref={contentRef} className="w-full">
         {changelog.map((entry, entryIndex) => {
           const changes = entry.changes ?? [];
           const changesOpen = expanded.has(`changes:${entry.version}`);
           const featured = (entry.highlights?.length ?? 0) > 0;
           return (
             <section
+              id={sectionId(entry.version)}
               key={entry.version}
-              className={entryIndex > 0 ? "mt-5 border-t border-line/60 pt-5" : ""}
+              className={`scroll-mt-4 ${entryIndex > 0 ? "mt-5 border-t border-line/60 pt-5" : ""}`}
             >
               {entryIndex === 1 && (
                 <p className="mb-4 text-caption font-medium uppercase tracking-wide text-faint">
@@ -57,7 +120,7 @@ export default function ChangelogModal({ open, onClose }: ChangelogModalProps) {
                 </p>
               )}
               <div className="mb-2.5 flex items-center gap-2">
-                <Badge variant="accent" className="font-semibold">v{entry.version}</Badge>
+                <GlowBadge tone="accent" intensity={0.55} className="font-semibold">v{entry.version}</GlowBadge>
                 {entryIndex === 0 && (
                   <span className="inline-flex items-center gap-1 text-meta text-faint">
                     <Sparkles size={12} />

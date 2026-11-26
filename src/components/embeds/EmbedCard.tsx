@@ -340,7 +340,7 @@ export default function EmbedCard({
             <label className="flex items-center gap-1.5">
               <span className="text-caption text-muted">{labels.label}</span>
               <input
-                className="field-inset w-24 rounded-chip border px-2 py-1 text-caption text-primary transition-colors focus:border-[var(--accent)] focus:outline-none"
+                className="field-inset w-24 rounded-chip border px-2 py-1 text-caption text-primary transition-colors focus:outline-none"
                 value={labelDraft}
                 spellCheck={false}
                 aria-label={labels.label}

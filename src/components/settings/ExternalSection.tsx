@@ -40,7 +40,7 @@ export default function ExternalSection({ onSaved }: Props) {
             {t["settings.selectFile"]}
           </Button>
           <Button
-            variant="info"
+            variant="ghost"
             size="xs"
             onClick={() => window.prism.openUrl("https://example.com")}
           >

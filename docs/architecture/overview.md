@@ -4,7 +4,7 @@
 
 ## Prism 是什么
 
-本地优先的个人知识管理桌面应用：笔记库、PDF 库、白板库、网页资源与 GTD 事务集中在单窗口里。笔记是普通 `.md` 文件；白板是笔记库里的 `.json` 文件；PDF 留在原文件夹；SQLite 只做索引与事务数据。
+本地优先的个人知识管理桌面应用：笔记库、PDF 库、白板库、网页资源与养成（含任务）集中在单窗口里。笔记是普通 `.md` 文件；白板是笔记库里的 `.json` 文件；PDF 留在原文件夹；SQLite 只做索引与事务数据。
 
 | 层 | 技术 |
 |---|---|
@@ -75,7 +75,7 @@ ThemeProvider
 
 ## 导航与外壳
 
-- 顶级导航是**模块**：事务、资料库、设置；网页资源是资料库内的一个固定来源（与 PDF 库同级），不再是独立模块。冷启动固定进入事务-日历，托盘恢复保留当前页面。
+- 顶级导航是**模块**：养成、资料库、设置；网页资源是资料库内的一个固定来源（与 PDF 库同级），不再是独立模块。冷启动固定进入养成-能力总览，托盘恢复保留当前页面。
 - 打开文档后进入**工作区**：笔记 / 白板 / PDF 共用一条标签栏，可左右分屏；完整现场经 `workspace_v1` 持久化，冷启动只恢复标签/资料库，托盘重建窗口恢复激活文档与分屏。
 - 模块页与工作区**同时挂载**，只切换可见性；切换标签或模块不会丢编辑器/滚动状态。工作区激活时模块页用 `visibility: hidden` 隐藏，而不是卸载。
 - 每个模块的侧栏经 `ModuleSidebar` portal 到 `AppSidebarSlotProvider` 提供的全高槽位；模块内部不要自己平铺侧栏。
@@ -85,7 +85,7 @@ ThemeProvider
 
 | 数据 | 位置 | 说明 |
 |---|---|---|
-| 网页资源、标签、GTD、笔记索引、PDF 索引、设置 | SQLite `userData/prism.db` | 表结构见 [数据库参考](../reference/database.md) |
+| 网页资源、标签、任务、笔记索引、PDF 索引、设置 | SQLite `userData/prism.db` | 表结构见 [数据库参考](../reference/database.md) |
 | 笔记正文 | `<vault>/**/*.md` | 唯一真实来源；SQLite 只是可重建索引 |
 | 笔记附件 | `<vault>/<attachments_dir>/` | 默认 `attachments` |
 | 白板 | `<vault>/<canvas_dir>/*.json`（旧 `<vault>/Projects/<项目>/*.json` 兼容） | 默认 `canvases`；新项目白板也在这里；不进 SQLite |
@@ -103,7 +103,7 @@ ThemeProvider
 prism/
 ├── electron/          # main.ts、preload.ts、database.ts、privateVault.ts、sidecar.ts、paths.ts
 ├── src/
-│   ├── components/    # library/ pdf/ canvas/ editor/ gtd/ settings/ workspace/ toolbar/ …
+│   ├── components/    # library/ pdf/ canvas/ editor/ growth/ settings/ workspace/ toolbar/ …
 │   ├── lib/           # settings、workspace、canvas、vaultLock、toast、hooks、paths、colors
 │   ├── shared/        # models.ts、settings.ts、shortcuts.ts（与主进程共用）
 │   ├── theme/         # ThemeProvider + 8 套主题

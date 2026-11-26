@@ -36,6 +36,7 @@ export default {
       borderRadius: {
         chip: "4px",
         control: "8px",
+
         card: "12px",
       },
       boxShadow: {

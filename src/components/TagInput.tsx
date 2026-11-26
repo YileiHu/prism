@@ -23,7 +23,9 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+  const hasTags = tags.length > 0;
 
   const filtered = useMemo(() => {
     const available = suggestions.filter((s) => !tags.includes(s.name));
@@ -89,6 +91,7 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
     <div>
       <div ref={anchorRef} className="relative">
         <Input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => { setInput(e.target.value); setOpen(true); }}
@@ -124,9 +127,19 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
           document.body,
         )}
       </div>
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {tags.map((tag) => {
+      {/* Persistent tray: keeps its height whether or not tags are picked, so
+          the dialog below never jumps when the first tag is added. Empty state
+          is a dashed drop zone; filled state is a quiet solid tray. */}
+      <div
+        onClick={() => inputRef.current?.focus()}
+        className={`mt-2 flex min-h-[2.5rem] flex-wrap items-center gap-1.5 rounded-control border px-2.5 py-1.5 ${
+          hasTags
+            ? "border-line bg-tint/[0.04]"
+            : "border-dashed border-strong/45"
+        }`}
+      >
+        {hasTags ? (
+          tags.map((tag) => {
             const c = colorForTag(tag);
             return (
               <Badge key={tag} palette={c} className="gap-1">
@@ -134,7 +147,10 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
                 {tag}
                 <button
                   type="button"
-                  onClick={() => onChange(tags.filter((t) => t !== tag))}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onChange(tags.filter((t) => t !== tag));
+                  }}
                   aria-label={`${t["common.remove"]} ${tag}`}
                   className="hover:text-danger"
                 >
@@ -142,9 +158,11 @@ export default function TagInput({ tags, onChange, suggestions, placeholder, col
                 </button>
               </Badge>
             );
-          })}
-        </div>
-      )}
+          })
+        ) : (
+          <span className="text-caption text-faint">{t["tagInput.empty"]}</span>
+        )}
+      </div>
     </div>
   );
 }

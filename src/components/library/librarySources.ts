@@ -52,7 +52,7 @@ export const LIBRARY_SOURCES: Record<LibrarySourceKind, LibrarySourceDef> = {
     icon: Globe,
     fixed: true,
     sectionLabelKey: "library.globalLibraries",
-    groupLabelKey: "library.tags",
+    groupLabelKey: "library.collections",
     allLabelKey: "library.allResources",
   },
 };

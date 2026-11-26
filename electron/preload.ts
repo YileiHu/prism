@@ -6,17 +6,50 @@ import type {
   CanvasGroupsFile,
   CanvasSaveResult,
   GlobalShortcutStatus,
-  GtdFileProjectRef,
-  GtdProjectDocsPayload,
-  GtdProjectLink,
-  GtdProjectLinkKind,
-  GtdTaskPatch,
+  GrowthAnnualNote,
+  GrowthAnnualNoteInput,
+  GrowthArtifact,
+  GrowthArtifactInput,
+  GrowthArtifactPatch,
+  GrowthBackupExportResult,
+  GrowthBackupImportResult,
+  GrowthBackupPreview,
+  GrowthCapability,
+  GrowthCapabilityInput,
+  GrowthCapabilityPatch,
+  GrowthChallenge,
+  GrowthChallengeInput,
+  GrowthChallengePatch,
+  GrowthDomain,
+  GrowthEvidence,
+  GrowthEvidenceInput,
+  GrowthFeedback,
+  GrowthFeedbackInput,
+  GrowthPrediction,
+  GrowthPredictionInput,
+  GrowthResolveInput,
+  GrowthResolveResult,
+  GrowthReviewInput,
+  GrowthReviewResult,
+  GrowthSeason,
+  GrowthSeasonInput,
+  GrowthSeasonPatch,
+  GrowthSelfModelEntry,
+  GrowthSelfModelInput,
+  GrowthSelfModelPatch,
+  GrowthSnapshot,
+  GrowthState,
+  GrowthTask,
+  GrowthTaskInput,
+  GrowthTaskPatch,
+  GrowthTasksPayload,
   NoteBrief,
   NoteCollectionsFile,
   NoteContentHit,
   NoteListChanges,
   PdfDocument,
   PdfListChanges,
+  ResourceCollection,
   VaultLibrarySummary,
   VaultMigrationProgress,
   VaultMigrationResult,
@@ -24,15 +57,27 @@ import type {
 } from "../src/shared/models";
 
 const api = {
-  // Resources
-  addResource: (url: string, title: string, tags: string[], notes: string) =>
-    ipcRenderer.invoke("resources:add", url, title, tags, notes),
+  // Resources (single-assignment collections)
+  addResource: (url: string, title: string, notes: string, collectionId: number | null) =>
+    ipcRenderer.invoke("resources:add", url, title, notes, collectionId),
   getResources: () => ipcRenderer.invoke("resources:list"),
-  updateResource: (id: number, url: string, title: string, tags: string[], notes: string) =>
-    ipcRenderer.invoke("resources:update", id, url, title, tags, notes),
+  updateResource: (id: number, url: string, title: string, notes: string, collectionId: number | null) =>
+    ipcRenderer.invoke("resources:update", id, url, title, notes, collectionId),
   deleteResource: (id: number) => ipcRenderer.invoke("resources:delete", id),
+  moveResourcesToCollection: (ids: number[], collectionId: number | null) =>
+    ipcRenderer.invoke("resources:move-to-collection", ids, collectionId) as Promise<number>,
   searchResources: (query: string) => ipcRenderer.invoke("resources:search", query),
   reorderResources: (orderedIds: number[]) => ipcRenderer.invoke("resources:reorder", orderedIds),
+  getResourceCollections: () => ipcRenderer.invoke("resource-collections:list"),
+  createResourceCollection: (name: string, color = "") =>
+    ipcRenderer.invoke("resource-collections:create", name, color) as Promise<ResourceCollection>,
+  renameResourceCollection: (id: number, name: string) =>
+    ipcRenderer.invoke("resource-collections:rename", id, name),
+  setResourceCollectionColor: (id: number, color: string) =>
+    ipcRenderer.invoke("resource-collections:set-color", id, color),
+  reorderResourceCollections: (orderedIds: number[]) =>
+    ipcRenderer.invoke("resource-collections:reorder", orderedIds),
+  deleteResourceCollection: (id: number) => ipcRenderer.invoke("resource-collections:delete", id),
   fetchPageTitle: (url: string) => ipcRenderer.invoke("fetch:title", url),
   openUrl: (url: string) => ipcRenderer.invoke("resources:open-url", url),
 
@@ -113,47 +158,87 @@ const api = {
   setSetting: (key: string, value: string) => ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:get-all") as Promise<Record<string, string>>,
 
-  // Tags
-  getAllTags: () => ipcRenderer.invoke("tags:list"),
-  reorderTags: (orderedNames: string[]) => ipcRenderer.invoke("tags:reorder", orderedNames),
-  setTagColor: (name: string, color: string) => ipcRenderer.invoke("tags:set-color", name, color),
-  renameTag: (oldName: string, newName: string) => ipcRenderer.invoke("tags:rename", oldName, newName),
-  deleteTag: (name: string) => ipcRenderer.invoke("tags:delete", name),
+  // Growth tasks
+  getGrowthTasks: () => ipcRenderer.invoke("growth:tasks") as Promise<GrowthTasksPayload>,
+  addGrowthTask: (input: GrowthTaskInput) =>
+    ipcRenderer.invoke("growth:add-task", input) as Promise<GrowthTask>,
+  updateGrowthTask: (id: number, patch: GrowthTaskPatch) =>
+    ipcRenderer.invoke("growth:update-task", id, patch) as Promise<GrowthTask>,
+  completeGrowthTask: (id: number) =>
+    ipcRenderer.invoke("growth:complete-task", id) as Promise<GrowthTask>,
+  reopenGrowthTask: (id: number) =>
+    ipcRenderer.invoke("growth:reopen-task", id) as Promise<GrowthTask>,
+  deleteGrowthTask: (id: number) => ipcRenderer.invoke("growth:delete-task", id),
+  clearCompletedGrowthTasks: () =>
+    ipcRenderer.invoke("growth:clear-completed-tasks") as Promise<number>,
 
-  // GTD
-  getGtdOpenTasks: () => ipcRenderer.invoke("gtd:open-tasks"),
-  getGtdCompletedTasks: (limit?: number) => ipcRenderer.invoke("gtd:completed-tasks", limit),
-  getGtdProjectTasks: (projectId: number) => ipcRenderer.invoke("gtd:project-tasks", projectId),
-  getGtdProjects: (archived: boolean) => ipcRenderer.invoke("gtd:projects", archived),
-  addGtdTask: (title: string, projectId?: number | null, scheduledDate?: string | null) =>
-    ipcRenderer.invoke("gtd:add-task", title, projectId ?? null, scheduledDate ?? null),
-  updateGtdTask: (id: number, patch: GtdTaskPatch) => ipcRenderer.invoke("gtd:update-task", id, patch),
-  completeGtdTask: (id: number) => ipcRenderer.invoke("gtd:complete-task", id),
-  reopenGtdTask: (id: number) => ipcRenderer.invoke("gtd:reopen-task", id),
-  deleteGtdTask: (id: number) => ipcRenderer.invoke("gtd:delete-task", id),
-  clearCompletedGtdTasks: () => ipcRenderer.invoke("gtd:clear-completed"),
-  reorderGtdProjectTasks: (projectId: number, orderedIds: number[]) =>
-    ipcRenderer.invoke("gtd:reorder-project-tasks", projectId, orderedIds),
-  reorderGtdInboxTasks: (orderedIds: number[]) =>
-    ipcRenderer.invoke("gtd:reorder-inbox", orderedIds),
-  reorderGtdProjects: (orderedIds: number[]) =>
-    ipcRenderer.invoke("gtd:reorder-projects", orderedIds),
-  addGtdProject: (title: string) => ipcRenderer.invoke("gtd:add-project", title),
-  updateGtdProject: (id: number, patch: { title?: string; description?: string; color?: string }) =>
-    ipcRenderer.invoke("gtd:update-project", id, patch),
-  setGtdProjectArchived: (id: number, archived: boolean) => ipcRenderer.invoke("gtd:archive-project", id, archived),
-  deleteGtdProject: (id: number) => ipcRenderer.invoke("gtd:delete-project", id),
-  getGtdProjectDocs: (projectId: number) =>
-    ipcRenderer.invoke("gtd:project-docs", projectId) as Promise<GtdProjectDocsPayload>,
-  getGtdProjectLinkIndex: () =>
-    ipcRenderer.invoke("gtd:project-link-index") as Promise<GtdFileProjectRef[]>,
-  setGtdProjectLink: (
-    projectId: number,
-    kind: GtdProjectLinkKind,
-    filePath: string,
-    title: string,
-  ) => ipcRenderer.invoke("gtd:set-project-link", projectId, kind, filePath, title) as Promise<GtdProjectLink>,
-  removeGtdProjectLink: (linkId: number) => ipcRenderer.invoke("gtd:remove-project-link", linkId),
+  // Growth (养成)
+  getGrowthState: () => ipcRenderer.invoke("growth:state") as Promise<GrowthState>,
+  createGrowthDomain: (name: string, weight: number, theme?: string) =>
+    ipcRenderer.invoke("growth:create-domain", name, weight, theme) as Promise<GrowthDomain>,
+  updateGrowthDomain: (id: number, patch: { name?: string; weight?: number; theme?: string }) =>
+    ipcRenderer.invoke("growth:update-domain", id, patch) as Promise<GrowthDomain>,
+  createGrowthCapability: (input: GrowthCapabilityInput) =>
+    ipcRenderer.invoke("growth:create-capability", input) as Promise<GrowthCapability>,
+  updateGrowthCapability: (id: number, patch: GrowthCapabilityPatch) =>
+    ipcRenderer.invoke("growth:update-capability", id, patch) as Promise<GrowthCapability>,
+  reviewGrowthCapability: (id: number, input: GrowthReviewInput) =>
+    ipcRenderer.invoke("growth:review-capability", id, input) as Promise<GrowthReviewResult>,
+  deleteGrowthCapability: (id: number) => ipcRenderer.invoke("growth:delete-capability", id),
+  listGrowthEvidence: (capabilityId: number) =>
+    ipcRenderer.invoke("growth:list-evidence", capabilityId) as Promise<GrowthEvidence[]>,
+  addGrowthEvidence: (capabilityId: number, input: GrowthEvidenceInput) =>
+    ipcRenderer.invoke("growth:add-evidence", capabilityId, input) as Promise<GrowthEvidence>,
+  deleteGrowthEvidence: (id: number) => ipcRenderer.invoke("growth:delete-evidence", id),
+  listGrowthSnapshots: (capabilityId: number) =>
+    ipcRenderer.invoke("growth:list-snapshots", capabilityId) as Promise<GrowthSnapshot[]>,
+  createGrowthSeason: (input: GrowthSeasonInput) =>
+    ipcRenderer.invoke("growth:create-season", input) as Promise<GrowthSeason>,
+  updateGrowthSeason: (id: number, patch: GrowthSeasonPatch) =>
+    ipcRenderer.invoke("growth:update-season", id, patch) as Promise<GrowthSeason>,
+  closeGrowthSeason: (id: number, outcome: string) =>
+    ipcRenderer.invoke("growth:close-season", id, outcome) as Promise<GrowthSeason>,
+  deleteGrowthSeason: (id: number) => ipcRenderer.invoke("growth:delete-season", id),
+  pickGrowthCover: (title?: string) =>
+    ipcRenderer.invoke("growth:pick-cover", title) as Promise<string | null>,
+  deleteGrowthCover: (name: string) => ipcRenderer.invoke("growth:delete-cover", name),
+  createGrowthChallenge: (input: GrowthChallengeInput) =>
+    ipcRenderer.invoke("growth:create-challenge", input) as Promise<GrowthChallenge>,
+  updateGrowthChallenge: (id: number, patch: GrowthChallengePatch) =>
+    ipcRenderer.invoke("growth:update-challenge", id, patch) as Promise<GrowthChallenge>,
+  deleteGrowthChallenge: (id: number) => ipcRenderer.invoke("growth:delete-challenge", id),
+  resolveGrowthChallenge: (id: number, input: GrowthResolveInput) =>
+    ipcRenderer.invoke("growth:resolve-challenge", id, input) as Promise<GrowthResolveResult>,
+  createGrowthArtifact: (input: GrowthArtifactInput) =>
+    ipcRenderer.invoke("growth:create-artifact", input) as Promise<GrowthArtifact>,
+  updateGrowthArtifact: (id: number, patch: GrowthArtifactPatch) =>
+    ipcRenderer.invoke("growth:update-artifact", id, patch) as Promise<GrowthArtifact>,
+  deleteGrowthArtifact: (id: number) => ipcRenderer.invoke("growth:delete-artifact", id),
+  addGrowthPrediction: (input: GrowthPredictionInput) =>
+    ipcRenderer.invoke("growth:add-prediction", input) as Promise<GrowthPrediction>,
+  settleGrowthPrediction: (id: number, actual: number) =>
+    ipcRenderer.invoke("growth:settle-prediction", id, actual) as Promise<GrowthPrediction>,
+  deleteGrowthPrediction: (id: number) => ipcRenderer.invoke("growth:delete-prediction", id),
+  addGrowthSelfModel: (input: GrowthSelfModelInput) =>
+    ipcRenderer.invoke("growth:add-self-model", input) as Promise<GrowthSelfModelEntry>,
+  updateGrowthSelfModel: (id: number, patch: GrowthSelfModelPatch) =>
+    ipcRenderer.invoke("growth:update-self-model", id, patch) as Promise<GrowthSelfModelEntry>,
+  deleteGrowthSelfModel: (id: number) => ipcRenderer.invoke("growth:delete-self-model", id),
+  addGrowthFeedback: (input: GrowthFeedbackInput) =>
+    ipcRenderer.invoke("growth:add-feedback", input) as Promise<GrowthFeedback>,
+  updateGrowthFeedback: (id: number, input: GrowthFeedbackInput) =>
+    ipcRenderer.invoke("growth:update-feedback", id, input) as Promise<GrowthFeedback>,
+  deleteGrowthFeedback: (id: number) => ipcRenderer.invoke("growth:delete-feedback", id),
+  getGrowthTimeline: () => ipcRenderer.invoke("growth:timeline") as Promise<GrowthSnapshot[]>,
+  exportGrowthData: (title: string) =>
+    ipcRenderer.invoke("growth:export-data", title) as Promise<GrowthBackupExportResult>,
+  previewGrowthImport: (title: string) =>
+    ipcRenderer.invoke("growth:preview-import", title) as Promise<GrowthBackupPreview | null>,
+  commitGrowthImport: (token: string) =>
+    ipcRenderer.invoke("growth:commit-import", token) as Promise<GrowthBackupImportResult>,
+  saveGrowthAnnualNote: (input: GrowthAnnualNoteInput) =>
+    ipcRenderer.invoke("growth:save-annual", input) as Promise<GrowthAnnualNote>,
+  deleteGrowthAnnualNote: (year: number) => ipcRenderer.invoke("growth:delete-annual", year),
 
   // Global shortcuts
   getGlobalShortcutStatus: () =>

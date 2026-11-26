@@ -117,6 +117,13 @@
 - 占位符不一致：`docs:check` 会校验 `{placeholder}` 集合。
 - 颜色不跟随主题：检查是否硬编码颜色；应使用语义 token 或 `var(--accent*)`。
 
+## 浮层（下拉 / 菜单 / 弹窗）
+
+- 下拉第二次打开超出窗口、或没有滚动条：定位不能复用上一次的 `top` / `maxHeight`。`DropdownMenu` 现在每次打开都按**锚点几何**封顶：下方放用 `top`、上方放用 `bottom` 贴住锚点，`max-height` 取该侧剩余空间，内容放不下就只滚动，不再依赖菜单自身测量出的高度（测量值只用来选方向）。
+- 下拉一直出现细滚动条：不要用 `scrollHeight` 反推 `max-height`（它不含边框，border-box 下会差 1–2px）；封顶值应来自锚点/视口的几何量。
+- 下拉被弹窗裁切：菜单必须 portal 到 `document.body`（`DropdownMenu` / `ContextMenu` 已处理），不要塞进 `overflow: hidden` 的容器。
+- 菜单打开时底层弹窗被 Esc 关掉：菜单的 Esc 监听要用 capture 阶段并 `stopPropagation`（`DropdownMenu` / `ContextMenu` 已处理）。
+
 ## 文档检查失败
 
 | 报错 | 处理 |

@@ -60,7 +60,6 @@ export interface AppSettings {
   private_lock_minutes: number;
   attachments_dir: string;
   canvas_dir: string;
-  project_vault_path: string;
   autosave_delay: number;
   default_view: "read" | "edit";
   indent_width: number;
@@ -105,7 +104,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   private_lock_minutes: 10,
   attachments_dir: "attachments",
   canvas_dir: "canvases",
-  project_vault_path: "",
   autosave_delay: 1000,
   default_view: "read",
   indent_width: 4,
@@ -167,7 +165,6 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   private_lock_minutes: { kind: "number", range: { min: 1, max: 120, step: 1 } },
   attachments_dir: { kind: "string" },
   canvas_dir: { kind: "string" },
-  project_vault_path: { kind: "string" },
   autosave_delay: { kind: "number", range: { min: 300, max: 3000, step: 100 } },
   default_view: { kind: "enum", options: ["read", "edit"] },
   indent_width: { kind: "number", range: { min: 2, max: 8, step: 2 } },

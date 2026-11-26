@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Skeleton } from "../Skeleton";
 import EmptyState from "../EmptyState";
@@ -15,8 +15,11 @@ interface Props {
   activeCollection: PdfCollectionData | null;
   loading: boolean;
   emptyText: string;
+  selecting: boolean;
+  selectedIds: ReadonlySet<number>;
   onOpen: (doc: PdfDocument) => void;
-  onAddToCollection: (doc: PdfDocument, collectionId: string) => void;
+  onToggleSelect: (doc: PdfDocument, event: MouseEvent<HTMLDivElement>) => void;
+  onMoveToCollection: (doc: PdfDocument, collectionId: string) => void;
   onRemoveFromCollection: (doc: PdfDocument) => void;
   onDelete: (doc: PdfDocument) => void;
   onShowInFolder: (doc: PdfDocument) => void;
@@ -30,8 +33,11 @@ export default function PdfGridView({
   activeCollection,
   loading,
   emptyText,
+  selecting,
+  selectedIds,
   onOpen,
-  onAddToCollection,
+  onToggleSelect,
+  onMoveToCollection,
   onRemoveFromCollection,
   onDelete,
   onShowInFolder,
@@ -135,8 +141,11 @@ export default function PdfGridView({
                     collections={collections}
                     memberCollections={memberships.get(doc.id) ?? []}
                     activeCollection={activeCollection}
+                    selecting={selecting}
+                    selected={selectedIds.has(doc.id)}
                     onOpen={() => onOpen(doc)}
-                    onAddToCollection={(collId) => onAddToCollection(doc, collId)}
+                    onToggleSelect={(event) => onToggleSelect(doc, event)}
+                    onMoveToCollection={(collId) => onMoveToCollection(doc, collId)}
                     onRemoveFromCollection={() => onRemoveFromCollection(doc)}
                     onDelete={() => onDelete(doc)}
                     onShowInFolder={() => onShowInFolder(doc)}

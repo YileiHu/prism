@@ -13,6 +13,8 @@ interface DropdownMenuProps {
   align?: "left" | "right";
   side?: "bottom" | "top";
   matchWidth?: boolean;
+  /** "none" removes the 4px inner padding so sticky section headers sit flush. */
+  padding?: "default" | "none";
   className?: string;
   children: ReactNode;
 }
@@ -24,6 +26,7 @@ export function DropdownMenu({
   align = "left",
   side = "bottom",
   matchWidth = false,
+  padding = "default",
   className = "",
   children,
 }: DropdownMenuProps) {
@@ -31,6 +34,14 @@ export function DropdownMenu({
   const [style, setStyle] = useState<CSSProperties>({});
   const [ready, setReady] = useState(false);
   const { mounted, exiting } = useAnimatedMount(open, 100);
+
+  // Drop the previous session's geometry once the exit animation is over, so a
+  // reopen never renders with a stale position/height before it is measured.
+  useEffect(() => {
+    if (mounted) return;
+    setStyle({});
+    setReady(false);
+  }, [mounted]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -42,18 +53,52 @@ export function DropdownMenu({
     // than positioning with the fallback size, which shifts narrow menus.
     if (!anchor || !menu) return;
     const rect = anchor.getBoundingClientRect();
+    // Measure at the width we are about to apply. A fresh menu has no inline
+    // width yet, so it is laid out at its shrink-to-fit width, which differs
+    // from the trigger: `align="right"` derives the left edge from the measured
+    // width, so the very first open lands shifted sideways (later opens reuse
+    // the remembered width, which is why it looks self-healing). The height is
+    // only used to pick a side, never to cap the menu (see below).
+    const inlineWidth = menu.style.width;
+    if (matchWidth) menu.style.width = `${rect.width}px`;
+    menu.style.maxHeight = "none";
+    menu.style.overflowY = "visible";
     const mw = menu.offsetWidth;
-    const mh = menu.offsetHeight;
+    const mh = Math.max(menu.offsetHeight, menu.scrollHeight);
+    menu.style.width = inlineWidth;
 
+    const gap = 4;
+    const margin = 8;
     let left = align === "right" ? rect.right - mw : rect.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+    left = Math.max(margin, Math.min(left, window.innerWidth - mw - margin));
 
-    let top = side === "top" ? rect.top - mh - 4 : rect.bottom + 4;
-    // Flip when overflowing the viewport edge
-    if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 4);
-    if (top < 8) top = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - mh - 8));
+    const roomBelow = Math.max(0, window.innerHeight - rect.bottom - gap - margin);
+    const roomAbove = Math.max(0, rect.top - gap - margin);
+    const fitsBelow = mh <= roomBelow;
+    const fitsAbove = mh <= roomAbove;
+    // Respect an explicit side first; otherwise prefer below, then flip.
+    const preferAbove = side === "top";
+    let placeAbove = preferAbove ? fitsAbove || !fitsBelow : !fitsBelow && fitsAbove;
+    if (!fitsBelow && !fitsAbove) {
+      // Neither side can show the whole list: use the roomier side and scroll.
+      placeAbove = roomAbove > roomBelow;
+    }
 
-    setStyle({ left, top, width: matchWidth ? rect.width : undefined });
+    // The cap comes from the anchor geometry, not from the measured menu height:
+    // anchor both edges with `top`/`bottom` and the menu can never leave the
+    // viewport, even if a measurement was stale or the list grows later. It just
+    // scrolls inside the room it was given.
+    const maxHeight = placeAbove ? roomAbove : roomBelow;
+    setStyle({
+      left,
+      ...(placeAbove
+        ? { bottom: window.innerHeight - rect.top + gap }
+        : { top: rect.bottom + gap }),
+      width: matchWidth ? rect.width : undefined,
+      maxHeight,
+      overflowY: "auto",
+      overscrollBehavior: "contain",
+    });
     setReady(true);
   }, [open, mounted, anchorRef, align, side, matchWidth]);
 
@@ -87,7 +132,9 @@ export function DropdownMenu({
       <div
         ref={menuRef}
         data-prism-menu=""
-        className={`fixed z-menu bg-elevated border border-strong rounded-control shadow-popover p-1 ${
+        className={`fixed z-menu bg-elevated border border-strong rounded-control shadow-popover ${
+          padding === "none" ? "" : "p-1"
+        } ${
           exiting ? "anim-exit" : side === "top" ? "anim-menu-up" : "anim-menu"
         } ${className}`}
         style={{ ...style, visibility: ready ? "visible" : "hidden" }}

@@ -16,7 +16,7 @@
 
 ### 存放位置
 
-白板不是 SQLite 数据，而是笔记库里的普通 JSON 文件：默认 `<vault>/<canvas_dir>/*.json`，`canvas_dir` 默认 `canvases`。新的项目白板也放在这里；旧项目文件夹 `<vault>/Projects/<项目>/` 中的 `.json` 仍作为历史位置兼容。
+白板不是 SQLite 数据，而是笔记库里的普通 JSON 文件：默认 `<vault>/<canvas_dir>/*.json`，`canvas_dir` 默认 `canvases`。新建白板放在这里；旧项目文件夹 `<vault>/Projects/<项目>/` 中的 `.json` 仍作为历史位置兼容。
 
 - `canvas_dir` 是笔记库内相对文件夹；`resolveCanvasDir`（`electron/main.ts`）把反斜杠换成 `/`，拒绝空路径、`..` 与绝对路径（含盘符），非法时回退到 `canvases`。允许子目录，例如 `mind/canvases`。
 - `listCanvasFiles` 扫描白板目录第一层的 `*.json`，并追加该 vault 下 `<vault>/Projects/*/` 第一层的 `*.json`（旧项目白板兼容），按 `modifiedAt` 降序返回 `CanvasFile`；不递归子目录、不写数据库索引。
@@ -172,7 +172,6 @@
 | 键 | 默认 | 作用 |
 |---|---|---|
 | `canvas_dir` | `canvases` | 白板 JSON 在 vault 内的相对目录；全局设置，所有 vault 共用；UI 在 `VaultsSection.tsx`，主进程再清洗 |
-| `project_vault_path` | `""` | 默认项目资料仓库；新建/关联项目资料时默认选中，不再代表项目文件夹；UI 在 `GtdSection.tsx` |
 | `canvas_presets` | `[]` | 卡片预设 JSON 数组，`normalizeCanvasPresets` 限 8 个、名字 32 字符、尺寸/字号夹取 |
 | `canvas_minimap_position` | `bottom-right` | `off` / 四角；`off` 或详情面板可见时不渲染 MiniMap |
 | `canvas_background` | `dots` | `dots` / `lines` / `cross` / `none` |
@@ -224,7 +223,7 @@
 UI 手测清单：
 
 - 新建白板 → 打开标签 → 重命名 → 分组里的路径与标签标题同步；删除 → 文件进回收站、标签关闭、分组引用消失。
-- 项目页新建白板 → 文件落在 `canvas_dir` → 白板库列表可见、可打开/保存/重命名，并自动关联项目；旧 `Projects/<项目>/` 白板仍可见。
+- 新建白板 → 文件落在 `canvas_dir` → 白板库列表可见、可打开/保存/重命名；旧 `Projects/<项目>/` 白板仍可见。
 - 打开白板改内容，等自动保存；用外部编辑器改同一文件后再改一次，应弹冲突；分别试「重新加载」和「覆盖保存」。
 - 分组：新建/重命名/换色/排序；把未分组白板拖进组、组间拖动、拖回未分组；删除分组后成员回到未分组；空组显示拖入提示。
 - 卡片/连线：双击新建、双击编辑、拖拽/缩放、右键复制、对齐/分布、围绕所选建容器；连线两端/标签拖动/线型/粗细；删除节点后相关连线消失。

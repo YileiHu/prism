@@ -76,7 +76,7 @@ export function walk(relDir, extensions) {
 // ---------------------------------------------------------------------------
 
 /** Return the index just after the matching close bracket (does not skip strings). */
-function matchBracket(text, openIndex) {
+export function matchBracket(text, openIndex) {
   const open = text[openIndex];
   const close = open === "{" ? "}" : open === "[" ? "]" : open === "(" ? ")" : null;
   if (!close) throw new Error(`matchBracket: not an opening bracket at ${openIndex}`);
@@ -394,6 +394,9 @@ export function parseExports(text) {
   for (const m of text.matchAll(/^\s*export\s+default\s+([A-Za-z_$][\w$]*)\s*;/gm)) {
     names.add(m[1]);
   }
+  for (const m of text.matchAll(/^\s*export\s+default\s+class\s+([A-Za-z_$][\w$]*)/gm)) {
+    names.add(m[1]);
+  }
   for (const m of text.matchAll(/^\s*export\s*\{([^}]*)\}/gm)) {
     for (const part of m[1].split(",")) {
       const name = part.trim().split(/\s+as\s+/).pop()?.trim();
@@ -615,11 +618,212 @@ export function generateCodeMap() {
   return lines.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Shared UI inventory (components, hooks, tokens, shared classes)
+// ---------------------------------------------------------------------------
+
+const CSS_VAR_GROUPS = [
+  ["表面 / 文字 / 线", (name) => name.startsWith("--c-")],
+  ["强调色", (name) => name.startsWith("--accent")],
+  ["外壳 / 侧栏", (name) => /^--(?:header|chrome|sidebar|window|ring)-/.test(name)],
+  ["凹槽 / 凸起", (name) => /^--(?:raised|inset)-/.test(name)],
+  ["Markdown / 编辑器", (name) => name.startsWith("--md-")],
+  ["内容排版", (name) => name.startsWith("--content-")],
+  ["滚动条", (name) => name.startsWith("--scrollbar-")],
+];
+
+const SHARED_CLASS_PREFIXES = [
+  "app-",
+  "toolbar-",
+  "chrome-",
+  "surface-",
+  "field-",
+  "accent-",
+  "active-bar",
+  "tab-fade",
+  "panel-",
+  "segmented-",
+  "switch-",
+  "anim-",
+  "pane-",
+  "stagger-",
+  "sidebar-",
+  "scrollbar-",
+];
+
+/** Tailwind semantic tokens from `tailwind.config.js` (flat sections only). */
+export function parseTailwindTokens(text = read("tailwind.config.js")) {
+  const section = (name) => {
+    const start = text.indexOf(`${name}: {`);
+    if (start === -1) return [];
+    const open = text.indexOf("{", start);
+    const end = matchBracket(text, open);
+    if (open === -1 || end === -1) return [];
+    const body = text.slice(open + 1, end - 1);
+    const keys = new Set();
+    for (const match of body.matchAll(
+      /^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_$][\w$-]*))\s*:/gm,
+    )) {
+      keys.add(match[1] ?? match[2] ?? match[3]);
+    }
+    return [...keys].sort();
+  };
+  return {
+    colors: section("colors"),
+    borderRadius: section("borderRadius"),
+    boxShadow: section("boxShadow"),
+    fontSize: section("fontSize"),
+    zIndex: section("zIndex"),
+  };
+}
+
+/** CSS custom-property names defined in `src/index.css` (not usages). */
+export function parseCssVarNames(text = read("src/index.css")) {
+  const names = new Set();
+  for (const match of text.matchAll(/(--[A-Za-z0-9-]+)\s*:/g)) names.add(match[1]);
+  return [...names].sort();
+}
+
+/** Shared chrome/effect classes defined in `src/index.css`. */
+export function parseSharedClasses(text = read("src/index.css")) {
+  const names = new Set();
+  for (const match of text.matchAll(/^\s*\.([a-z][\w-]*)/gm)) {
+    const name = match[1];
+    if (SHARED_CLASS_PREFIXES.some((prefix) => name.startsWith(prefix))) names.add(name);
+  }
+  return [...names].sort();
+}
+
+export function generateUiInventory() {
+  const componentFiles = walk("src/components", [".tsx"]).filter(
+    (file) => path.posix.dirname(file) === "src/components",
+  );
+  const settingsControls = "src/components/settings/controls.tsx";
+  const libFiles = walk("src/lib", [".ts", ".tsx"]);
+  const otherHookFiles = walk("src", [".ts", ".tsx"]).filter(
+    (file) =>
+      !file.endsWith(".d.ts") &&
+      !file.startsWith("src/lib/") &&
+      file !== settingsControls,
+  );
+
+  const tokens = parseTailwindTokens();
+  for (const [group, values] of Object.entries(tokens)) {
+    if (values.length === 0) {
+      throw new Error(`ui-inventory: tailwind token group "${group}" not found in tailwind.config.js`);
+    }
+  }
+  const cssVars = parseCssVarNames();
+  if (cssVars.length < 20) {
+    throw new Error("ui-inventory: fewer than 20 CSS variables found in src/index.css");
+  }
+  const sharedClasses = parseSharedClasses();
+  if (sharedClasses.length === 0) {
+    throw new Error("ui-inventory: no shared style classes found in src/index.css");
+  }
+
+  const lines = [];
+  lines.push(
+    BANNER(
+      "`src/components/*.tsx`, `src/components/settings/controls.tsx`, `src/lib/**`, `src/index.css` and `tailwind.config.js`",
+    ),
+  );
+  lines.push("# 共享控件与样式清单");
+  lines.push("");
+  lines.push(
+    "> 新建前先搜本页：已有同职责的控件、hook、函数或 token 时，复用或扩展，不要重造。模块私有组件见 `code-map.md`，选用规则见 [UI kit](../guides/ui-kit.md)。",
+  );
+  lines.push("");
+
+  lines.push("## 共享控件（`src/components/` 根目录）");
+  lines.push("");
+  lines.push("| 文件 | 导出 |");
+  lines.push("|---|---|");
+  for (const file of componentFiles) {
+    const exports = parseExports(read(file));
+    lines.push(
+      `| ${safeSourceLink(file, path.posix.basename(file))} | ${exports.length ? exports.map((name) => `\`${name}\``).join(", ") : "—"} |`,
+    );
+  }
+  lines.push("");
+  lines.push("### 设置控件（`src/components/settings/controls.tsx`）");
+  lines.push("");
+  lines.push(
+    `导出：${parseExports(read(settingsControls)).map((name) => `\`${name}\``).join(", ")}。设置页不要手写行布局，见 [recipes](../guides/recipes.md) 的「新增设置项」。`,
+  );
+  lines.push("");
+
+  lines.push("## Hook 与工具函数（`src/lib/`）");
+  lines.push("");
+  lines.push("| 文件 | 导出 |");
+  lines.push("|---|---|");
+  for (const file of libFiles) {
+    const exports = parseExports(read(file));
+    const suffix = exports.length ? exports.map((name) => `\`${name}\``).join(", ") : "—";
+    lines.push(`| ${safeSourceLink(file, path.posix.basename(file))} | ${suffix} |`);
+  }
+  lines.push("");
+  lines.push("> `use*` 是 hook；其余为纯函数、常量或类型。日期/路径/颜色/画布模型优先从这里找。");
+  lines.push("");
+
+  lines.push("## 其他 Hook（Provider / 模块内）");
+  lines.push("");
+  lines.push("| 文件 | Hook |");
+  lines.push("|---|---|");
+  for (const file of otherHookFiles) {
+    const hooks = parseExports(read(file)).filter((name) => /^use[A-Z]/.test(name));
+    if (hooks.length === 0) continue;
+    lines.push(
+      `| ${safeSourceLink(file, file.slice("src/".length))} | ${hooks.map((name) => `\`${name}\``).join(", ")} |`,
+    );
+  }
+  lines.push("");
+  lines.push("> Provider 提供的上下文 hook（`useT` / `useTheme` / `useSettings` / `useToast`）不要各自重写。");
+  lines.push("");
+
+  lines.push("## Tailwind 语义 token");
+  lines.push("");
+  const tokenLine = (label, values) =>
+    `- ${label}：${values.map((value) => `\`${value}\``).join(" ")}`;
+  lines.push(tokenLine("颜色", tokens.colors));
+  lines.push(tokenLine("圆角", tokens.borderRadius));
+  lines.push(tokenLine("阴影", tokens.boxShadow));
+  lines.push(tokenLine("字号", tokens.fontSize));
+  lines.push(tokenLine("层级", tokens.zIndex));
+  lines.push("");
+
+  lines.push("## CSS 变量（`src/index.css`，值随主题/模式变化）");
+  lines.push("");
+  const grouped = new Set();
+  for (const [label, predicate] of CSS_VAR_GROUPS) {
+    const names = cssVars.filter(predicate);
+    for (const name of names) grouped.add(name);
+    if (names.length === 0) continue;
+    lines.push(`- ${label}：${names.map((name) => `\`${name}\``).join(" ")}`);
+  }
+  const rest = cssVars.filter((name) => !grouped.has(name));
+  if (rest.length > 0) {
+    lines.push(`- 其他：${rest.map((name) => `\`${name}\``).join(" ")}`);
+  }
+  lines.push("");
+
+  lines.push("## 共用样式类");
+  lines.push("");
+  lines.push(sharedClasses.map((name) => `\`.${name}\``).join(" "));
+  lines.push("");
+  lines.push(
+    "> 编辑器/白板专用的 `.cm-*`、`.md-*`、`.prism-canvas*` 类不在本清单内，见 [编辑器](../architecture/editor.md) 与 [白板](../architecture/canvas.md)。",
+  );
+  lines.push("");
+  return lines.join("\n");
+}
+
 export function generateAll(data = collect()) {
   return {
     "docs/reference/ipc.md": generateIpc(data),
     "docs/reference/settings.md": generateSettings(data),
     "docs/reference/database.md": generateDatabase(data),
     "docs/reference/code-map.md": generateCodeMap(),
+    "docs/reference/ui-inventory.md": generateUiInventory(),
   };
 }
