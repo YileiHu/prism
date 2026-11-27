@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { useT } from "../../i18n";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
-import { resolveTagColor } from "../../lib/colors";
-import { buildColorMenuItem } from "../ColorPicker";
+import { CollectionIcon } from "../../lib/collectionIcons";
 import type { MenuItem } from "../ContextMenu";
 import NavItem from "../NavItem";
-import { Pencil, Trash2 } from "lucide-react";
+import CollectionIconPicker from "./CollectionIconPicker";
+import { Pencil, Shapes, Trash2 } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 
 export interface GroupNavRowSortable {
@@ -19,7 +20,8 @@ export interface GroupNavRowSortable {
 
 interface Props {
   name: string;
-  color?: string;
+  /** Preset id from lib/collectionIcons; empty falls back to the folder. */
+  icon?: string;
   count: number;
   active: boolean;
   index?: number;
@@ -30,15 +32,15 @@ interface Props {
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
-  onSetColor: (color: string) => void;
+  onSetIcon: (icon: string) => void;
 }
 
-// One sidebar row for every group-like entity: note/PDF collections, resource
-// tags and (later) canvas groups. Keeps the colored dot, count, active state,
-// menu, drag handle and click guard identical across sources.
+// One sidebar row for every collection-like entity: note/PDF collections and
+// web-resource collections. Keeps the icon, count, active state, menu, drag
+// handle and click guard identical across sources.
 export default function GroupNavRow({
   name,
-  color,
+  icon,
   count,
   active,
   index = 0,
@@ -48,21 +50,19 @@ export default function GroupNavRow({
   onSelect,
   onRename,
   onDelete,
-  onSetColor,
+  onSetIcon,
 }: Props) {
   const { t } = useT();
   const { onContextMenu } = useContextMenu();
   const clickGuard = useDragClickGuard(sortable?.isDragging ?? false);
-  const dot = resolveTagColor(name, color);
+  const [iconOpen, setIconOpen] = useState(false);
 
   const menuItems: MenuItem[] = [
-    buildColorMenuItem(t, {
-      label: t["library.groupColor"],
-      autoLabel: t["collections.colorAuto"],
-      autoSource: name,
-      current: color,
-      onSelect: onSetColor,
-    }),
+    {
+      label: t["collections.chooseIcon"],
+      icon: <Shapes size={14} />,
+      onClick: () => setIconOpen(true),
+    },
     { label: t["menu.rename"], icon: <Pencil size={14} />, onClick: onRename },
     { label: t["menu.delete"], icon: <Trash2 size={14} />, danger: true, onClick: onDelete },
   ];
@@ -75,21 +75,32 @@ export default function GroupNavRow({
   } as React.CSSProperties;
 
   return (
-    <NavItem
-      ref={sortable?.setNodeRef}
-      {...sortable?.attributes}
-      {...sortable?.listeners}
-      {...clickGuard}
-      style={style}
-      active={active}
-      className={`group cursor-pointer stagger-fade ${
-        highlight ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
-      } ${className}`}
-      onClick={onSelect}
-      onContextMenu={(event) => onContextMenu(event, menuItems)}
-      leading={<span className="w-2 h-2 rounded-full" style={{ backgroundColor: dot.bar }} />}
-      label={name}
-      trailing={count}
-    />
+    <>
+      <NavItem
+        ref={sortable?.setNodeRef}
+        {...sortable?.attributes}
+        {...sortable?.listeners}
+        {...clickGuard}
+        style={style}
+        active={active}
+        className={`group cursor-pointer stagger-fade ${
+          highlight ? "ring-2 ring-inset ring-[var(--accent)] bg-[var(--accent-muted)]" : ""
+        } ${className}`}
+        onClick={onSelect}
+        onContextMenu={(event) => onContextMenu(event, menuItems)}
+        leading={<CollectionIcon icon={icon} size={14} />}
+        label={name}
+        trailing={count}
+      />
+      <CollectionIconPicker
+        open={iconOpen}
+        value={icon}
+        onPick={(next) => {
+          onSetIcon(next);
+          setIconOpen(false);
+        }}
+        onClose={() => setIconOpen(false)}
+      />
+    </>
   );
 }

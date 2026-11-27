@@ -160,7 +160,7 @@ export default function PdfCard({
               <span
                 key={c.id}
                 className="w-2 h-2 rounded-full ring-1 ring-[color:var(--ring-subtle)]"
-                style={{ backgroundColor: resolveTagColor(c.name, c.color).bar }}
+                style={{ backgroundColor: resolveTagColor(c.name).bar }}
               />
             ))}
           </div>
@@ -177,9 +177,9 @@ export default function PdfCard({
             <span
               key={c.id}
               className="inline-flex items-center gap-1 px-1.5 py-px rounded-chip text-[11px]"
-              style={{ backgroundColor: resolveTagColor(c.name, c.color).bg, color: resolveTagColor(c.name, c.color).name }}
+              style={{ backgroundColor: resolveTagColor(c.name).bg, color: resolveTagColor(c.name).name }}
             >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: resolveTagColor(c.name, c.color).bar }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: resolveTagColor(c.name).bar }} />
               <span className="max-w-[84px] truncate">{c.name}</span>
             </span>
           ))}

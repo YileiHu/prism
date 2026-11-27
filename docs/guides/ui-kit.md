@@ -15,6 +15,7 @@
 - 文字：`primary` / `secondary` / `tertiary` / `muted` / `faint`
 - 线：`line` / `strong`
 - 状态：`accent` / `danger` / `success` / `warning` / `info`；前景 `on-accent` / `on-danger`
+- 装饰（主题 fx）：`--fx-image` / `--fx-size` / `--fx-repeat`（页面图案与柔光图层）、`--fx-highlight` / `--fx-highlight-size` / `--fx-highlight-opacity`（ChipTabs 选中光晕的纹理来源）、`--chip-glow-image` / `--chip-glow-size` / `--chip-glow-opacity` / `--chip-glow-blur`（光晕合成结果）、`--chrome-tint`（大面 tint，默认主色，`chrome: "neutral"` 时为 muted 灰）、`--fx-glow` / `--fx-blur`；默认 `none` / `0`，只有共享层消费
 - 字号：`meta` / `caption` / `control` / `body` / `section`
 - 圆角：`chip` / `control` / `card`
 - 阴影：`popover` / `modal` / `drag` / `toast`
@@ -22,22 +23,23 @@
 
 规则：
 
-- **禁止**硬编码 `gray-*`、`red-*`、`#hex` 等；主色用 `bg-[var(--accent)]`、`text-[var(--accent-text)]`、`bg-[var(--accent-muted)]`，状态色用语义 token。
-- 两套模式共用 token；主题差异在 `src/theme/themes.ts` 的数据里，不在组件里写 `themeId` 特例。
+- **禁止**硬编码 `gray-*`、`red-*`、`#hex` 等；主色用 `bg-[var(--accent)]`、`text-[var(--accent-text)]`、`bg-[var(--accent-muted)]`，状态色用语义 token。副色 `--accent-2` 只做装饰（没定义时等于主色），不参与选中/激活/焦点语义。
+- 两套模式共用 token；主题差异在 `src/shared/themes.ts` 的数据里，**不在组件里写 `themeId` 特例**（需要"某主题特殊"时先改数据/共享层，不写分支）。单模式主题（仅深色 / 仅浅色）由 `resolveAppearance` 锁定模式，组件只读 `resolvedMode`。
 - 颜色数据（标签/资源/任务徽标）用 `src/lib/colors.ts` 的 `resolveTagColor` / `TAG_COLORS` / `hashColor` / `PALETTE`，选择菜单用 `ColorPicker.tsx`。
 
 ## 区域分层
 
-- `.app-header`：标题栏纯色层。
+- `.app-header`：标题栏层；`--header-bg` 用 `--c-chrome-surface` 混 `--c-chrome-tint`（深色 94/6），浅色直接用 `--c-chrome-surface`；tab 栏继承同一套 chrome palette。
 - `.toolbar-band`：工具栏层。
 - `.app-main`：主区。
-- `.chrome-bg`：侧边栏唯一渐变层（深色顶部淡、向下渐浓；浅色顶部浓、向下渐淡）。令牌：`--header-bg` / `--chrome-bg` / `--chrome-flat` / `--sidebar-base` / `--sidebar-bg-top` / `--sidebar-bg` / `--sidebar-item-hover` / `--sidebar-item-active`。
-- `body` 的 `--aurora` 是全局底色，外壳自身透明。
-- 共用效果类：`.chrome-pill-active`、`.active-bar` / `.active-bar-neutral` / `.selection-bar`、`.surface-inset` / `.surface-raised` / `.surface-raised-accent` / `.surface-raised-fill`、`.field-inset`、`.accent-ring`、`.accent-focus`、`.tab-fade-left/right`。
-- 层级：`.field-inset` 用 `--field-*`，深浅互为镜像——深色 1px 边 + 内阴影（凹进去），浅色 1px 边 + 外投影 + 底缘内线（凸出来）；深度一律由阴影给，边框保持 1px，所以两边厚度一致。`--inset-*` 只留给轨道/分组这类真正的凹槽，不要把两者混用，否则改卡片底色会连带把开关和分段控件压平。
-- 浅色卡片：`surface` 由主题 accent 3% 混白（`themes.ts` 的 `tintPaper`），`elevated` 保持纯白，菜单和弹层用这一层；改这张"纸"的色调只动 `PAPER_ACCENT_RATIO`。
-- 聚焦：`--field-focus-border` / `--field-focus-ring`。两边都是「1px 边框 + 1px 同色内线」= 视觉 2px，不改 `border-width`，因为 border-box 下加宽会让文字在聚焦时位移 1px。深色用 100% accent，浅色用 60% accent 混中性描边，避免浅底上出现荧光边。
-- 错误态：`.field-inset[aria-invalid="true"]` 把边框和聚焦内环换成 danger；控件传 `invalid` 时设置 `aria-invalid`，不要另加红框类。
+- `.chrome-bg`：侧边栏唯一渐变层（深色顶部淡、向下渐浓；浅色顶部浓、向下渐淡）。令牌：`--header-bg` / `--chrome-bg` / `--chrome-flat` / `--sidebar-base` / `--sidebar-bg-top` / `--sidebar-bg` / `--sidebar-item-hover` / `--sidebar-item-active`；底色/文字来自 `--c-chrome-*`，主区仍用中性 `--c-*`。
+- `body` 用 `--c-base` 纯色作全局底色（旧的 `--aurora` 渐变已移除），外壳自身透明。
+- **装饰层**：主题可以带 `fx`（图案 / 顶缘高光 / 副色光晕 / 浮动面板模糊 / 侧栏喷泉），由 `ThemeProvider` 写成 `--fx-*` 并加 `data-fx` / `data-fx-blur`；消费点固定在 `body`、`.app-main`、`.app-header`、`.toolbar-band`、`.chrome-bg`、`.accent-ring`、`.panel-floating`、`.fx-fountain`（`NavItem`）。`data-fx` 未设置时不会挂 `background-attachment: fixed`，`data-fx-blur` 未设置时不会开 `backdrop-filter`；`sidebarRows: "flat"` 通过 `data-flat-rows` 去掉 `NavItem` 的灰色 hover/选中底。
+- 共用效果类：`.theme-hover`（主题 hover 纹理：Button / SelectButton 触发器 / 未激活顶栏 tab / 菜单项；SegmentedToggle 与 ChipTabs 保留自己的滑轨/光晕）、`.tab-close`（tab 关闭：所有主题都无背景/边框/纹理，只保留 X，hover 变亮）、`.theme-hover-accent`（已选中项 hover：用主题强调色纹理/描边，保留自己的选中底；覆盖激活 tab、`Button active`、`DropdownMenuItem active`，GENESIS 为金色方格）、`.theme-active`（统一选中态：`accent-muted` 底 + `accent-text` + 1px `accent-border` inset；ChipTabs / SegmentedToggle / NavItem 用更高优先级覆盖为自己的选中语言）、`.theme-hover-danger`（danger 专用 hover：红色边框/点阵；只有 GENESIS 叠红色点阵，普通主题保留普通 danger hover）、`.active-bar` / `.active-bar-neutral` / `.selection-bar`、`.surface-inset` / `.surface-raised` / `.surface-raised-accent` / `.surface-raised-fill`、`.field-inset`、`.accent-ring`、`.accent-focus`、`.tab-fade-left/right`。
+- 层级：`.field-inset` 用 `--field-*`，平面款：常态 1px 边 + `--field-bg`，不再加内/外阴影；`--inset-*` 只留给轨道/分组这类真正的凹槽，不要把两者混用。
+- 浅色卡片：`surface` 由主题 accent 9% 混白、`elevated` 5.2%，`base`/`hover` 另混 5.5–6%；字段与菜单用 `elevated`，比卡片更浅一档。改这张"纸"的色调只动 `PAPER_ACCENT_RATIO` 以及对应的 base/hover 混色比例。
+- 聚焦：`--field-focus-border`。平面款聚焦时用 1px 边框 + 1px 内侧同色线（视觉 2px），不再加 ring（不溢出，避免被 modal/滚动容器裁切），不改 `border-width`，所以文字不会位移。深色用 100% accent，浅色用 60% accent 混中性描边，避免浅底上出现荧光边。GENESIS 通过 `fx.focus` 使用 2px 视觉青色边框 + active 按钮同款的 3px/1px 青色方阵纹理（8%，`data-focus-fx`），不画四角、不叠金色内环；其他主题保持原 focus。
+- 错误态：`.field-inset[aria-invalid="true"]` 把边框换成视觉 2px danger；控件传 `invalid` 时设置 `aria-invalid`，不要另加红框类。
 - 全局 `input[type="range"]` 已统一，传 `--slider-progress` 即可。手柄是扁平款：18px 圆形 = 12px accent 芯 + 3px `surface` 厚边，无投影；hover/聚焦只用 3px 同色光晕，不放大。
 
 ## 基础控件（`src/components/`）
@@ -46,7 +48,7 @@
 |---|---|
 | 按钮 | `Button`（5 型见下）；尺寸 `xs` / `sm` / `icon-xs` / `icon-sm` |
 | 输入 | `Input`（导出 `CONTROL_CLASSES`）、`Textarea`、`SearchInput`、`TagInput`（输入 + 建议下拉 + **固定高度的已选槽**：空槽是虚线占位、有标签是实线托盘，点槽聚焦输入）、`NumericInput`（数字：普通文本框 + 字符过滤 + `suffix` / `invalid`，**禁止** `type="number"` 的原生上下按钮）、`NumberInput`（`number \| null` + 失焦解析、`min`/`max` clamp、`allowEmpty`；表单和弹窗用这个） |
-| 选择 | `SelectButton`（长列表用 `groups` 按领域分段、`emptyLabel` 提供「不关联」项；菜单按视口剩余高度自动限高滚动（`DropdownMenu` 统一处理，长选项换行不截断）、组标题吸顶；`variant="pill"` 是工具栏用的胶囊款：高 28px、`rounded-full`、12px 字号、加长宽度，其余交互一致）、`SegmentedToggle`（编辑/阅读、标题/正文等分段切换；轨道 3px 内边距、chip 高 22px，option 一律 `leading-none` + `py-[5px]`，否则 `text-caption` 的 1.4 行高会让文字在 chip 里偏高、底部留白显大）、`ChipTabs`（与分段控件同族的**内凹轨道 + 滑动滑块**，用同一套节奏：轨道 3px 内边距、chip 22px、`leading-none`；用于页内筛选/切换：可选「全部」、右侧元信息与主题色、横向滚动、尾部动作。溢出处理：`collapse` 按轨道宽度**自动**决定放几个（离屏测量每个 chip 的自然宽度），多余的进「更多」菜单，可见 chip 均分槽宽所以不会留空；chip 内一律 `whitespace-nowrap`，窄时标签先截断，不会把槽撑高。） |
+| 选择 | `SelectButton`（长列表用 `groups` 按领域分段、`emptyLabel` 提供「不关联」项；菜单按视口剩余高度自动限高滚动（`DropdownMenu` 统一处理，长选项换行不截断）、组标题吸顶；`variant="pill"` 是工具栏用的胶囊款：高 28px、`rounded-pill`（跟随主题，GENESIS 变直角）、12px 字号、加长宽度，其余交互一致）、`SegmentedToggle`（编辑/阅读、标题/正文等分段切换；透明托盘 + 贯穿整条的扁平滑轨光晕（12px 高、55%，复用 `--chip-glow-*`，按钮层在光晕之上）；选中项无胶囊/底色，只做字体强调：`accent-text` + `font-weight: 600` + 轻微 `letter-spacing`；选项等宽（`inline-grid` + `auto-cols-fr`）、2px 内边距、控件高 31px（27px 选项 + 4px 内边距）；未选中透明/灰字，option 一律 `leading-none`，避免 `text-caption` 的 1.4 行高把文字挤偏）、`ChipTabs`（**无底轨道 + 选中光晕**：轨道没有背景也没有边线；选中项背后是一片跟着主题色走的平滑光晕（`item.glow` 可覆盖，如成长领域用领域色），不是实心块；hover 时每个 chip 有同色光晕、按下更亮；chip 22px、`leading-none`；用于页内筛选/切换：可选「全部」、右侧元信息与主题色、横向滚动、尾部动作。溢出处理：`collapse` 按轨道宽度**自动**决定放几个（离屏测量每个 chip 的自然宽度），多余的进「更多」菜单，可见 chip 均分槽宽所以不会留空；chip 内一律 `whitespace-nowrap`，窄时标签先截断，不会把槽撑高。） |
 | 日期 | `DateField`（受控的 `YYYY-MM-DD` 字符串，内嵌日历 + 今天/明天/一周后/清除预设）、`DateCalendar`（月历本体，任务与养成共用） |
 | 标签 | `Badge`（variant / palette，见下）、`GlowBadge`（accent/warning 光晕，见下） |
 | 列表行 | `ItemRow`（只有一种密度：`px-2 py-1.5` + `rounded-control`，hover 底色是圆角块；原先的 `list`/`dense` 两档已合并）、`NavItem`、`SortableList` |
@@ -125,6 +127,8 @@
 | 型 | 角色 | 用在哪 | 不要用在哪 |
 |---|---|---|---|
 | `primary` | 主操作 | 弹窗确认/保存、空态 CTA、表单唯一提交、解锁/创建 | 取消/关闭、工具栏普通图标、同一区域多个并列 |
+
+> 主按钮和危险按钮是平面版：`primary` 用 `accent-muted` 底 + `accent-border` 边，`danger` 用实心 `danger` 底；两者都不加 `surface-raised*` 阴影/高光，也不叠 `.theme-hover` 纹理。主按钮文字仍用 `--primary-button-text`；GENESIS 静止时是主题金色，hover/press 通过 `primaryButtonHoverText` 变青色。
 | `secondary` | 次操作（描边） | 弹窗「取消/返回」、表单备用路径、设置页「选择/更改」 | 图标工具栏、纯链接、同一弹窗第二个主操作 |
 | `ghost` | 工具操作 | 工具栏图标、切换/筛选（`active`）、面板头关闭、内联链接式动作 | 弹窗底部取消、最终危险确认 |
 | `danger` | 危险确认 | 最终确认：`ConfirmDialog` 或自定义确认弹窗 | 入口按钮、行内删除、批量条触发 |
@@ -132,14 +136,18 @@
 
 选型顺序：破坏性？→ 最终确认 `danger`，否则 `ghost-danger`；非破坏 → 主操作 `primary`（每个可见区域最多 1 个）→ 弹窗/表单/设置里的次操作 `secondary` → 其余 `ghost`。
 
+
 ### 尺寸与形状
 
 | size | 尺寸 | 形状 | 用在哪 | 不要用在哪 |
 |---|---|---|---|---|
 | `xs` | 文字 caption | `rounded-control` | 设置行、面板里的短操作 | 弹窗主操作 |
 | `sm` | 文字 body | `rounded-control` | 弹窗主/次操作、表单提交、空态 CTA | 图标操作 |
-| `icon-xs` | 24×24 | **圆形** | 28–32px 标题栏、标签页、日历翻月 | 列表行删除/重置 |
+| `icon-xs` | 24×24 | `rounded-pill`（默认圆形，主题可改方角） | 28–32px 标题栏、标签页、日历翻月 | 列表行删除/重置 |
 | `icon-sm` | 32×32 | `rounded-control` | 工具栏、列表行删除/重置 | 28px 胶囊标签内（会溢出） |
+
+> `rounded-chip` / `rounded-control` / `rounded-card` / `rounded-pill` / `rounded-segment` 都是主题 token
+> （`--radius-*`）：默认 4/8/12/9999/5，主题可通过 `radius` 覆盖；GENESIS 全设为 0。
 
 ### 允许的组合
 
@@ -151,7 +159,7 @@
 | `danger` | ✓ | — | — |
 | `ghost-danger` | ✓ | — | ✓ |
 
-- 状态：default / hover / disabled 由 variant 定义；`active` 只在 `ghost` 上生效（工具栏切换），其他 variant 传了也不会变。
+- 状态：default / hover / disabled 由 variant 定义；`active` 只用于 `ghost`（工具栏切换/持久选中），`danger` / `ghost-danger` 是动作，不能持续选中。GENESIS 的 `fx.hover` 通过共享 `.theme-hover` 层给普通按钮、未激活顶栏 tab、菜单项铺青色方格 + 1.5px 压暗青色边；已激活项走 `.theme-hover-accent`，用 `selectedHover` 的金色方格；danger 只保留红色 hover 反馈。没有 `fx.hover` 的普通主题不出现纹理或 hover 边框，只保留原有填充。
 - loading 不单独做 variant：主/危险操作里放 `Spinner`，不要让按钮在异步中静默。
 - 业务组件不要手写 `<button>` 做图标/文字操作，用 `Button`；原生 `<button>` 只允许基础控件实现、窗口 chrome、编辑器嵌入工具栏和自绘复合控件（行 / chip / checkbox / 色板）。
 - `secondary` 不做纯图标；纯图标用 `ghost`，危险图标用 `ghost-danger`。
@@ -227,8 +235,8 @@
 | 需要 | 用 |
 |---|---|
 | 文档标签条 / 窗口按钮 | `TabStrip`（`TabStripItem` 为单个标签） |
-| 主题/深浅色快捷菜单 | `ThemeQuickMenu` |
-| 更新日志弹窗 | `ChangelogModal` |
+| 主题/深浅色快捷菜单 | `ThemeQuickMenu`（2 列紧凑列表，按色系相似度排序，特殊主题前加分隔线；设置页为 3 列紧凑卡） |
+| 更新日志模块 | `ChangelogView`（侧栏大版本卡 + 右侧 patch 版本页） |
 | 启动画面 | `SplashScreen` |
 | 渲染错误兜底 | `ErrorBoundary` |
 
@@ -250,7 +258,7 @@
 - **资料库收藏集**：笔记 / PDF / 网页资源都只能属于一个收藏集（否则未分组）；文案与批量动作统一为「移动到收藏集 / 移出收藏集 / 删除」，不要出现「加入收藏集」。新增来源必须同时做读取归一化与写入移动语义。
 - **异步列表**：首载 `Skeleton`；空态 `EmptyState`；刷新保留旧数据。
 - **i18n**：`useT()` + `i18n/zh.ts` / `en.ts` 双份；参数用 `.replace("{count}", …)`；禁止硬编码界面文字。
-- **主题**：`useTheme()` 读 `themeId/mode/resolvedMode/setTheme/setMode`；新增主题只加 `theme/themes.ts` 数据。
+- **主题**：`useTheme()` 读 `themeId/mode/resolvedMode/pinned/setTheme/setMode`；新增主题只在 `src/shared/themes.ts` 用 `theme()` 加数据（单模式、种子推导、覆盖、`fx` 装饰层见 [design/theme-authoring](../design/theme-authoring.md)）。
 
 ## 命名约定
 

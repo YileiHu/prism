@@ -74,7 +74,7 @@
 
 - 网页资源是唯一、无路径的来源；不进入 `vault_paths`，不参与扫描、watcher、私密仓库、路径安全、侧车文件。
 - 资源视图只读写 `resources` / `resource_collections`（`tags` / `resource_tags` 已随迁移删除）。
-- URL 唯一；一条资源最多属于一个收藏集（`collection_id` 单列）；颜色只从 `resolveTagColor` / `hashColor` 取。
+- URL 唯一；一条资源最多属于一个收藏集（`collection_id` 单列）；收藏集可由用户选预设图标，卡片色调仍从 `hashColor(name)` 派生。
 - 收藏集顺序跟随 `resource_collections.sort_order`，资源全局顺序跟随 `resources.sort_order`，不另建顺序。
 - 搜索词与卡片折叠状态是会话内存状态；选中收藏集持久化到 `last_resource_coll`（首次读取回退旧 `last_resource_tag`，与笔记/PDF 收藏集选择一致）。
 

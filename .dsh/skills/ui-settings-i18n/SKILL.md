@@ -69,9 +69,11 @@ user-invocable: true
 
 ### E. 新增主题
 
-1. `src/theme/themes.ts` 加数据（`id`/`name`/`nameEn`/`primary`/`dark`/`light`）。
-2. 组件不写主题特例；颜色走 CSS 变量。
-3. 手测深/浅色、编辑器标题/加粗、弹窗、菜单、PDF 背景。
+1. `src/shared/themes.ts` 用 `theme({...})` 加一条数据：`mode`（`dark` / `light` / `both`）、`id`、`name`、`nameEn`、`accent` 必填；`neutral` / `ramp` 决定中性色阶梯，`dark` / `light` 只覆盖个别 token。
+2. 单模式主题省略另一套（`mode: "dark"`）：应用会锁定模式，设置页与快捷菜单禁用模式控件并提示；模型与解析规则见 `docs/design/theme-authoring.md`。
+3. 组件不写主题特例；颜色走 CSS 变量（`--accent*` / `--c-*`；副色 `--accent-2` 只给装饰位）。
+4. 装饰效果走 `fx`（`bloom` 渐变柔光 / `pattern` / `gloss` / `glow` / `blur`）：图案与柔光由 `src/shared/themeEffects.ts` 生成，消费点固定在共享层；新效果加生成器 + 一张表项，不要让主题传任意 CSS。
+5. 手测：深浅色、锁定提示、首帧不闪、原生窗口边缘、装饰图案与光晕、编辑器标题/加粗、弹窗、菜单、PDF 背景。
 
 ### F. 选控件
 

@@ -55,6 +55,7 @@ export default function PromptModal({
       title={title}
       icon={icon}
       size="sm"
+      scrollFade={false}
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>

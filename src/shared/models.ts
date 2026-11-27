@@ -34,7 +34,8 @@ export interface Resource {
 export interface ResourceCollection {
   id: number;
   name: string;
-  color: string;
+  /** Preset id from lib/collectionIcons; empty falls back to the folder icon. */
+  icon: string;
   sortOrder: number;
   /** Total members, independent of the current search query. */
   count: number;
@@ -60,7 +61,7 @@ export interface PdfDocument {
 export interface PdfCollectionData {
   id: string;
   name: string;
-  color?: string;
+  icon?: string;
   pdfPaths: string[];
 }
 
@@ -112,7 +113,7 @@ export interface NoteCollectionData {
   name: string;
   notePaths: string[];
   groups?: NoteGroupData[];
-  color?: string;
+  icon?: string;
 }
 
 export interface NoteCollectionsFile {

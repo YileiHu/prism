@@ -90,10 +90,12 @@ npm run verify      # tsc + docs 检查
 
 ## 6. 新增主题
 
-1. `src/theme/themes.ts`：加一条主题数据（`id` / `name` / `nameEn` / `primary` / `dark` / `light` 的 surfaces 与 primary 变体）。
-2. 不写组件特例；所有颜色通过 CSS 变量消费。
-3. `npm run lint`；手测深/浅色、编辑器标题/加粗色、PDF 封面背景、弹窗/菜单。
-4. 主题数量/列表无需文档更新（除非改契约）。
+1. `src/shared/themes.ts`：用 `theme({...})` 加一条数据。必填 `mode`（`"dark"` / `"light"` / `"both"`）、`id` / `name` / `nameEn` / `accent`；`neutral`（中性色色相/彩度）与 `ramp`（`soft` / `normal` / `punchy` / `ink`）决定表面阶梯，`dark` / `light` 只用来覆盖个别 token。
+2. 单模式主题只声明支持的模式：省略的那一套不会生成，应用会锁定到支持的模式，设置页与顶栏的模式控件禁用并给出原因。细节见 [design/theme-authoring](../design/theme-authoring.md)。
+3. 不写组件特例；颜色只走 CSS 变量（`--accent*` / `--c-*`；`--accent-2` 是装饰用副色）。装饰效果走 `fx`（`highlight` 按钮矩阵高亮 / `bloom` 页面柔光 / `pattern` / `glow` / `blur`），生成器与消费点见设计文档，不允许传任意 CSS。
+4. `npm run lint`；手测：深浅色、锁定提示、首帧不闪、原生窗口边缘、编辑器标题/加粗色、弹窗/菜单、PDF 封面。
+5. `theme` 已是注册设置项，纯数据改动不需要 `npm run docs`。
+
 
 ## 7. 新增模块页 / 导航项
 

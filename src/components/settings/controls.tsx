@@ -59,15 +59,14 @@ export function Toggle({
       data-on={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`switch-track relative w-9 h-5 rounded-full transition-colors ${
+      className={`switch-track flex h-5 w-9 items-center rounded-full p-px transition-colors ${
         checked ? "bg-[var(--accent)]" : "bg-[var(--inset-bg)]"
       } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
     >
       <span
-        className={`switch-thumb absolute top-0.5 w-4 h-4 rounded-full transition-transform ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`switch-thumb h-4 w-4 flex-shrink-0 rounded-full transition-transform ${
+          checked ? "translate-x-4" : "translate-x-0"
         }`}
-        style={{ left: 0 }}
       />
     </button>
   );
@@ -78,17 +77,20 @@ export function Select({
   options,
   onChange,
   className = "",
+  disabled = false,
 }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <SelectButton
       value={value}
       options={options}
       onChange={onChange}
+      disabled={disabled}
       className={className || "w-52"}
     />
   );

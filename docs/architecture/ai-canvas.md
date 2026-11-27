@@ -37,7 +37,7 @@
 ## 仓库发现与路径安全
 
 - `prism.db` 默认位置：Windows `%APPDATA%\prism\prism.db`，macOS `~/Library/Application Support/prism/prism.db`，Linux `${XDG_CONFIG_HOME:-~/.config}/prism/prism.db`。
-- `vault_paths` 是 `[{ name, path, private?, icon? }]`；`canvas_dir` 走与 `resolveCanvasDir` 相同的清洗（去反斜杠、拒绝空/`..`/绝对路径/盘符，回退 `canvases`）。
+- `vault_paths` 是 `[{ name, path, private? }]`；`canvas_dir` 走与 `resolveCanvasDir` 相同的清洗（去反斜杠、拒绝空/`..`/绝对路径/盘符，回退 `canvases`）。
 - 私密仓库（`private: true` 或存在 `<vault>/.prism/private.json`）直接拒绝：内容是 PVD1 密文，外部进程无法安全读写。
 - **没有默认仓库**：除 `canvas_vaults` 外，每个工具都要求 `vault`，缺失时错误里列出可用仓库名。
 - 允许的读写范围与 `assertCanvasFile` 一致：`<vault>/<canvas_dir>/` 下的 `.json`，以及旧项目目录 `<vault>/Projects/<项目>/*.json`；新建只落在 `canvas_dir`。

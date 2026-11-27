@@ -386,10 +386,10 @@ export default function GrowthRadar({
           })}
           <polygon
             points={points((axis) => (axis.score ?? 0) + (axis.band ?? 0))}
-            fill={color}
-            fillOpacity={0.1}
-            stroke={color}
-            strokeOpacity={0.35}
+            fill="var(--emphasis-line)"
+            fillOpacity={0.08}
+            stroke="var(--emphasis-line)"
+            strokeOpacity={0.55}
             strokeWidth={1.4}
             strokeDasharray="3 3"
           />

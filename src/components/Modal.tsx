@@ -54,6 +54,8 @@ interface ModalProps {
   initialFocusRef?: RefObject<HTMLElement | null>;
   /** Non-destructive icon actions shown next to the title, before the close button. */
   headerActions?: ReactNode;
+  /** Simple forms can opt out of the edge fades entirely. */
+  scrollFade?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -76,6 +78,7 @@ export default function Modal({
   closeOnEscape = true,
   initialFocusRef,
   headerActions,
+  scrollFade = true,
   children,
   footer,
 }: ModalProps) {
@@ -290,9 +293,9 @@ export default function Modal({
           ref={setBodyScrollEl}
           className="relative min-h-0 flex-auto overflow-y-auto scrollbar-none"
         >
-          <ScrollFade side="top" visible={bodyScrollEdges.top} />
+          {scrollFade && bodyScrollEdges.top && <ScrollFade side="top" visible />}
           {children}
-          <ScrollFade side="bottom" visible={bodyScrollEdges.bottom} />
+          {scrollFade && bodyScrollEdges.bottom && <ScrollFade side="bottom" visible />}
         </div>
         {footerNode}
       </div>

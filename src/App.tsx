@@ -23,7 +23,7 @@ import { AppSidebarSlotProvider } from "./components/AppSidebarSlot";
 import type { ToolbarContribution } from "./components/toolbar/ToolbarProvider";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Button from "./components/Button";
-import ChangelogModal from "./components/ChangelogModal";
+import ChangelogView from "./components/ChangelogView";
 import SplashScreen from "./components/SplashScreen";
 import TabStrip from "./components/TabStrip";
 import ThemeQuickMenu from "./components/ThemeQuickMenu";
@@ -54,9 +54,7 @@ const MODULES: { id: ModuleId; icon: typeof Sprout; labelKey: keyof Translation 
 
 // `private` is a hint derived from marker files, not part of the stored list.
 function vaultsSignature(list: VaultEntry[]): string {
-  return JSON.stringify(
-    list.map((vault) => [normalizePath(vault.path), vault.name, vault.icon ?? ""]),
-  );
+  return JSON.stringify(list.map((vault) => [normalizePath(vault.path), vault.name]));
 }
 
 export default function App() {
@@ -70,7 +68,6 @@ export default function App() {
 
   const [vaults, setVaults] = useState<VaultEntry[]>([]);
   const [maximized, setMaximized] = useState(false);
-  const [showChangelog, setShowChangelog] = useState(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
   const splashHidden = useRef(false);
@@ -180,17 +177,6 @@ export default function App() {
     };
   }, [syncVaults]);
 
-  // The vault drag reorder applies optimistically; this event carries the new
-  // array before the `vault_paths` IPC round-trip finishes.
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const next = (event as CustomEvent<VaultEntry[]>).detail;
-      if (Array.isArray(next)) setVaults(next);
-    };
-    window.addEventListener("vaults-order-changed", handler);
-    return () => window.removeEventListener("vaults-order-changed", handler);
-  }, []);
-
   // A repository switch invalidates every PDF tab from the previous library.
   useEffect(() => {
     if (!pdf.repoPath) return;
@@ -255,8 +241,16 @@ export default function App() {
 
   const paneStyle = (active: boolean): React.CSSProperties =>
     active
-      ? { height: "100%" }
-      : { position: "absolute", inset: 0, height: "100%", visibility: "hidden", overflow: "hidden" };
+      ? { height: "100%", opacity: 1, pointerEvents: "auto" }
+      : {
+          position: "absolute",
+          inset: 0,
+          height: "100%",
+          visibility: "hidden",
+          opacity: 0,
+          pointerEvents: "none",
+          overflow: "hidden",
+        };
 
   const tabItems = useMemo(
     () => state.tabs.map((tab) => ({
@@ -291,7 +285,7 @@ export default function App() {
   const fallbackToolbar: ToolbarContribution = {
     title: (
       <span className="text-body font-medium text-primary">
-        {t[MODULES.find((module) => module.id === state.module)?.labelKey ?? "nav.settings"]}
+        {t[MODULES.find((module) => module.id === state.module)?.labelKey ?? (state.module === "changelog" ? "changelog.title" : "nav.settings")]}
       </span>
     ),
   };
@@ -302,7 +296,7 @@ export default function App() {
         <ToastProvider>
           <div
             className="h-screen flex flex-col app-shell text-primary select-none"
-            style={{ borderRadius: "8px", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
+            style={{ borderRadius: "var(--radius-control)", overflow: "hidden", boxShadow: "0 0 0 1px var(--window-ring)" }}
           >
             <header
               className="relative z-20 flex items-center h-12 app-header border-b border-strong/60 flex-shrink-0"
@@ -318,7 +312,6 @@ export default function App() {
                     variant="ghost"
                     size="icon-sm"
                     active={!workspaceActive && state.module === id}
-                    className={!workspaceActive && state.module === id ? "chrome-pill-active" : ""}
                     onClick={() => showModule(id)}
                     title={t[labelKey]}
                   >
@@ -342,7 +335,8 @@ export default function App() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => setShowChangelog(true)}
+                      active={!workspaceActive && state.module === "changelog"}
+                      onClick={() => showModule("changelog")}
                       title={t["changelog.title"]}
                     >
                       <PartyPopper size={16} strokeWidth={1.5} />
@@ -353,9 +347,7 @@ export default function App() {
                       active={!workspaceActive && state.module === "settings"}
                       onClick={() => showModule("settings")}
                       title={t["nav.settings"]}
-                      className={`mx-1 ${
-                        !workspaceActive && state.module === "settings" ? "chrome-pill-active" : ""
-                      }`}
+                      className="mx-1"
                     >
                       <Settings2 size={16} strokeWidth={1.5} />
                     </Button>
@@ -378,14 +370,15 @@ export default function App() {
                     >
                       {maximized ? <Copy size={13} strokeWidth={1.5} /> : <Square size={13} strokeWidth={1.5} />}
                     </Button>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => window.prism.closeWindow()}
                       title={t["window.close"]}
                       aria-label={t["window.close"]}
-                      className="w-8 h-8 flex items-center justify-center rounded-control text-muted hover:text-on-accent hover:bg-danger/70 transition-colors"
                     >
-                      <X size={15} strokeWidth={1.5} />
-                    </button>
+                      <X size={18} strokeWidth={1.5} />
+                    </Button>
                   </>
                 }
               />
@@ -399,23 +392,25 @@ export default function App() {
               />
 
               <main className="flex-1 overflow-hidden relative app-main">
-                <div style={paneStyle(moduleActive === "growth")} className={moduleActive === "growth" ? "pane-enter" : ""}>
+                <div key="growth" style={paneStyle(moduleActive === "growth")} className={moduleActive === "growth" ? "pane-enter" : ""}>
                   <GrowthView active={moduleActive === "growth"} />
                 </div>
-                <div style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
+                <div key="library" style={paneStyle(moduleActive === "library")} className={moduleActive === "library" ? "pane-enter" : ""}>
                   <LibraryView active={moduleActive === "library"} onOpenSettings={() => showModule("settings")} />
                 </div>
-                <div style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
+                <div key="changelog" style={paneStyle(moduleActive === "changelog")} className={moduleActive === "changelog" ? "pane-enter" : ""}>
+                  <ChangelogView active={moduleActive === "changelog"} />
+                </div>
+                <div key="settings" style={paneStyle(moduleActive === "settings")} className={moduleActive === "settings" ? "pane-enter" : ""}>
                   <Settings active={moduleActive === "settings"} vaults={vaults} />
                 </div>
 
-                <div style={paneStyle(workspaceActive)}>
+                <div key="workspace" style={paneStyle(workspaceActive)}>
                   <DocumentWorkspace active={workspaceActive} />
                 </div>
               </main>
             </AppSidebarSlotProvider>
 
-            <ChangelogModal open={showChangelog} onClose={() => setShowChangelog(false)} />
             {splashVisible && <SplashScreen fadeOut={splashFadeOut} />}
           </div>
         </ToastProvider>

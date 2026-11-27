@@ -24,11 +24,9 @@ const zh = {
   "library.globalLibraries": "全局库",
   "library.resourcesLibrary": "网页资源库",
   "library.allResources": "全部资源",
-  "library.groupColor": "分组颜色",
   "library.collections": "收藏集",
   "library.emptyVaults": "还没有笔记库，请在设置中添加。",
-  "library.vaultIcon": "选择图标",
-  "library.vaultIconFailed": "图标保存失败",
+  "library.vaultSelect": "笔记仓库",
   "toolbar.more": "更多操作",
   // Web Resources
   "resources.addUrl": "输入网址保存...",
@@ -165,6 +163,10 @@ const zh = {
   "settings.modeLight": "浅色",
   "settings.modeSystem": "跟随系统",
   "settings.themeGrid": "主题配色",
+  "settings.themeDarkOnly": "仅深色",
+  "settings.themeLightOnly": "仅浅色",
+  "settings.themeLockedDark": "当前主题仅支持深色，色彩模式已锁定。",
+  "settings.themeLockedLight": "当前主题仅支持浅色，色彩模式已锁定。",
   "settings.fontSize": "正文字号",
   "settings.fontSizeDesc": "编辑态与阅读态的正文大小。",
   "settings.lineHeight": "行高",
@@ -217,6 +219,8 @@ const zh = {
   "settings.removeVault": "移除笔记库",
   "settings.vaultsDesc": "添加存放 Markdown 文件的文件夹后，可在侧栏的仓库列表中快速切换。",
   "settings.addVault": "添加笔记库路径",
+  "settings.vaultMoveUp": "上移",
+  "settings.vaultMoveDown": "下移",
   "settings.vaultPath": "路径",
   "settings.vaultNamePlaceholder": "给笔记库起个名字...",
   "settings.vaultExists": "该路径已在列表中",
@@ -276,6 +280,7 @@ const zh = {
   "collections.addGroup": "添加分组",
   "collections.groupNamePlaceholder": "分组名称...",
   "collections.groupColor": "分组颜色",
+  "collections.chooseIcon": "选择图标",
   "collections.ungrouped": "未分组",
   "collections.dropNotesHere": "拖入笔记到此处",
   "collections.expandAll": "展开全部",
@@ -405,11 +410,9 @@ const zh = {
 
   // Changelog
   "changelog.title": "更新公告",
-  "changelog.jumpToVersion": "跳转版本",
   "changelog.showDetails": "查看 {count} 项更新",
   "changelog.hideDetails": "收起更新",
   "changelog.latest": "最新",
-  "changelog.history": "历史版本",
   "changelog.itemCount": "{count} 项细节",
 
   // Private vaults

@@ -19,9 +19,11 @@ const NavItem = forwardRef<HTMLButtonElement, NavItemProps>(function NavItem(
     <button
       ref={ref}
       type="button"
-      className={`w-full px-3 py-2 rounded-control text-body text-left transition-colors ${
+      aria-current={active ? "page" : undefined}
+      data-active={active ? "true" : undefined}
+      className={`fx-fountain w-full px-3 py-2 rounded-control text-body text-left transition-colors ${
         active
-          ? "bg-[var(--sidebar-item-active)] text-primary font-medium"
+          ? "theme-active bg-[var(--sidebar-item-active)] text-primary font-medium"
           : parentActive
             ? "text-[var(--accent-text)] font-medium hover:bg-[var(--sidebar-item-hover)]"
             : "text-secondary hover:text-primary hover:bg-[var(--sidebar-item-hover)]"

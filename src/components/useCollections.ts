@@ -62,7 +62,12 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
 
   const loadCollections = useCallback(async (vp: string) => {
     const data = await window.prism.loadNoteCollections(vp) as CollectionsFile | null;
-    setCollections(data?.collections ?? []);
+    // Drop the legacy top-level color on read; group colors stay. The next
+    // natural save then writes the collection without it.
+    setCollections((data?.collections ?? []).map((collection) => {
+      const { color: _legacyColor, ...rest } = collection as CollectionData & { color?: string };
+      return rest;
+    }));
   }, []);
 
   const updateCollection = useCallback((collId: string, fn: (c: CollectionData) => CollectionData) => {
@@ -118,8 +123,8 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     }
   }, [saveCollections, vaultPath]);
 
-  const handleSetCollectionColor = useCallback((collId: string, color: string) => {
-    updateCollection(collId, (c) => ({ ...c, color }));
+  const handleSetCollectionIcon = useCallback((collId: string, icon: string) => {
+    updateCollection(collId, (c) => ({ ...c, icon }));
   }, [updateCollection]);
 
   const handleReorderCollections = useCallback((from: number, to: number) => {
@@ -510,7 +515,7 @@ export function useCollections({ vaultPath, dataVaultPath, notes, loadNotes, sea
     handleRenameCollection,
     handleDeleteCollection,
     restoreCollections,
-    handleSetCollectionColor,
+    handleSetCollectionIcon,
     handleReorderCollections,
     // Notes in collections
     handleMoveNotesToCollection,

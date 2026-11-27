@@ -252,7 +252,7 @@ export function useNoteLibrary(vaultPath: string) {
     const map = new Map<string, PaletteColor>();
     if (!collectionsApi.collections) return map;
     for (const collection of collectionsApi.collections) {
-      map.set(collection.name, resolveTagColor(collection.name, collection.color));
+      map.set(collection.name, resolveTagColor(collection.name));
     }
     return map;
   }, [collectionsApi.collections]);

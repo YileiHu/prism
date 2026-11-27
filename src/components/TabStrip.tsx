@@ -76,18 +76,19 @@ function SortableTab({
       {...listeners}
       {...clickGuard}
       data-tab-active={active ? "true" : undefined}
+      data-active={active ? "true" : undefined}
       onClick={onSelect}
       onContextMenu={onContextMenu}
       onAuxClick={(e) => {
         if (e.button === 1) onClose();
       }}
       title={item.id}
-      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-full border transition-colors ${
+      className={`group relative flex items-center gap-1.5 pl-3 pr-1.5 text-caption cursor-pointer select-none whitespace-nowrap flex-shrink-0 rounded-pill border transition-colors ${
         chrome ? "h-8" : "h-7"
       } ${
         active
-          ? "chrome-pill-active border-transparent font-medium"
-          : "border-transparent text-muted hover:text-secondary hover:bg-tint/[0.05]"
+          ? "theme-active theme-hover theme-hover-accent border-transparent font-medium"
+          : "theme-hover border-transparent text-muted hover:text-secondary hover:bg-tint/[0.05]"
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {item.icon}
@@ -100,7 +101,7 @@ function SortableTab({
           onClose();
         }}
         title={closeLabel}
-        className={active ? "" : "opacity-70"}
+        className="tab-close"
       >
         <X size={11} />
       </Button>

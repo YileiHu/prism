@@ -15,7 +15,7 @@
 3. 扫描：主进程 watcher 800ms 防抖 → `scanVaultIncremental` 按 mtime 差量 → `vault:updated` 推 `NoteListChanges`；渲染层 `mergeNoteChanges` 就地 patch（保留行对象身份），搜索态改为重新查询。
 4. 搜索：标题 `searchNotes`（`vault:search`）、正文 `searchNoteContents`（`vault:search-content`，结果进 `ContentSearchView`）；范围记忆在 localStorage `prism_note_search_scope_v2_<vault>`；上限来自 `search_result_limit`，命中上限有提示；收藏集视图内不提供搜索。
 5. 收藏集：侧车文件 `.prism/collections.json`（`note-collections:load/save`）；`useCollections` 提供 CRUD、分组、跨收藏集**移动**、批量移动/移出/删除；写入经 `src/lib/useDebouncedJsonPersist.ts` 防抖；删除收藏集可用 toast 的撤销快照恢复。读取时由主进程 `dedupeNoteCollections` 做唯一归属归一化。
-6. 拖拽：`LibraryView` / `DocumentSidebar` 的 `DndContext` 处理「笔记 → 侧栏收藏集」、收藏集排序与仓库列表排序；仓库 id 为 `vault-<path>`，顺序直接写回 `vault_paths`；`CollectionDetail` 内是组卡片排序、笔记在「未分组/组」之间移动与组内排序，id 约定 `group-<id>` / `note-<relPath>` / `coll-<id>`。
+6. 拖拽：`LibraryView` / `DocumentSidebar` 的 `DndContext` 处理「笔记 → 侧栏收藏集」与收藏集排序；`CollectionDetail` 内是组卡片排序、笔记在「未分组/组」之间移动与组内排序，id 约定 `group-<id>` / `note-<relPath>` / `coll-<id>`。仓库不在侧栏列表里拖拽，改用顶部下拉选择。
 7. 多选：所有资料库列表共用 `useMultiSelect`（`src/lib/useMultiSelect.ts`）+ `SelectModeButton` + `BatchActionBar`；`scopeKey` 管换库/换收藏集/搜索/集合时的自动退出，`keys` 管剪枝、全选与 `Shift` 区间。各来源的批量动作：笔记 = 移动到收藏集 / 移出收藏集 / 回收站（`trashFiles` 后对成功项补 `deleteNotes`，再 `removeDocs` 只关成功项的标签）；白板库 = 移出分组 / 回收站；PDF = 移动到收藏集 / 移出 / `deletePdfDocuments`；网页资源 = 移动到收藏集 / 移出（未分组）/ 删除（逐条 `resources:delete`）。
 8. 重命名/回收站：`renameNote` 成功后 `updateNotePaths` 改写收藏集路径、`updateDoc` 同步标签标题；单条删除同样先 `trashFile` 再 `deleteNotes`。
 
@@ -25,7 +25,7 @@
 - 收藏集只存路径，不存内容；外部改名后仅在「同名笔记唯一」时自动重链，歧义或缺失保留 `missing` 标记（搜索期间跳过自愈）。
 - 收藏集写入被 `dataVaultPath === vaultPath` 把关：暖切换期间宁可丢弃也不写错库。
 - `last_coll_<vaultPath>` 记住选中收藏集；白板用哨兵 `__canvas__`（`CANVAS_VIEW_ID`）。
-- 仓库列表顺序就是 `vault_paths` 数组顺序：拖动只改顺序，不改库内容；先派发 `vaults-order-changed` 乐观更新，写入失败回滚；设置页与侧栏共用这一份顺序。
+- 仓库顺序固定为 `vault_paths` 数组顺序，只在 设置 → 仓库 里调整；侧栏顶部用下拉切换仓库（私密仓库在下拉旁提供锁/解锁），不再有仓库列表、拖动排序与仓库图标。
 
 **常见改动点**
 - 新增收藏集操作 → `useCollections` 加 handler，再在 `NoteLibraryContent` 挂按钮/菜单；XOR 由 `handleMoveNote` / `handleMoveNoteDirect` 维护。
@@ -139,7 +139,7 @@
 **主流程**
 1. 加载：`getResources()` 全量 + `getResourceCollections()`（含每集总数与未分组数）；搜索（防抖）走 `searchResources(query)`，上限 `search_result_limit`。hook 在 `LibraryDataProvider` 挂载即加载，切换资料库来源不重新拉取。
 2. 新增：URL 无协议时自动补 `https://`；标题留空则 `fetchPageTitle(url)`（主进程 5s 超时、只流式读到 `</title>`，失败回落 URL）；表单用 `SelectButton` 选收藏集（可空 = 未分组）；`addResource` 的唯一约束冲突映射成「已存在」提示。
-3. 收藏集：`resource-collections:create/rename/set-color/reorder/delete`；删除只解散分类（成员经 `ON DELETE SET NULL` 变未分组），不删资源；颜色 `resolveTagColor`（未知用 `hashColor`）；全局顺序 `reorderCollection`（侧栏拖拽），资源在列表内拖拽仍走 `reorderResources`。
+3. 收藏集：`resource-collections:create/rename/set-icon/reorder/delete`；删除只解散分类（成员经 `ON DELETE SET NULL` 变未分组），不删资源；每个收藏集有一个预设图标（`lib/collectionIcons`，右键「选择图标」设置），卡片色调仍由 `hashColor(name)` 自动派生；全局顺序 `reorderCollection`（侧栏拖拽），资源在列表内拖拽仍走 `reorderResources`。
 4. 归类：`resources:move-to-collection` 单列写入，天然唯一；内容区「全部」按收藏集顺序分区 + 未分组，选中收藏集后切成平铺列表。
 5. 打开：行点击与菜单都走 `window.prism.openUrl`（`shell.openExternal`）；资源不是工作区文档，没有标签页。
 6. 来源记忆：上次来源存 `workspace_v1.library`；旧工作区 `module: "resources"` 在托盘重建窗口时迁移为「资料库 + 资源」。
@@ -155,7 +155,7 @@
 
 **常见改动点**
 - 新增字段 → 先改 `resources` 表与 `src/shared/models.ts`，再改 `electron/preload.ts` + `electron/main.ts` 通道。
-- 收藏集颜色/排序行为 → `src/lib/colors.ts` 与 `useResourceLibrary.ts`（`collectionGroups` / `colorForCollection`）。
+- 收藏集图标/排序行为 → `src/lib/collectionIcons.tsx`、`GroupNavRow` 与 `useResourceLibrary.ts`（`collectionGroups` / `colorForCollection` 仅用于卡片自动色）。
 - 资料库入口/资源行 → `LibrarySidebar.tsx`；内容布局/toolbar → `ResourcesLibraryContent.tsx`。
 
 **验证**
@@ -180,7 +180,7 @@
 **主流程**
 1. 启动：`src/lib/settings.tsx` 的 `SettingsProvider` 用一次 `getAllSettings` 批量加载，再按 `decodeSetting` 得到类型化值；业务组件读 `useSettings().values`。
 2. 改动：`set(key, value)` → `normalizeSetting` + `serializeSetting` → `setSetting` → 派发 `settings-saved`（`Settings.tsx` 顶栏闪「已保存」2 秒）。
-3. 重置：`reset()` 把 `SETTING_KEYS` 全部写回 `DEFAULT_SETTINGS`；`Settings.tsx` 另外把主题恢复 `violet`/深色、语言恢复中文。
+3. 重置：`reset()` 把 `SETTING_KEYS` 全部写回 `DEFAULT_SETTINGS`；`Settings.tsx` 另外把主题恢复 `graphite`/深色、语言恢复中文。
 4. 语言：`useT().setLang`，存 localStorage `prism_lang`（`src/i18n/index.tsx`），**不在**设置注册表里。
 5. 窗口与启动（通用分区）：`close_behavior`（`quit` 退出 / `tray` 最小化到托盘）、`auto_launch`、`auto_launch_hidden`；行为都在主进程（见 [主进程](main-process.md) 的「托盘、关闭行为与开机启动」）。设置页用 `app:get-launch-state` 提示「开发模式不写启动项」「平台不支持」。
 6. 养成数据（通用分区）：导出/导入单个 `prism-growth` JSON；导入前自动备份到 `growth-backups/`，导入为替换而非合并；笔记/PDF/白板/设置/索引不参与。字段与行为见 [growth](growth.md) 的「导出/导入」。
@@ -189,7 +189,7 @@
 - 新设置项先在 `src/shared/settings.ts` 的 `AppSettings` + `DEFAULT_SETTINGS` + `SETTING_META` 注册，再写 UI；范围/枚举/颜色校验只在该文件的 `decodeSetting` / `normalizeSetting`，UI 不要重复 clamp。
 - 存储是字符串；`json` 类型应提供规范化函数（`JSON_NORMALIZERS`，参考 `shortcuts`、`canvas_presets`），否则原样透传。
 - 设置页不手写行布局；视觉与控件约定见 [ui-kit](../guides/ui-kit.md)，逐项键值清单见 [settings](../reference/settings.md)。
-- 主题（`themeId`）与语言不在注册表，别在分区里伪造。
+- 语言（`prism_lang`）不在注册表，别在分区里伪造；主题 `theme` 已注册为设置项（enum，options 来自 `THEME_IDS`），但外观页仍用自定义色板网格，不走 `SettingRow` 的 `Select`。
 
 **常见改动点**
 - 新增分区 → `Settings.tsx` 的 `SettingsCategory` + `categories`（图标/文案）+ 新 `<X>Section.tsx`。
@@ -204,12 +204,12 @@
 ## 8. 变更日志 / 启动屏
 
 **入口**
-- `src/components/ChangelogModal.tsx`：`src/App.tsx` 顶栏按钮打开，数据来自 `src/data/changelog.ts`。
+- `src/components/ChangelogView.tsx`：顶部工具栏按钮切到 `changelog` 模块（常驻，像设置一样），数据来自 `src/data/changelog.ts`。
 - `src/components/SplashScreen.tsx`：`App.tsx` 启动时全屏覆盖，`hydrate()` 完成后 500ms 淡出。
 
 **主流程**
-1. changelog 每条含 `version/date/summary`，细节二选一：`highlights`（图标 + `palette` 卡片）或 `changes`（平铺列表）；最新版本在最前，每次打开默认全部折叠。
-2. 公告标题栏右侧是**版本下拉**：按版本倒序列出全部条目，选择后平滑跳到对应版本；滚动正文时下拉值跟随当前版本，`prefers-reduced-motion` 下改为即时跳转。
+1. changelog 每条含 `version/date/summary`，细节二选一：`highlights`（图标 + `palette` 卡片）或 `changes`（平铺列表）；最新版本在最前，首次挂载默认全部折叠，离开再回来保留滚动位置和展开状态。
+2. 侧栏按**大版本**（0.1 / 0.2 / 0.5 / 1.0）列出，每个大版本是一页；选中后正文按倒序显示该大版本下的所有 patch 版本（如 0.1.3 / 0.1.2 / 0.1.1 / 0.1.0），切换大版本回到页顶。
 3. splash 固定展示 logo、`PRISM`、`splash.tagline` 与三个跳动点。
 
 **不变量**

@@ -1,5 +1,4 @@
 import type { LucideIcon } from "lucide-react";
-import { useSlidingThumb } from "./useSlidingThumb";
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -14,7 +13,7 @@ interface Props<T extends string> {
   options: readonly SegmentedOption<T>[];
   onChange: (value: T) => void;
   className?: string;
-  /** Let every option share the full width equally. */
+  /** Stretch the control to the available width (options are equal by default). */
   stretch?: boolean;
 }
 
@@ -25,39 +24,21 @@ export default function SegmentedToggle<T extends string>({
   className = "",
   stretch = false,
 }: Props<T>) {
-  const activeIndex = options.findIndex((option) => option.value === value);
-  const signature = options.map((option) => option.label).join("|");
-  const { containerRef, setItemRef, thumb } = useSlidingThumb(activeIndex, signature);
-
   return (
     <div
-      ref={containerRef}
-      className={`segmented-toggle relative flex flex-shrink-0 rounded-control border p-[3px] ${className}`}
+      className={`segmented-toggle relative inline-grid grid-flow-col auto-cols-fr flex-shrink-0 rounded-pill p-[2px] ${stretch ? "w-full" : ""} ${className}`}
     >
-      {thumb && (
-        <span
-          aria-hidden
-          className="segmented-thumb pointer-events-none absolute left-0 top-0 rounded-[5px] transition-[transform,width] duration-200 ease-out motion-reduce:transition-none"
-          style={{
-            transform: `translate(${thumb.left}px, ${thumb.top}px)`,
-            width: thumb.width,
-            height: thumb.height,
-          }}
-        />
-      )}
-      {options.map(({ value: optionValue, label, icon: Icon, disabled = false }, index) => {
+      {options.map(({ value: optionValue, label, icon: Icon, disabled = false }) => {
         const active = optionValue === value;
         return (
           <button
             key={optionValue}
-            ref={setItemRef(index)}
             type="button"
             aria-pressed={active}
+            data-active={active ? "true" : undefined}
             disabled={disabled}
             onClick={() => onChange(optionValue)}
-            className={`segmented-option relative flex items-center gap-1 px-2.5 py-[5px] leading-none text-caption rounded-[5px] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
-              stretch ? "flex-1 justify-center" : ""
-            } ${active ? "" : "text-muted hover:text-secondary"}`}
+            className={`segmented-option relative flex min-w-0 items-center justify-center gap-1 whitespace-nowrap px-3 h-[27px] py-0 leading-none text-caption rounded-pill transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${active ? "theme-active" : "text-muted hover:text-secondary"}`}
           >
             {Icon && <Icon size={12} />}
             {label}

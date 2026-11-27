@@ -22,7 +22,7 @@ function normalizeCollection(raw: unknown): PdfCollectionData | null {
   return {
     id: c.id,
     name: c.name,
-    ...(typeof c.color === "string" && c.color ? { color: c.color } : {}),
+    ...(typeof c.icon === "string" && c.icon ? { icon: c.icon } : {}),
     pdfPaths: Array.isArray(c.pdfPaths) ? c.pdfPaths.filter((p): p is string => typeof p === "string") : [],
   };
 }
@@ -109,8 +109,8 @@ export function usePdfCollections(repoPath: string) {
     update((prev) => renameById(prev, id, name));
   }, [update]);
 
-  const setCollectionColor = useCallback((id: string, color: string) => {
-    update((prev) => prev.map((c) => (c.id === id ? { ...c, color } : c)));
+  const setCollectionIcon = useCallback((id: string, icon: string) => {
+    update((prev) => prev.map((c) => (c.id === id ? { ...c, icon } : c)));
   }, [update]);
 
   const reorderCollections = useCallback((from: number, to: number) => {
@@ -253,7 +253,7 @@ export function usePdfCollections(repoPath: string) {
     createCollection,
     renameCollection,
     deleteCollection,
-    setCollectionColor,
+    setCollectionIcon,
     reorderCollections,
     movePaths,
     removePathsFromAll,

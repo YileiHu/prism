@@ -4,11 +4,12 @@
 
 注册表在 `src/shared/settings.ts`：默认值、校验与编解码都从这里出发。新增设置项后重新运行 `npm run docs`。
 
-共 **40** 个注册项。
+共 **41** 个注册项。
 
 | 键 | 类型 | 默认值 | 范围 / 选项 | 设置界面 |
 |---|---|---|---|---|
 | `color_mode` | enum | "dark" | dark / light / system | — |
+| `theme` | enum | DEFAULT_THEME_ID | — | — |
 | `restore_note_tabs` | boolean | true | — | `GeneralSection.tsx` |
 | `close_behavior` | enum | "quit" | quit / tray | `GeneralSection.tsx` |
 | `auto_launch` | boolean | false | — | `GeneralSection.tsx` |

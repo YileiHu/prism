@@ -222,7 +222,7 @@ export default function GrowthBoard({
   );
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto px-4 pb-4 pt-2 lg:overflow-hidden">
       <div className="shrink-0 space-y-2">
 
         <ChipTabs
@@ -234,7 +234,7 @@ export default function GrowthBoard({
             key: domain.id,
             label: domain.name,
             meta: `${Math.round(domain.weight * 100)}%`,
-            dot: tagColor(domain.theme as TagColorKey).bar,
+            glow: tagColor(domain.theme as TagColorKey).bar,
           }))}
           trailing={
             <Button

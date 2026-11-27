@@ -34,10 +34,12 @@ export default {
         "on-danger": s("on-danger"),
       },
       borderRadius: {
-        chip: "4px",
-        control: "8px",
-
-        card: "12px",
+        // Theme-controlled corner tokens (ThemeProvider writes the px values).
+        chip: "var(--radius-chip)",
+        control: "var(--radius-control)",
+        card: "var(--radius-card)",
+        pill: "var(--radius-pill)",
+        segment: "var(--radius-segment)",
       },
       boxShadow: {
         popover: "0 12px 32px -8px rgb(0 0 0 / 0.45)",

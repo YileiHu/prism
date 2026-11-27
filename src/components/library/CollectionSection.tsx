@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import EmptyState from "../EmptyState";
 
-/** Sidebar frame for a sortable collection list (notes, PDF, web resources). */
+/** Sortable collection list separated from the "all" rows by a hairline. */
 export default function CollectionSection({
   ids,
   emptyText,
@@ -14,7 +14,7 @@ export default function CollectionSection({
 }) {
   if (ids.length === 0) return <EmptyState size="card" text={emptyText} />;
   return (
-    <div className="sidebar-group">
+    <div className="mt-2 border-t border-line/60 pt-1">
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         {children}
       </SortableContext>

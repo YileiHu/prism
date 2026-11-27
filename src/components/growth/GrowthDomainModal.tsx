@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import Modal from "../Modal";
 import Button from "../Button";
 import Input from "../Input";
@@ -33,6 +34,7 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [busy, setBusy] = useState(false);
   const [paletteFor, setPaletteFor] = useState<number | null>(null);
+  const triggerRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +47,7 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
       };
     }
     setDrafts(next);
+    setPaletteFor(null);
   }, [open, domains]);
 
   const sum = domains.reduce((total, domain) => {
@@ -88,6 +91,7 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
       onClose={onClose}
       title={t["growth.editDomains"]}
       position="center"
+      size="md"
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>
@@ -101,7 +105,7 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
     >
       <div className="space-y-3">
         <p className="text-caption text-faint">{t["growth.weightHint"]}</p>
-        <div className="grid grid-cols-[28px_1fr_96px] gap-x-3 gap-y-2">
+        <div className="grid grid-cols-[44px_minmax(0,1fr)_88px] gap-x-3 gap-y-2">
           <span />
           <span className="text-caption text-muted">{t["growth.capabilityName"]}</span>
           <span className="text-caption text-muted">{t["growth.domainWeight"]}</span>
@@ -109,19 +113,36 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
             const draft = drafts[domain.id];
             const theme = (draft?.theme ?? domain.theme) as TagColorKey;
             const palette = TAG_COLORS.find((color) => color.key === theme) ?? TAG_COLORS[0];
+            const paletteOpen = paletteFor === domain.id;
             return (
               <div key={domain.id} className="col-span-3 space-y-1.5">
-                <div className="grid grid-cols-[28px_1fr_96px] items-center gap-3">
+                <div className="grid grid-cols-[44px_minmax(0,1fr)_88px] items-center gap-3">
                   <button
+                    ref={(node) => {
+                      triggerRefs.current[domain.id] = node;
+                    }}
                     type="button"
                     aria-label={t["growth.domainTheme"]}
                     title={t["growth.domainTheme"]}
+                    aria-expanded={paletteOpen}
+                    aria-controls={paletteOpen ? `growth-domain-palette-${domain.id}` : undefined}
                     onClick={() =>
                       setPaletteFor((previous) => (previous === domain.id ? null : domain.id))
                     }
-                    className="h-5 w-5 rounded-full ring-1 ring-strong/40 transition-transform hover:scale-110"
-                    style={{ backgroundColor: palette.bar }}
-                  />
+                    className="inline-flex h-8 w-11 items-center justify-center gap-1 rounded-control p-1 text-muted transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  >
+                    <span
+                      className="h-5 w-5 flex-shrink-0 rounded-full ring-1 ring-strong/40"
+                      style={{ backgroundColor: palette.bar }}
+                    />
+                    <ChevronDown
+                      size={12}
+                      aria-hidden
+                      className={`flex-shrink-0 text-faint transition-transform ${
+                        paletteOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
                   <Input
                     className="w-full"
                     value={draft?.name ?? domain.name}
@@ -156,10 +177,15 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
                     }
                   />
                 </div>
-                {paletteFor === domain.id && (
-                  <div className="pl-[40px]">
+                {paletteOpen && (
+                  <div
+                    id={`growth-domain-palette-${domain.id}`}
+                    role="group"
+                    aria-label={t["growth.domainTheme"]}
+                    className="w-full rounded-control border border-line/60 bg-elevated/40 p-2"
+                  >
                     <GrowthThemeSwatches
-                      size="sm"
+                      size="md"
                       value={theme}
                       onChange={(key) => {
                         setDrafts((prev) => ({
@@ -171,6 +197,7 @@ export default function GrowthDomainModal({ open, domains, onClose, onSaved }: P
                           },
                         }));
                         setPaletteFor(null);
+                        requestAnimationFrame(() => triggerRefs.current[domain.id]?.focus());
                       }}
                     />
                   </div>

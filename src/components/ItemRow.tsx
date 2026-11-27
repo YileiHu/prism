@@ -78,6 +78,7 @@ export default function ItemRow({
       role={role ?? (interactive ? "button" : undefined)}
       tabIndex={tabIndex ?? (interactive ? 0 : undefined)}
       aria-pressed={selectable ? checked : undefined}
+      data-selection-edge={selected ? (selectionEdge ?? "only") : undefined}
       onKeyDown={(e) => {
         onKeyDown?.(e);
         if (!interactive || e.defaultPrevented || e.target !== e.currentTarget) return;

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Blocks, BookOpen, Brain, CalendarRange, FilePlus, FolderKanban, Frame, Globe, GripVertical, House, Layers, ListTodo, Lock, MessageSquareText, Network, PackageCheck, Power, Sprout, Trophy, Zap } from "lucide-react";
+import { Blocks, BookOpen, Brain, CalendarRange, FilePlus, FolderKanban, Frame, Globe, GripVertical, House, Layers, ListTodo, Lock, MessageSquareText, Network, PackageCheck, Palette, Power, SlidersHorizontal, Sprout, Trophy, Zap } from "lucide-react";
 import type { TagColorKey } from "../lib/colors";
 
 export interface ChangelogHighlight {
@@ -21,6 +21,54 @@ export interface ChangelogEntry {
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "1.0.1",
+    date: "2026-11-27",
+    summary:
+      "1.0.1 集中打磨导航与基础控件。资料库侧边栏收成更短的单层列表：仓库切换改为下拉、集合改用可选图标；导航行加入主题光晕反馈。按钮、输入框、开关等基础控件统一为扁平样式，浅色模式更有主题色，并新增多套可选主题。更新公告也升级为可停留的模块。",
+    highlights: [
+      {
+        icon: FolderKanban,
+        palette: "violet",
+        title: "资料库侧边栏：更短路径与光晕反馈",
+        description: "仓库切换、集合和导航反馈重新收口。",
+        items: [
+          "仓库切换从侧栏展开列表改为顶部下拉，私有仓库的锁定 / 解锁入口跟随当前仓库",
+          "资料库与集合不再分成可折叠节，改为单层滚动列表，集合区用细分隔线分隔",
+          "集合标识从颜色点改为可选图标，右键即可打开图标选择器",
+          "侧栏导航按钮加入主题光晕反馈，hover 与选中态更明确；所有模块的 NavItem 共用这套反馈",
+        ],
+      },
+      {
+        icon: SlidersHorizontal,
+        palette: "blue",
+        title: "基础控件扁平化",
+        description: "按钮、输入框、开关和多选统一成更轻的平面语言。",
+        items: [
+          "主按钮与危险按钮去掉抬升阴影和 hover 纹理，改用实色 / 淡色底，边框统一为 1px",
+          "输入框去掉内阴影；常态 1px 边框，聚焦时只加粗边框，不再用外圈或内圈遮挡内容",
+          "Toggle 轨道去掉内阴影，手柄在深浅色下都垂直居中",
+          "多选选中块改为四周细边框，连续选中保持一整块",
+          "主题选择器恢复紧凑 2 列布局，普通主题单色图标，GENESIS 保留双色",
+        ],
+      },
+      {
+        icon: Palette,
+        palette: "green",
+        title: "更多可选主题",
+        description: "主题扩充到 13 套，覆盖中性、冷色、暖色、粉色和特殊主题。",
+        items: [
+          "新增：香槟金、珊瑚橙、鼠尾草、梅子红、橄榄绿、樱花粉、松石绿；石墨冰设为默认",
+          "浅色模式的页面、卡片和字段分层混入主题色，减少纯白刺眼和控件与卡片粘连",
+          "GENESIS 保留金色主色、青色强调和方阵纹理",
+        ],
+      },
+    ],
+    changes: [
+      "更新公告从弹窗升级为常驻模块：按大版本分页，侧栏显示该系列最新 patch",
+      "修复短内容 Prompt 弹窗被边缘渐变遮挡",
+    ],
+  },
   {
     version: "1.0.0",
     date: "2026-11-26",

@@ -46,7 +46,7 @@ export default function GrowthAccuracySpark({ points }: Props) {
           x2={chartWidth - PAD.right}
           y1={y(80)}
           y2={y(80)}
-          stroke="rgb(var(--c-line) / 0.9)"
+          stroke="var(--emphasis-line)"
           strokeDasharray="3 3"
           strokeWidth={1}
         />

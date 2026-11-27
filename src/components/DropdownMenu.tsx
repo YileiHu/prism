@@ -160,12 +160,13 @@ export function DropdownMenuItem({ onClick, danger, active, className = "", chil
   return (
     <button
       onClick={onClick}
+      data-active={active && !danger ? "true" : undefined}
       className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-body rounded-chip transition-colors ${
-        active
-          ? "bg-[var(--accent-muted)] text-[var(--accent-text)]"
+        active && !danger
+          ? "theme-active theme-hover theme-hover-accent"
           : danger
-            ? "text-danger hover:bg-danger/10"
-            : "text-secondary hover:bg-hover"
+            ? "theme-hover theme-hover-danger text-danger hover:bg-danger/10"
+            : "theme-hover text-secondary hover:bg-hover"
       } ${className}`}
     >
       {children}

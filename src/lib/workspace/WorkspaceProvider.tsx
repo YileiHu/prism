@@ -29,7 +29,7 @@ import {
 
 const WORKSPACE_KEY = "workspace_v1";
 const RESTORE_KEY = "restore_note_tabs";
-const MODULE_IDS: ReadonlySet<string> = new Set(["growth", "library", "settings"]);
+const MODULE_IDS: ReadonlySet<string> = new Set(["growth", "library", "settings", "changelog"]);
 
 // The workspace remembers the full session so a window recreated from the tray
 // can resume it. A cold start deliberately ignores the active document, split

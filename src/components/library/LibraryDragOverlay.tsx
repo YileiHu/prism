@@ -3,7 +3,6 @@ import { DragOverlay } from "@dnd-kit/core";
 import { useT } from "../../i18n";
 import DragPreview from "../DragPreview";
 import CollectionDragPreview from "./CollectionDragPreview";
-import VaultDragPreview from "./VaultDragPreview";
 import type { LibraryDragState } from "./useLibraryDnd";
 
 // The single overlay for every library drag payload. Kept beside
@@ -21,11 +20,10 @@ export default function LibraryDragOverlay({ drag }: { drag: LibraryDragState })
           </span>
         </DragPreview>
       )}
-      {drag?.kind === "vault" && <VaultDragPreview vault={drag.vault} />}
       {drag?.kind === "note-collection" && (
         <CollectionDragPreview
           name={drag.collection.name}
-          color={drag.collection.color}
+          icon={drag.collection.icon}
           count={drag.collection.notePaths.length
             + (drag.collection.groups?.reduce((sum, group) => sum + group.notePaths.length, 0) ?? 0)}
         />
@@ -41,7 +39,7 @@ export default function LibraryDragOverlay({ drag }: { drag: LibraryDragState })
       {drag?.kind === "pdf-collection" && (
         <CollectionDragPreview
           name={drag.collection.name}
-          color={drag.collection.color}
+          icon={drag.collection.icon}
           count={drag.collection.pdfPaths.length}
         />
       )}

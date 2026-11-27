@@ -92,8 +92,8 @@ export default function SelectButton({
         onClick={() => { if (!disabled) setOpen((prev) => !prev); }}
         className={
           variant === "pill"
-            ? "field-inset flex h-7 w-full items-center justify-between gap-2 rounded-full border px-3 text-caption leading-none text-left transition-colors hover:border-strong"
-            : `${CONTROL_CLASSES} w-full flex items-center justify-between gap-3 text-left hover:border-strong`
+            ? "theme-hover field-inset flex h-7 w-full items-center justify-between gap-2 rounded-pill border px-3 text-caption leading-none text-left transition-colors hover:border-strong"
+            : `theme-hover ${CONTROL_CLASSES} w-full flex items-center justify-between gap-3 text-left hover:border-strong`
         }
       >
         <span className={`truncate ${muted ? "text-muted" : "text-primary"}`}>

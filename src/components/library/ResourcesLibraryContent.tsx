@@ -25,6 +25,7 @@ import { useToolbarContribution, type ToolbarContribution } from "../toolbar/Too
 import type { MenuItem } from "../ContextMenu";
 import CreateCollectionModal from "../CreateCollectionModal";
 import LibraryTitle from "./LibraryTitle";
+import { DEFAULT_COLLECTION_ICON } from "../../lib/collectionIcons";
 import SearchLimitHint from "./SearchLimitHint";
 import { useLibraryData } from "./LibraryDataProvider";
 
@@ -506,14 +507,16 @@ export default function ResourcesLibraryContent() {
     colorForCollection,
   };
 
-  const titleColor = selectedCollection ? colorForCollection(selectedCollection) : null;
+  const titleIcon = selectedCollection
+    ? selectedCollection.icon || DEFAULT_COLLECTION_ICON
+    : null;
   const headerTitle = selectedCollection ? selectedCollection.name : t["library.allResources"];
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
     title: (
       <LibraryTitle
         title={headerTitle}
-        color={titleColor}
+        icon={titleIcon}
         count={resources.length}
         action={selectedCollection ? (
           <button
@@ -556,7 +559,7 @@ export default function ResourcesLibraryContent() {
   }), [
     headerTitle, resourceSelection.active, resourceSelection.enter, resourceSelection.exit,
     resources.length, searchQuery, selectedCollection, selectedCollectionId, setSearchQuery,
-    setSelectedCollection, t, titleColor,
+    setSelectedCollection, t, titleIcon,
   ]);
 
   useToolbarContribution("module:library", toolbar);

@@ -69,12 +69,12 @@ const api = {
   searchResources: (query: string) => ipcRenderer.invoke("resources:search", query),
   reorderResources: (orderedIds: number[]) => ipcRenderer.invoke("resources:reorder", orderedIds),
   getResourceCollections: () => ipcRenderer.invoke("resource-collections:list"),
-  createResourceCollection: (name: string, color = "") =>
-    ipcRenderer.invoke("resource-collections:create", name, color) as Promise<ResourceCollection>,
+  createResourceCollection: (name: string, icon = "") =>
+    ipcRenderer.invoke("resource-collections:create", name, icon) as Promise<ResourceCollection>,
   renameResourceCollection: (id: number, name: string) =>
     ipcRenderer.invoke("resource-collections:rename", id, name),
-  setResourceCollectionColor: (id: number, color: string) =>
-    ipcRenderer.invoke("resource-collections:set-color", id, color),
+  setResourceCollectionIcon: (id: number, icon: string) =>
+    ipcRenderer.invoke("resource-collections:set-icon", id, icon),
   reorderResourceCollections: (orderedIds: number[]) =>
     ipcRenderer.invoke("resource-collections:reorder", orderedIds),
   deleteResourceCollection: (id: number) => ipcRenderer.invoke("resource-collections:delete", id),
@@ -308,7 +308,6 @@ const api = {
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
-  setColorMode: (mode: string) => ipcRenderer.invoke("app:set-color-mode", mode),
   onMaximizeChange: (callback: (maximized: boolean) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized);
     ipcRenderer.on("window:maximize-change", handler);

@@ -108,7 +108,7 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS resource_collections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
-      color TEXT NOT NULL DEFAULT '',
+      icon TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
@@ -427,6 +427,14 @@ export function initDatabase(): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_resources_sort ON resources(sort_order)");
 
+  // Migration: web-resource collections switched from a user-picked color to a
+  // preset icon. Add the column before the tag import runs, drop the obsolete
+  // color column after it.
+  const collectionCols = db.prepare("PRAGMA table_info(resource_collections)").all() as { name: string }[];
+  if (collectionCols.length > 0 && !collectionCols.some((c) => c.name === "icon")) {
+    db.exec("ALTER TABLE resource_collections ADD COLUMN icon TEXT NOT NULL DEFAULT ''");
+  }
+
   // Migration: web resources moved from multi-tag grouping to single-assignment
   // collections. One-time and destructive by design (approved): add the column,
   // turn every old tag into a collection, put each resource into its first tag
@@ -442,13 +450,12 @@ export function initDatabase(): void {
   ).get() as { count: number };
   if (tagTable.count > 0) {
     const tagCols = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[];
-    const colorExpr = tagCols.some((c) => c.name === "color") ? "color" : "''";
     const orderExpr = tagCols.some((c) => c.name === "sort_order") ? "sort_order" : "id";
     const orderColumn = orderExpr === "sort_order" ? "t.sort_order" : "t.id";
     db.transaction(() => {
       db.exec(`
-        INSERT OR IGNORE INTO resource_collections (name, color, sort_order)
-        SELECT name, ${colorExpr}, ${orderExpr} FROM tags
+        INSERT OR IGNORE INTO resource_collections (name, icon, sort_order)
+        SELECT name, '', ${orderExpr} FROM tags
       `);
       db.exec(`
         UPDATE resources SET collection_id = (
@@ -466,6 +473,13 @@ export function initDatabase(): void {
     })();
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_resources_collection ON resources(collection_id)");
+
+  // Drop the obsolete color column last (the tag import above still runs on
+  // pre-collection databases). Older SQLite builds that reject DROP COLUMN keep
+  // the column; nothing reads it any more.
+  try {
+    db.exec("ALTER TABLE resource_collections DROP COLUMN color");
+  } catch { /* leave the legacy column on old SQLite */ }
 }
 
 // ---- Resource operations ----
@@ -482,7 +496,7 @@ interface ResourceRow {
 interface ResourceCollectionRow {
   id: number;
   name: string;
-  color: string;
+  icon: string;
   sort_order: number;
   count: number;
 }
@@ -560,7 +574,7 @@ export function moveResources(ids: number[], collectionId: number | null): numbe
 
 export function getResourceCollections(): { collections: ResourceCollection[]; ungroupedCount: number } {
   const rows = db.prepare(`
-    SELECT c.id, c.name, c.color, c.sort_order, (
+    SELECT c.id, c.name, c.icon, c.sort_order, (
       SELECT COUNT(*) FROM resources r WHERE r.collection_id = c.id
     ) AS count
     FROM resource_collections c
@@ -573,20 +587,20 @@ export function getResourceCollections(): { collections: ResourceCollection[]; u
   };
 }
 
-export function createResourceCollection(name: string, color = ""): ResourceCollection {
+export function createResourceCollection(name: string, icon = ""): ResourceCollection {
   const trimmed = name.trim();
   const { next } = db.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM resource_collections").get() as { next: number };
-  const id = db.prepare("INSERT INTO resource_collections (name, color, sort_order) VALUES (?, ?, ?)")
-    .run(trimmed, color, next).lastInsertRowid as number;
-  return { id, name: trimmed, color, sortOrder: next, count: 0 };
+  const id = db.prepare("INSERT INTO resource_collections (name, icon, sort_order) VALUES (?, ?, ?)")
+    .run(trimmed, icon, next).lastInsertRowid as number;
+  return { id, name: trimmed, icon, sortOrder: next, count: 0 };
 }
 
 export function renameResourceCollection(id: number, name: string): void {
   db.prepare("UPDATE resource_collections SET name = ? WHERE id = ?").run(name.trim(), id);
 }
 
-export function setResourceCollectionColor(id: number, color: string): void {
-  db.prepare("UPDATE resource_collections SET color = ? WHERE id = ?").run(color, id);
+export function setResourceCollectionIcon(id: number, icon: string): void {
+  db.prepare("UPDATE resource_collections SET icon = ? WHERE id = ?").run(icon, id);
 }
 
 export function reorderResourceCollections(orderedIds: number[]): void {
@@ -641,7 +655,7 @@ function rowToResourceCollection(row: ResourceCollectionRow): ResourceCollection
   return {
     id: row.id,
     name: row.name,
-    color: row.color,
+    icon: row.icon,
     sortOrder: row.sort_order,
     count: row.count,
   };

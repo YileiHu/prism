@@ -12,7 +12,7 @@
 | [Badge.tsx](../../src/components/Badge.tsx) | `Badge` |
 | [BatchActionBar.tsx](../../src/components/BatchActionBar.tsx) | `BatchAction`, `BatchActionBar`, `BatchActionMenuItem` |
 | [Button.tsx](../../src/components/Button.tsx) | `Button` |
-| [ChangelogModal.tsx](../../src/components/ChangelogModal.tsx) | `ChangelogModal` |
+| [ChangelogView.tsx](../../src/components/ChangelogView.tsx) | `ChangelogView` |
 | [ChipTabs.tsx](../../src/components/ChipTabs.tsx) | `ChipTab`, `ChipTabs` |
 | [CollapsibleSidebar.tsx](../../src/components/CollapsibleSidebar.tsx) | `CollapsibleSidebar` |
 | [CollectionDetail.tsx](../../src/components/CollectionDetail.tsx) | `CollectionDetail`, `NoteInfo` |
@@ -75,6 +75,7 @@
 | [presets.ts](../../src/lib/canvas/presets.ts) | `PRESET_MIME`, `newPresetId`, `presetFromNode` |
 | [targets.ts](../../src/lib/canvas/targets.ts) | `leafName`, `normalizeTargetUrl`, `targetTitle` |
 | [capabilityGroups.ts](../../src/lib/capabilityGroups.ts) | `CapabilityOptionGroup`, `capabilityGroupsByDomain` |
+| [collectionIcons.tsx](../../src/lib/collectionIcons.tsx) | `COLLECTION_ICON_PRESETS`, `CollectionIcon`, `CollectionIconPreset`, `DEFAULT_COLLECTION_ICON` |
 | [collectionOps.ts](../../src/lib/collectionOps.ts) | `deleteById`, `insertAt`, `moveItem`, `renameById` |
 | [colors.ts](../../src/lib/colors.ts) | `GRADE_COLOR_KEYS`, `PALETTE`, `PaletteColor`, `TAG_COLORS`, `TagColorKey`, `TagColorOption`, `gradeColor`, `hashColor`, `resolveTagColor`, `tagColor` |
 | [dates.ts](../../src/lib/dates.ts) | `MonthGridCell`, `addDays`, `buildMonthGrid`, `dateKey`, `daysUntil`, `localDateFromStamp`, `localDateTimeFromStamp`, `minDateKey`, `parseDateKey`, `parseSqliteTime` |
@@ -88,6 +89,7 @@
 | [settings.tsx](../../src/lib/settings.tsx) | `SettingsProvider`, `useSettings` |
 | [sidebarState.ts](../../src/lib/sidebarState.ts) | `setSidebarCollapsed`, `toggleSidebarCollapsed`, `useSidebarCollapsed`, `useSidebarSection` |
 | [taskDates.ts](../../src/lib/taskDates.ts) | `GrowthTaskBuckets`, `TaskRange`, `bucketGrowthTasks`, `compareTasksByDeadline`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange` |
+| [themePreview.ts](../../src/lib/themePreview.ts) | `themeAccentFill` |
 | [toast.tsx](../../src/lib/toast.tsx) | `ToastAction`, `ToastOptions`, `ToastProvider`, `ToastType`, `useToast` |
 | [useAnimatedMount.ts](../../src/lib/useAnimatedMount.ts) | `useAnimatedMount` |
 | [useAnimatedValues.ts](../../src/lib/useAnimatedValues.ts) | `useAnimatedValues` |
@@ -102,9 +104,7 @@
 | [useScrollEdges.ts](../../src/lib/useScrollEdges.ts) | `HorizontalScrollEdges`, `ScrollEdges`, `useHorizontalScrollEdges`, `useScrollEdges` |
 | [useShortcuts.ts](../../src/lib/useShortcuts.ts) | `useGlobalShortcuts` |
 | [useToggleSet.ts](../../src/lib/useToggleSet.ts) | `useSetToggle` |
-| [vaultIcons.tsx](../../src/lib/vaultIcons.tsx) | `VAULT_ICON_PRESETS`, `VaultIcon` |
 | [vaultLock.tsx](../../src/lib/vaultLock.tsx) | `VaultLockProvider`, `useVaultLock` |
-| [vaultOrder.ts](../../src/lib/vaultOrder.ts) | `persistVaultOrder` |
 | [WorkspaceProvider.tsx](../../src/lib/workspace/WorkspaceProvider.tsx) | `WorkspaceProvider`, `useWorkspace` |
 | [types.ts](../../src/lib/workspace/types.ts) | `CanvasDocTab`, `DocTab`, `LibraryRef`, `ModuleId`, `NoteDocTab`, `PaneSide`, `PdfDocTab`, `SplitState`, `WorkspaceState`, `canvasDocId`, `initialWorkspaceState`, `libraryVaultPath`, `makeCanvasDoc`, `makeNoteDoc`, `makePdfDoc`, `normalizePath`, `noteDocId`, `noteKey`, `pdfDocId` |
 
@@ -141,24 +141,24 @@
 ## Tailwind 语义 token
 
 - 颜色：`accent` `base` `danger` `elevated` `faint` `hover` `info` `line` `muted` `on-accent` `on-danger` `overlay` `primary` `secondary` `strong` `success` `surface` `tertiary` `tint` `warning`
-- 圆角：`card` `chip` `control`
+- 圆角：`card` `chip` `control` `pill` `segment`
 - 阴影：`drag` `modal` `popover` `toast`
 - 字号：`body` `caption` `control` `meta` `section`
 - 层级：`context` `menu` `menu-backdrop` `toast`
 
 ## CSS 变量（`src/index.css`，值随主题/模式变化）
 
-- 表面 / 文字 / 线：`--c-base` `--c-elevated` `--c-faint` `--c-hover` `--c-line` `--c-muted` `--c-overlay` `--c-primary` `--c-secondary` `--c-strong` `--c-surface` `--c-tertiary` `--c-tint`
-- 强调色：`--accent` `--accent-border` `--accent-hover` `--accent-muted` `--accent-rgb` `--accent-text`
-- 外壳 / 侧栏：`--chrome-bg` `--chrome-flat` `--chrome-sheen` `--header-bg` `--header-fade` `--ring-subtle` `--sidebar-base` `--sidebar-bg` `--sidebar-bg-top` `--sidebar-item-active` `--sidebar-item-hover` `--window-ring`
+- 表面 / 文字 / 线：`--c-base` `--c-chrome-base` `--c-chrome-elevated` `--c-chrome-faint` `--c-chrome-hover` `--c-chrome-line` `--c-chrome-muted` `--c-chrome-overlay` `--c-chrome-primary` `--c-chrome-secondary` `--c-chrome-strong` `--c-chrome-surface` `--c-chrome-tertiary` `--c-chrome-tint` `--c-elevated` `--c-faint` `--c-hover` `--c-line` `--c-muted` `--c-overlay` `--c-primary` `--c-secondary` `--c-strong` `--c-surface` `--c-tertiary` `--c-tint`
+- 强调色：`--accent` `--accent-2` `--accent-2-rgb` `--accent-border` `--accent-hover` `--accent-muted` `--accent-rgb` `--accent-text`
+- 外壳 / 侧栏：`--chrome-bg` `--chrome-flat` `--chrome-tint` `--header-bg` `--header-fade` `--ring-subtle` `--sidebar-base` `--sidebar-bg` `--sidebar-bg-top` `--sidebar-item-active` `--sidebar-item-hover` `--window-ring`
 - 凹槽 / 凸起：`--inset-bg` `--inset-border` `--inset-shadow` `--raised-bg` `--raised-highlight` `--raised-shadow`
 - Markdown / 编辑器：`--md-bold` `--md-bold-dark` `--md-bold-light` `--md-code-bg` `--md-code-comment` `--md-code-fg` `--md-code-function` `--md-code-keyword` `--md-code-number` `--md-code-property` `--md-code-string` `--md-h1` `--md-h1-dark` `--md-h1-light` `--md-h2` `--md-h2-dark` `--md-h2-light` `--md-h3` `--md-h3-dark` `--md-h3-light` `--md-h4` `--md-h4-dark` `--md-h4-light` `--md-h5` `--md-h5-dark` `--md-h5-light` `--md-h6` `--md-h6-dark` `--md-h6-light` `--md-mark-bg`
 - 内容排版：`--content-font-size` `--content-line-height` `--content-width`
 - 滚动条：`--scrollbar-thumb` `--scrollbar-thumb-hover`
-- 其他：`--callout-rgb` `--danger` `--ease-in` `--ease-out` `--field-bg` `--field-border` `--field-border-width` `--field-focus-border` `--field-focus-ring` `--field-shadow` `--info` `--on-accent` `--on-danger` `--slider-progress` `--success` `--warning`
+- 其他：`--callout-rgb` `--danger` `--ease-in` `--ease-out` `--emphasis` `--emphasis-line` `--emphasis-rgb` `--field-bg` `--field-border` `--field-border-width` `--field-focus-border` `--fx-blur` `--fx-fountain` `--fx-fountain-bleed` `--fx-fountain-flow` `--fx-fountain-mask` `--fx-fountain-opacity` `--fx-fountain-rgb` `--fx-fountain-selected` `--fx-fountain-selected-rgb` `--fx-fountain-size` `--fx-glow` `--fx-highlight` `--fx-highlight-opacity` `--fx-highlight-size` `--fx-hover-border` `--fx-hover-image` `--fx-hover-opacity` `--fx-hover-size` `--fx-image` `--fx-repeat` `--fx-size` `--info` `--on-accent` `--on-danger` `--primary-button-hover-text` `--primary-button-text` `--radius-card` `--radius-chip` `--radius-control` `--radius-pill` `--radius-segment` `--slider-progress` `--success` `--warning`
 
 ## 共用样式类
 
-`.accent-focus` `.accent-ring` `.active-bar` `.active-bar-neutral` `.anim-bar` `.anim-exit` `.anim-exit-pop` `.anim-fade-in` `.anim-menu` `.anim-menu-up` `.anim-overlay` `.anim-pop` `.anim-toast` `.app-header` `.app-main` `.app-shell` `.chrome-bg` `.chrome-pill-active` `.field-inset` `.field-label` `.pane-enter` `.panel-floating` `.scrollbar-none` `.segmented-thumb` `.segmented-toggle` `.sidebar-group` `.stagger-fade` `.stagger-in` `.surface-inset` `.surface-raised` `.surface-raised-fill` `.switch-thumb` `.switch-track` `.tab-fade-left` `.tab-fade-right` `.toolbar-band`
+`.accent-focus` `.accent-ring` `.active-bar` `.active-bar-neutral` `.anim-bar` `.anim-exit` `.anim-exit-pop` `.anim-fade-in` `.anim-menu` `.anim-menu-up` `.anim-overlay` `.anim-pop` `.anim-toast` `.app-header` `.app-main` `.app-shell` `.chrome-bg` `.field-inset` `.field-label` `.pane-enter` `.panel-floating` `.scrollbar-none` `.segmented-option` `.segmented-toggle` `.sidebar-group` `.stagger-fade` `.stagger-in` `.surface-inset` `.surface-raised` `.surface-raised-fill` `.switch-thumb` `.switch-track` `.tab-close` `.tab-fade-left` `.tab-fade-right` `.theme-active` `.theme-hover` `.theme-hover-accent` `.toolbar-band`
 
 > 编辑器/白板专用的 `.cm-*`、`.md-*`、`.prism-canvas*` 类不在本清单内，见 [编辑器](../architecture/editor.md) 与 [白板](../architecture/canvas.md)。

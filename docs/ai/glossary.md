@@ -20,7 +20,7 @@
 | 侧栏槽位 | `AppSidebarSlotProvider` / `ModuleSidebar` | `src/components/AppSidebarSlot.tsx` |
 | 工具栏 | `ToolbarProvider` / `AppToolbar` | `src/components/toolbar/ToolbarProvider.tsx` |
 | 启动屏 | `SplashScreen` | `src/components/SplashScreen.tsx` |
-| 更新日志 | `ChangelogModal` / `changelog.ts` | `src/components/ChangelogModal.tsx`、`src/data/changelog.ts` |
+| 更新日志 | `ChangelogView` / `changelog.ts` | `src/components/ChangelogView.tsx`、`src/data/changelog.ts` |
 
 ## 资料库
 
@@ -99,8 +99,8 @@
 |---|---|---|
 | 私密仓库 | private vault / `PVD1` | `electron/privateVault.ts` |
 | 解锁 / 锁定 | `unlockVault` / `lockVault` / `VaultLockProvider` | `src/lib/vaultLock.tsx` |
-| 主题 | `themeId` / `themes.ts` | `src/theme/themes.ts` |
-| 模式（深/浅/系统） | `mode` / `resolvedMode` | `src/lib/settings.tsx`、`src/theme/ThemeProvider.tsx` |
+| 主题 | `themeId` / `themes` / `theme()` | `src/shared/themes.ts` |
+| 模式（深/浅/系统） | `mode` / `resolvedMode` / `pinned` | `src/shared/settings.ts`、`src/shared/themes.ts`、`src/theme/ThemeProvider.tsx` |
 | 语义 token | `index.css` / Tailwind 主题 | `src/index.css`、`tailwind.config.js` |
 | 设置项 | `AppSettings` / `SETTING_KEYS` | `src/shared/settings.ts` |
 | 快捷键 | `ShortcutAction` / `ShortcutMap` | `src/shared/shortcuts.ts` |

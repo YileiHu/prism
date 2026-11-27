@@ -10,7 +10,7 @@ interface Props {
 // One chrome for every drag preview: same accent edge, elevated surface,
 // shadow and opacity. Callers keep their own content/layout inside.
 export default function DragPreview({ children, className = "", shape = "row" }: Props) {
-  const radius = shape === "pill" ? "rounded-full" : "rounded-control";
+  const radius = shape === "pill" ? "rounded-pill" : "rounded-control";
   return (
     <div
       className={`border-2 border-[var(--accent)] bg-elevated shadow-drag ${radius} ${className}`}

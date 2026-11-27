@@ -6,7 +6,7 @@
 
 ## `electron/`
 
-- `database.ts` — `GrowthMediaOwnerType`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGrowthEvidence`, `addGrowthFeedback`, `addGrowthPrediction`, `addGrowthSelfModel`, `addGrowthTask`, `addResource`, `clearCompletedGrowthTasks`, `closeGrowthSeason`, `completeGrowthTask`, `createGrowthArtifact`, `createGrowthCapability`, `createGrowthChallenge`, `createGrowthDomain`, `createGrowthSeason`, `createResourceCollection`, `deleteGrowthAnnualNote`, `deleteGrowthArtifact`, `deleteGrowthCapability`, `deleteGrowthChallenge`, `deleteGrowthEvidence`, `deleteGrowthFeedback`, `deleteGrowthPrediction`, `deleteGrowthSeason`, `deleteGrowthSelfModel`, `deleteGrowthTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteResourceCollection`, `exportGrowthBackup`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getGrowthEvidence`, `getGrowthMediaFiles`, `getGrowthSnapshots`, `getGrowthState`, `getGrowthTasks`, `getGrowthTimeline`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResourceCollections`, `getResources`, `getSetting`, `growthBackupCounts`, `growthHasAnyData`, `importGrowthBackup`, `initDatabase`, `insertNote`, `isGrowthMediaFileReferenced`, `listGrowthMediaFiles`, `listPdfDocuments`, `moveResources`, `purgeVaultNotes`, `renameNoteInDb`, `renameResourceCollection`, `reopenGrowthTask`, `reorderResourceCollections`, `reorderResources`, `resetPdfCover`, `resolveGrowthChallenge`, `reviewGrowthCapability`, `saveGrowthAnnualNote`, `searchNoteContents`, `searchNotes`, `searchResources`, `setPdfCustomCover`, `setPdfPageCount`, `setResourceCollectionColor`, `setSetting`, `settleGrowthPrediction`, `syncPdfDocuments`, `syncVaultNotes`, `updateGrowthArtifact`, `updateGrowthCapability`, `updateGrowthChallenge`, `updateGrowthDomain`, `updateGrowthFeedback`, `updateGrowthSeason`, `updateGrowthSelfModel`, `updateGrowthTask`, `updatePdfCover`, `updateResource`
+- `database.ts` — `GrowthMediaOwnerType`, `NoteUpsertRow`, `PdfUpsertRow`, `VaultNote`, `addGrowthEvidence`, `addGrowthFeedback`, `addGrowthPrediction`, `addGrowthSelfModel`, `addGrowthTask`, `addResource`, `clearCompletedGrowthTasks`, `closeGrowthSeason`, `completeGrowthTask`, `createGrowthArtifact`, `createGrowthCapability`, `createGrowthChallenge`, `createGrowthDomain`, `createGrowthSeason`, `createResourceCollection`, `deleteGrowthAnnualNote`, `deleteGrowthArtifact`, `deleteGrowthCapability`, `deleteGrowthChallenge`, `deleteGrowthEvidence`, `deleteGrowthFeedback`, `deleteGrowthPrediction`, `deleteGrowthSeason`, `deleteGrowthSelfModel`, `deleteGrowthTask`, `deleteNotesByPaths`, `deletePdfDocuments`, `deleteResource`, `deleteResourceCollection`, `exportGrowthBackup`, `findPdfDocumentByRelPath`, `findPdfDocumentByTitle`, `getAllSettings`, `getGrowthEvidence`, `getGrowthMediaFiles`, `getGrowthSnapshots`, `getGrowthState`, `getGrowthTasks`, `getGrowthTimeline`, `getNoteBriefsByPaths`, `getNoteList`, `getNoteMtimes`, `getPdfDocument`, `getPdfDocumentsByIds`, `getPdfDocumentsByPaths`, `getPdfMtimes`, `getResource`, `getResourceCollections`, `getResources`, `getSetting`, `growthBackupCounts`, `growthHasAnyData`, `importGrowthBackup`, `initDatabase`, `insertNote`, `isGrowthMediaFileReferenced`, `listGrowthMediaFiles`, `listPdfDocuments`, `moveResources`, `purgeVaultNotes`, `renameNoteInDb`, `renameResourceCollection`, `reopenGrowthTask`, `reorderResourceCollections`, `reorderResources`, `resetPdfCover`, `resolveGrowthChallenge`, `reviewGrowthCapability`, `saveGrowthAnnualNote`, `searchNoteContents`, `searchNotes`, `searchResources`, `setPdfCustomCover`, `setPdfPageCount`, `setResourceCollectionIcon`, `setSetting`, `settleGrowthPrediction`, `syncPdfDocuments`, `syncVaultNotes`, `updateGrowthArtifact`, `updateGrowthCapability`, `updateGrowthChallenge`, `updateGrowthDomain`, `updateGrowthFeedback`, `updateGrowthSeason`, `updateGrowthSelfModel`, `updateGrowthTask`, `updatePdfCover`, `updateResource`
 - `main.ts`
 - `paths.ts` — `isPathInside`, `pathKey`
 - `preload.ts` — `PrismAPI`
@@ -46,7 +46,7 @@
 - `Badge.tsx` — `Badge`
 - `BatchActionBar.tsx` — `BatchAction`, `BatchActionBar`, `BatchActionMenuItem`
 - `Button.tsx` — `Button`
-- `ChangelogModal.tsx` — `ChangelogModal`
+- `ChangelogView.tsx` — `ChangelogView`
 - `ChipTabs.tsx` — `ChipTab`, `ChipTabs`
 - `CollapsibleSidebar.tsx` — `CollapsibleSidebar`
 - `CollectionDetail.tsx` — `CollectionDetail`, `NoteInfo`
@@ -228,6 +228,7 @@
 - `CanvasLibraryContent.tsx` — `CanvasLibraryContent`
 - `CollectionDialogs.tsx` — `CollectionDialogTarget`, `CollectionDialogs`, `useCollectionDialogs`
 - `CollectionDragPreview.tsx` — `CollectionDragPreview`
+- `CollectionIconPicker.tsx` — `CollectionIconPicker`
 - `CollectionSection.tsx` — `CollectionSection`
 - `GroupNavRow.tsx` — `GroupNavRow`, `GroupNavRowSortable`
 - `LibraryDataProvider.tsx` — `LibraryDataProvider`, `useLibraryData`
@@ -247,7 +248,6 @@
 - `useNoteLibrary.ts` — `CANVAS_VIEW_ID`, `NoteLibrary`, `useNoteLibrary`
 - `useNotePdfDialogs.ts` — `useNotePdfDialogs`
 - `useResourceLibrary.ts` — `ResourceCollectionGroup`, `ResourceLibrary`, `useResourceLibrary`
-- `VaultDragPreview.tsx` — `VaultDragPreview`
 
 ## `src/components/pdf/`
 
@@ -312,6 +312,7 @@
 
 - `api.ts`
 - `capabilityGroups.ts` — `CapabilityOptionGroup`, `capabilityGroupsByDomain`
+- `collectionIcons.tsx` — `COLLECTION_ICON_PRESETS`, `CollectionIcon`, `CollectionIconPreset`, `DEFAULT_COLLECTION_ICON`
 - `collectionOps.ts` — `deleteById`, `insertAt`, `moveItem`, `renameById`
 - `colors.ts` — `GRADE_COLOR_KEYS`, `PALETTE`, `PaletteColor`, `TAG_COLORS`, `TagColorKey`, `TagColorOption`, `gradeColor`, `hashColor`, `resolveTagColor`, `tagColor`
 - `dates.ts` — `MonthGridCell`, `addDays`, `buildMonthGrid`, `dateKey`, `daysUntil`, `localDateFromStamp`, `localDateTimeFromStamp`, `minDateKey`, `parseDateKey`, `parseSqliteTime`
@@ -325,6 +326,7 @@
 - `settings.tsx` — `SettingsProvider`, `useSettings`
 - `sidebarState.ts` — `setSidebarCollapsed`, `toggleSidebarCollapsed`, `useSidebarCollapsed`, `useSidebarSection`
 - `taskDates.ts` — `GrowthTaskBuckets`, `TaskRange`, `bucketGrowthTasks`, `compareTasksByDeadline`, `isTaskActiveOn`, `isTaskOverdue`, `taskDateRange`
+- `themePreview.ts` — `themeAccentFill`
 - `toast.tsx` — `ToastAction`, `ToastOptions`, `ToastProvider`, `ToastType`, `useToast`
 - `useAnimatedMount.ts` — `useAnimatedMount`
 - `useAnimatedValues.ts` — `useAnimatedValues`
@@ -339,9 +341,7 @@
 - `useScrollEdges.ts` — `HorizontalScrollEdges`, `ScrollEdges`, `useHorizontalScrollEdges`, `useScrollEdges`
 - `useShortcuts.ts` — `useGlobalShortcuts`
 - `useToggleSet.ts` — `useSetToggle`
-- `vaultIcons.tsx` — `VAULT_ICON_PRESETS`, `VaultIcon`
 - `vaultLock.tsx` — `VaultLockProvider`, `useVaultLock`
-- `vaultOrder.ts` — `persistVaultOrder`
 
 ## `src/lib/canvas/`
 
@@ -360,12 +360,15 @@
 
 ## `src/shared/`
 
+- `chromePalettes.ts` — `CHROME_PALETTES`
 - `collectionUniqueness.ts` — `dedupeNoteCollections`, `dedupePdfCollections`
 - `models.ts` — `AppLaunchState`, `CanvasContent`, `CanvasFile`, `CanvasGroup`, `CanvasGroupsFile`, `CanvasSaveResult`, `GlobalShortcutState`, `GlobalShortcutStatus`, `GrowthAnnualNote`, `GrowthAnnualNoteInput`, `GrowthArtifact`, `GrowthArtifactInput`, `GrowthArtifactKind`, `GrowthArtifactPatch`, `GrowthAttribution`, `GrowthBackup`, `GrowthBackupCounts`, `GrowthBackupExportResult`, `GrowthBackupImportResult`, `GrowthBackupPreview`, `GrowthCapability`, `GrowthCapabilityInput`, `GrowthCapabilityPatch`, `GrowthChallenge`, `GrowthChallengeInput`, `GrowthChallengePatch`, `GrowthChallengeStatus`, `GrowthCoverTransform`, `GrowthDomain`, `GrowthEvidence`, `GrowthEvidenceInput`, `GrowthEvidenceKind`, `GrowthFeedback`, `GrowthFeedbackInput`, `GrowthHalfLife`, `GrowthPortability`, `GrowthPrediction`, `GrowthPredictionInput`, `GrowthPredictionKind`, `GrowthResolveInput`, `GrowthResolveResult`, `GrowthReviewInput`, `GrowthReviewResult`, `GrowthSeason`, `GrowthSeasonInput`, `GrowthSeasonPatch`, `GrowthSelfModelEntry`, `GrowthSelfModelInput`, `GrowthSelfModelPatch`, `GrowthSelfSection`, `GrowthSnapshot`, `GrowthState`, `GrowthStatus`, `GrowthTask`, `GrowthTaskInput`, `GrowthTaskPatch`, `GrowthTasksPayload`, `NoteBrief`, `NoteCollectionData`, `NoteCollectionsFile`, `NoteContentHit`, `NoteGroupData`, `NoteListChanges`, `NoteRef`, `PdfCollectionData`, `PdfCollectionsFile`, `PdfDocument`, `PdfListChanges`, `Resource`, `ResourceCollection`, `VaultLibrarySummary`, `VaultMigrationProgress`, `VaultMigrationResult`, `VaultPrivacyStatus`
 - `settings.ts` — `AppSettings`, `CanvasBackground`, `CanvasMinimapPosition`, `CanvasPreset`, `CloseBehavior`, `ColorMode`, `DEFAULT_SETTINGS`, `MAX_CANVAS_PRESETS`, `NumberRange`, `SETTING_KEYS`, `SETTING_META`, `SettingKey`, `SettingMeta`, `decodeSetting`, `normalizeCanvasPresets`, `normalizeSetting`, `serializeSetting`
 - `shortcuts.ts` — `DEFAULT_SHORTCUTS`, `GLOBAL_SHORTCUT_ACTIONS`, `GlobalShortcutAction`, `QUICK_CAPTURE_EVENT`, `SHORTCUT_ACTIONS`, `SHORTCUT_EVENT`, `ShortcutAction`, `ShortcutEventDetail`, `ShortcutMap`, `formatShortcut`, `isReservedShortcut`, `isValidShortcut`, `normalizeShortcuts`, `shortcutFromEvent`
+- `themeColor.ts` — `Oklch`, `contrastRatio`, `hexToOklch`, `isHexColor`, `oklchToHex`, `parseHex`, `rgbTriplet`, `rgbaFromHex`, `shiftLightness`
+- `themeEffects.ts` — `BloomSpec`, `FX_VAR_KEYS`, `FountainSpec`, `HighlightSpec`, `PatternKind`, `PatternLayer`, `PatternSpec`, `ThemeFx`, `normalizeThemeFx`, `patternLayer`, `renderThemeFx`
+- `themes.ts` — `ColorModeName`, `DEFAULT_RADIUS`, `DEFAULT_THEME_ID`, `ModeSetting`, `NeutralSeed`, `ResolvedAppearance`, `SurfacePalette`, `THEME_IDS`, `ThemeDef`, `ThemeRadius`, `ThemeRamp`, `ThemeSeed`, `ThemeVariant`, `appearanceBaseHex`, `findTheme`, `resolveAppearance`, `theme`, `themeSupports`, `themeVariant`, `themes`
 
 ## `src/theme/`
 
 - `ThemeProvider.tsx` — `ThemeProvider`, `useTheme`
-- `themes.ts` — `SurfacePalette`, `ThemeColors`, `ThemeVariant`, `lightSurfaces`, `themes`

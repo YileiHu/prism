@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuItem } from "./DropdownMenu";
 import { useT } from "../i18n";
@@ -11,6 +11,8 @@ export interface ChipTab<T extends string | number> {
   meta?: string;
   /** Leading colour dot; pass a resolved CSS colour. */
   dot?: string;
+  /** Selected-tab glow colour; defaults to the theme accent. */
+  glow?: string;
   /** Overrides the thumb/text colours (season themes need their own palette). */
   tone?: { background: string; color: string };
   disabled?: boolean;
@@ -34,11 +36,11 @@ interface Props<T extends string | number> {
 }
 
 const CHIP_BASE =
-  "relative flex items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[5px] px-2.5 py-[5px] leading-none text-caption";
+  "chip-tabs-option relative flex items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-segment px-2.5 py-[5px] leading-none text-caption";
 
 /**
- * One recessed track with a single raised chip that slides between items — the
- * same physical language as `SegmentedToggle`, sized for longer lists.
+ * A flat strip: no track fill and no rules, just a single bright-white chip
+ * that slides between items. Sized for longer filters than `SegmentedToggle`.
  *
  * Chips always fill the track. With `collapse` the strip measures how many fit
  * at their natural width (off-screen mirror) and puts the rest into a "more"
@@ -87,6 +89,7 @@ export default function ChipTabs<T extends string | number>({
 
   const activeItem = itemIndex >= 0 ? items[itemIndex] : undefined;
   const activeTone = activeItem?.tone;
+  const activeGlow = activeItem?.glow;
   const hiddenStart = visibleCount - (hasAll ? 1 : 0);
 
   // A menu that outlives a selection change would cover the new chip.
@@ -138,7 +141,7 @@ export default function ChipTabs<T extends string | number>({
   }, [collapsing, total, containerRef, signature, allLabel]);
 
   const chipClass = (active: boolean, disabled = false) =>
-    `${CHIP_BASE} min-w-0 flex-1 ${active ? "" : "text-muted hover:text-secondary"} ${
+    `${CHIP_BASE} min-w-0 flex-1 transition-colors ${active ? "theme-active text-primary" : "text-muted hover:text-secondary"} ${
       disabled ? "cursor-not-allowed opacity-40" : ""
     }`;
 
@@ -166,6 +169,7 @@ export default function ChipTabs<T extends string | number>({
           type="button"
           role="tab"
           aria-selected={active}
+          data-active={active ? "true" : undefined}
           onClick={() => onChange(null)}
           className={chipClass(active)}
         >
@@ -183,10 +187,14 @@ export default function ChipTabs<T extends string | number>({
         type="button"
         role="tab"
         aria-selected={active}
+        data-active={active ? "true" : undefined}
         disabled={item.disabled}
         onClick={() => onChange(active ? null : item.key)}
         className={chipClass(active, item.disabled)}
-        style={active && item.tone ? { color: item.tone.color } : undefined}
+        style={{
+          ...(item.glow ? { "--chip-item-glow": item.glow } : {}),
+          ...(active && item.tone ? { color: item.tone.color } : {}),
+        } as CSSProperties}
       >
         {chipContent(item)}
       </button>
@@ -195,17 +203,25 @@ export default function ChipTabs<T extends string | number>({
 
   return (
     <div className={`flex min-w-0 items-center gap-2 ${className}`} role="presentation">
-      <div className="segmented-toggle relative min-w-0 flex-1 rounded-control border p-[3px]">
+      <div className="relative min-w-0 flex-1 p-[3px]">
         <div ref={containerRef} role="tablist" aria-label={ariaLabel} className="relative flex w-full">
           {thumb && (
             <span
               aria-hidden
-              className="segmented-thumb pointer-events-none absolute left-0 top-0 rounded-[5px] transition-[transform,width] duration-200 ease-out motion-reduce:transition-none"
+              className="chip-tabs-thumb pointer-events-none absolute left-0 top-0 rounded-segment transition-[transform,width] duration-200 ease-out motion-reduce:transition-none"
               style={{
                 transform: `translate(${thumb.left}px, ${thumb.top}px)`,
                 width: thumb.width,
                 height: thumb.height,
                 ...(activeTone ? { background: activeTone.background } : {}),
+                ...(activeGlow && !activeTone
+                  ? {
+                      backgroundImage:
+                        `radial-gradient(ellipse at 50% 52%, color-mix(in srgb, ${activeGlow} 80%, transparent) 0%, ` +
+                        `color-mix(in srgb, ${activeGlow} 35%, transparent) 55%, transparent 78%)`,
+                      backgroundSize: "100% 100%",
+                    }
+                  : {}),
               }}
             />
           )}
@@ -225,6 +241,9 @@ export default function ChipTabs<T extends string | number>({
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((open) => !open)}
               className={chipClass(activeInMenu)}
+              style={activeInMenu && activeItem?.glow
+                ? ({ "--chip-item-glow": activeItem.glow } as CSSProperties)
+                : undefined}
             >
               <span className="max-w-[10rem] truncate">
                 {activeInMenu ? (activeItem?.label ?? t["common.more"]) : t["common.more"]}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Database, Keyboard, LayoutGrid, Palette, RotateCcw, Search, SlidersHorizontal, SquarePen, Wrench } from "lucide-react";
 import { useT } from "../i18n";
 import { useTheme } from "../theme/ThemeProvider";
+import { DEFAULT_THEME_ID } from "../shared/themes";
 import { useSettings } from "../lib/settings";
 import { useToolbarContribution, type ToolbarContribution } from "./toolbar/ToolbarProvider";
 import Button from "./Button";
@@ -61,7 +62,7 @@ export default function Settings({ active, vaults }: { active: boolean; vaults: 
 
   const handleReset = async () => {
     await reset();
-    setTheme("violet");
+    setTheme(DEFAULT_THEME_ID);
     setMode("dark");
     setLang("zh");
     flashSaved();

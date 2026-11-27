@@ -16,7 +16,7 @@ import {
   getResourceCollections,
   createResourceCollection,
   renameResourceCollection,
-  setResourceCollectionColor,
+  setResourceCollectionIcon,
   reorderResourceCollections,
   deleteResourceCollection,
   syncVaultNotes,
@@ -138,6 +138,13 @@ import {
   type AppSettings,
   type SettingKey,
 } from "../src/shared/settings";
+import {
+  DEFAULT_THEME_ID,
+  appearanceBaseHex,
+  findTheme,
+  resolveAppearance,
+  type ResolvedAppearance,
+} from "../src/shared/themes";
 import zh from "../src/i18n/zh";
 import en from "../src/i18n/en";
 import {
@@ -350,9 +357,7 @@ function showQuickCaptureWindow(): void {
     return;
   }
 
-  const colorMode = resolveColorScheme(getSetting("color_mode"));
-  const dark = colorMode === "dark"
-    || (colorMode === "system" && nativeTheme.shouldUseDarkColors);
+  const appearance = resolveNativeAppearance();
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const width = 560;
   const height = 200;
@@ -374,7 +379,7 @@ function showQuickCaptureWindow(): void {
     skipTaskbar: true,
     alwaysOnTop: true,
     autoHideMenuBar: true,
-    backgroundColor: dark ? DARK_BG : LIGHT_BG,
+    backgroundColor: nativeBackgroundHex(appearance),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -400,7 +405,7 @@ function showQuickCaptureWindow(): void {
     win.focus();
   });
 
-  const mode = dark ? "dark" : "light";
+  const mode = appearance.mode;
   if (process.env.NODE_ENV === "development" || process.argv.includes("--dev")) {
     void win.loadURL(`http://localhost:5173/quick-capture.html?mode=${mode}`);
   } else {
@@ -484,29 +489,54 @@ function isVisibleOnSomeDisplay(s: WindowState): boolean {
   });
 }
 
-// Keep the native window surface in sync with the renderer's color mode so
-// startup/repaint never flashes the opposite scheme.
-const DARK_BG = "#030712";
-const LIGHT_BG = "#f6f8fb";
-
+// Keep the native window surface in sync with the renderer's appearance. The
+// resolution lives in shared/themes so both processes agree on it; a dark-only
+// theme pins the native surface dark even while the system is light, otherwise
+// startup and window borders would flash the wrong palette.
 function resolveColorScheme(mode: string | null): "dark" | "light" | "system" {
   return mode === "light" || mode === "dark" ? mode : "system";
 }
 
-function applyNativeColorMode(mode: string): void {
-  const scheme = resolveColorScheme(mode);
+function resolveNativeAppearance(): ResolvedAppearance {
+  const scheme = resolveColorScheme(getSetting("color_mode"));
+  // themeSource drives shouldUseDarkColors, so apply the setting before asking
+  // the OS; a pinned (single-mode) theme then overrides it.
   nativeTheme.themeSource = scheme;
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const dark = scheme === "dark" || (scheme === "system" && nativeTheme.shouldUseDarkColors);
-  mainWindow.setBackgroundColor(dark ? DARK_BG : LIGHT_BG);
+  const appearance = resolveAppearance(
+    getSetting("theme") ?? DEFAULT_THEME_ID,
+    scheme,
+    nativeTheme.shouldUseDarkColors,
+  );
+  // A pinned theme owns the mode: native menus and scrollbars must match it.
+  if (appearance.pinned) nativeTheme.themeSource = appearance.mode;
+  return appearance;
+}
+
+function nativeBackgroundHex(appearance: ResolvedAppearance): string {
+  return appearanceBaseHex(appearance);
+}
+
+// Changing themeSource re-emits `updated`; guard re-entrancy so a pinned theme
+// cannot ping-pong between the system setting and its own mode.
+let applyingAppearance = false;
+
+function applyNativeAppearance(): void {
+  if (applyingAppearance) return;
+  applyingAppearance = true;
+  try {
+    const appearance = resolveNativeAppearance();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setBackgroundColor(nativeBackgroundHex(appearance));
+  } finally {
+    applyingAppearance = false;
+  }
 }
 
 function createWindow(reopen = false): void {
   const isWindows = process.platform === "win32";
   const saved = loadWindowState();
-  const colorMode = resolveColorScheme(getSetting("color_mode"));
-  nativeTheme.themeSource = colorMode;
-  const windowDark = colorMode === "dark" || (colorMode === "system" && nativeTheme.shouldUseDarkColors);
+  const appearance = resolveNativeAppearance();
+  const background = nativeBackgroundHex(appearance);
 
   const options: Electron.BrowserWindowConstructorOptions = {
     width: saved?.width ?? 1200,
@@ -516,8 +546,8 @@ function createWindow(reopen = false): void {
     title: "Prism",
     icon: path.join(__dirname, "../public/icon.png"),
     ...(isWindows
-      ? { frame: false, backgroundColor: windowDark ? DARK_BG : LIGHT_BG }
-      : { backgroundColor: windowDark ? DARK_BG : LIGHT_BG }),
+      ? { frame: false, backgroundColor: background }
+      : { backgroundColor: background }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1570,9 +1600,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("resources:reorder", (_e, orderedIds: number[]) => reorderResources(orderedIds));
 
   ipcMain.handle("resource-collections:list", () => getResourceCollections());
-  ipcMain.handle("resource-collections:create", (_e, name: string, color: string) => createResourceCollection(name, color ?? ""));
+  ipcMain.handle("resource-collections:create", (_e, name: string, icon: string) => createResourceCollection(name, icon ?? ""));
   ipcMain.handle("resource-collections:rename", (_e, id: number, name: string) => renameResourceCollection(id, name));
-  ipcMain.handle("resource-collections:set-color", (_e, id: number, color: string) => setResourceCollectionColor(id, color));
+  ipcMain.handle("resource-collections:set-icon", (_e, id: number, icon: string) => setResourceCollectionIcon(id, icon));
   ipcMain.handle("resource-collections:reorder", (_e, orderedIds: number[]) => reorderResourceCollections(orderedIds));
   ipcMain.handle("resource-collections:delete", (_e, id: number) => deleteResourceCollection(id));
 
@@ -1863,12 +1893,15 @@ function registerIpcHandlers(): void {
     if (key === "shortcuts") applyGlobalShortcuts();
     if (key === "auto_launch" || key === "auto_launch_hidden") applyAutoLaunch();
     if (key === "close_behavior" || key === "auto_launch" || key === "auto_launch_hidden") syncTray();
+    if (key === "color_mode" || key === "theme") applyNativeAppearance();
   });
   ipcMain.handle("settings:get-all", () => getAllSettings());
   ipcMain.handle("app:get-launch-state", (): AppLaunchState => launchState());
-  ipcMain.handle("app:set-color-mode", (_e, mode: string) => applyNativeColorMode(mode));
   nativeTheme.on("updated", () => {
-    if (resolveColorScheme(getSetting("color_mode")) === "system") applyNativeColorMode("system");
+    if (resolveColorScheme(getSetting("color_mode")) !== "system") return;
+    // A pinned theme ignores the OS appearance; reacting would fight themeSource.
+    if (findTheme(getSetting("theme") ?? DEFAULT_THEME_ID).modes.length === 1) return;
+    applyNativeAppearance();
   });
 
   // Growth tasks: the only scheduled commitments in the app.

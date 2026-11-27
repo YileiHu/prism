@@ -11,7 +11,6 @@ import {
 } from "@dnd-kit/core";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
-import { persistVaultOrder } from "../../lib/vaultOrder";
 import type { VaultEntry } from "../../types";
 import type { PdfDocument } from "../../shared/models";
 import type { CollectionData } from "../collectionTypes";
@@ -21,7 +20,6 @@ import type { usePdfCollections } from "../pdf/usePdfCollections";
 
 export type LibraryDragState =
   | { kind: "note"; title: string; paths: string[] }
-  | { kind: "vault"; vault: VaultEntry }
   | { kind: "note-collection"; collection: CollectionData }
   | { kind: "pdf-doc"; title: string }
   | { kind: "pdf-collection"; collection: PdfCollectionData }
@@ -57,9 +55,6 @@ export function useLibraryDnd({ vaults, note, pdfDocuments, pdfCols }: Params) {
     if (data?.kind === "note") {
       const paths = Array.isArray(data.paths) ? data.paths as string[] : [];
       setDrag({ kind: "note", title: String(data.title ?? ""), paths });
-    } else if (data?.kind === "vault") {
-      const vault = vaults.find((entry) => entry.path === data.id);
-      if (vault) setDrag({ kind: "vault", vault });
     } else if (data?.kind === "collection") {
       const collection = note.collections.find((entry) => entry.id === data.id);
       if (collection) setDrag({ kind: "note-collection", collection });
@@ -83,17 +78,6 @@ export function useLibraryDnd({ vaults, note, pdfDocuments, pdfCols }: Params) {
       if (!overId.startsWith("coll-")) return;
       const paths = Array.isArray(data.paths) ? data.paths as string[] : [];
       if (paths.length > 0) note.handleMoveNotesToCollection(overId.slice(5), paths);
-      return;
-    }
-    if (data?.kind === "vault") {
-      if (!overId.startsWith("vault-") || active.id === over.id) return;
-      const from = vaults.findIndex((entry) => `vault-${entry.path}` === active.id);
-      const to = vaults.findIndex((entry) => `vault-${entry.path}` === overId);
-      if (from !== -1 && to !== -1) {
-        void persistVaultOrder(vaults, from, to).catch(() => {
-          showToast(t["common.saveFailed"], "error");
-        });
-      }
       return;
     }
     if (data?.kind === "collection") {

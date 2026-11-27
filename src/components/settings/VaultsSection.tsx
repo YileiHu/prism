@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Lock, LockOpen, Plus, ShieldCheck, ShieldOff, Trash2, FolderOpen } from "lucide-react";
+import { KeyRound, ChevronDown, ChevronUp, Lock, LockOpen, Plus, ShieldCheck, ShieldOff, Trash2, FolderOpen } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useSettings } from "../../lib/settings";
@@ -10,7 +10,6 @@ import Input from "../Input";
 import EmptyState from "../EmptyState";
 import { SkeletonRows } from "../Skeleton";
 import { type VaultEntry } from "../../types";
-import { VaultIcon } from "../../lib/vaultIcons";
 import VaultPrivacyModal, { type VaultPrivacyMode } from "../vault/VaultPrivacyModal";
 import { Select, SettingBlock, Slider, TextField } from "./controls";
 
@@ -66,6 +65,20 @@ export default function VaultsSection({ onSaved }: Props) {
   }, [onSaved]);
 
   const normalizePath = (p: string) => p.trim().replace(/[\\/]+$/, "");
+
+  // The sidebar no longer reorders vaults; this is the only place the order
+  // (the `vault_paths` array) can be changed.
+  const moveVault = async (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= vaults.length) return;
+    const next = [...vaults];
+    [next[index], next[target]] = [next[target], next[index]];
+    try {
+      await saveVaults(next);
+    } catch {
+      showToast(t["common.saveFailed"], "error");
+    }
+  };
 
   const handleAddVault = async () => {
     const name = newName.trim();
@@ -138,7 +151,6 @@ export default function VaultsSection({ onSaved }: Props) {
           const locked = isPrivate && vaultLock.isLocked(v.path);
           return (
             <div key={v.path} className="flex items-center gap-3 p-3 bg-surface rounded-control border border-line/50">
-              <VaultIcon name={v.icon} size={16} className="text-warning flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 text-body text-primary font-medium">
                   <span className="truncate">{v.name}</span>
@@ -152,6 +164,26 @@ export default function VaultsSection({ onSaved }: Props) {
                   )}
                 </div>
                 <div className="text-caption text-muted truncate">{v.path}</div>
+              </div>
+              <div className="flex items-center">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title={t["settings.vaultMoveUp"]}
+                  disabled={i === 0}
+                  onClick={() => { void moveVault(i, -1); }}
+                >
+                  <ChevronUp size={14} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title={t["settings.vaultMoveDown"]}
+                  disabled={i === vaults.length - 1}
+                  onClick={() => { void moveVault(i, 1); }}
+                >
+                  <ChevronDown size={14} />
+                </Button>
               </div>
               {isPrivate ? (
                 <>

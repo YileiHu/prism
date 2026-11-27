@@ -1,4 +1,4 @@
-export type ModuleId = "growth" | "library" | "settings";
+export type ModuleId = "growth" | "library" | "settings" | "changelog";
 
 export type PaneSide = "left" | "right";
 

@@ -1,22 +1,15 @@
-import { forwardRef, useMemo, useState } from "react";
-import { Layers, Frame, Lock, LockOpen, Palette } from "lucide-react";
+import { forwardRef, useMemo } from "react";
+import { Layers, Frame, Lock, LockOpen } from "lucide-react";
 import { useDndContext } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { useSortable } from "@dnd-kit/sortable";
 import { useT } from "../../i18n";
-import { useToast } from "../../lib/toast";
-import { useContextMenu } from "../../lib/useContextMenu";
-import { useDragClickGuard } from "../../lib/useDragClickGuard";
-import { useSidebarSection } from "../../lib/sidebarState";
 import { useVaultLock } from "../../lib/vaultLock";
 import { librarySelectionKey, readLibrarySelection } from "../../lib/librarySelection";
-import { VAULT_ICON_PRESETS, VaultIcon } from "../../lib/vaultIcons";
-import type { MenuItem } from "../ContextMenu";
 import EmptyState from "../EmptyState";
-import Modal from "../Modal";
+import Button from "../Button";
+import SelectButton from "../SelectButton";
 import NavItem from "../NavItem";
 import Sidebar from "../Sidebar";
-import SidebarSection from "../SidebarSection";
 import type { VaultEntry } from "../../types";
 import type { LibraryRef } from "../../lib/workspace/types";
 import { normalizePath } from "../../lib/workspace/types";
@@ -30,8 +23,6 @@ import ResourceCollectionList from "./ResourceCollectionList";
 import { toNoteCollectionGroups, toPdfCollectionGroups, type LibraryGroup } from "./libraryGroups";
 import { LIBRARY_SOURCES } from "./librarySources";
 import { CANVAS_VIEW_ID, type NoteLibrary } from "./useNoteLibrary";
-
-const SECTION_KEY = "prism_library_sections";
 
 const LibraryRow = forwardRef<HTMLButtonElement, {
   icon: React.ReactNode;
@@ -63,41 +54,9 @@ const LibraryRow = forwardRef<HTMLButtonElement, {
   );
 });
 
-function SortableVaultRow(props: {
-  vault: VaultEntry;
-  icon: React.ReactNode;
-  active: boolean;
-  trailing?: React.ReactNode;
-  onClick: () => void;
-  onContextMenu?: (event: React.MouseEvent) => void;
-}) {
-  const { vault, ...row } = props;
-  const sortable = useSortable({
-    id: `vault-${vault.path}`,
-    data: { kind: "vault", id: vault.path },
-  });
-  const clickGuard = useDragClickGuard(sortable.isDragging);
-  return (
-    <LibraryRow
-      ref={sortable.setNodeRef}
-      label={vault.name}
-      style={{
-        transform: CSS.Transform.toString(sortable.transform),
-        transition: sortable.transition,
-        opacity: sortable.isDragging ? 0.4 : 1,
-      }}
-      {...sortable.attributes}
-      {...sortable.listeners}
-      {...clickGuard}
-      {...row}
-    />
-  );
-}
-
-
 function CollectionNavRow({
   name,
-  color,
+  icon,
   sortableId,
   dragData,
   dropKind,
@@ -107,10 +66,10 @@ function CollectionNavRow({
   onSelect,
   onRename,
   onDelete,
-  onSetColor,
+  onSetIcon,
 }: {
   name: string;
-  color?: string;
+  icon?: string;
   sortableId: string;
   dragData: { kind: string; id: string };
   dropKind: string;
@@ -120,7 +79,7 @@ function CollectionNavRow({
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
-  onSetColor: (color: string) => void;
+  onSetIcon: (icon: string) => void;
 }) {
   const { active, over } = useDndContext();
   const isDropTarget = active?.data.current?.kind === dropKind && over?.id === sortableId;
@@ -132,7 +91,7 @@ function CollectionNavRow({
   return (
     <GroupNavRow
       name={name}
-      color={color}
+      icon={icon}
       count={trailing}
       active={selected}
       index={index}
@@ -141,7 +100,7 @@ function CollectionNavRow({
       onSelect={onSelect}
       onRename={onRename}
       onDelete={onDelete}
-      onSetColor={onSetColor}
+      onSetIcon={onSetIcon}
     />
   );
 }
@@ -153,13 +112,13 @@ function NoteCollectionRow(props: {
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
-  onSetColor: (color: string) => void;
+  onSetIcon: (icon: string) => void;
 }) {
   const { group } = props;
   return (
     <CollectionNavRow
       name={group.name}
-      color={group.color}
+      icon={group.icon}
       sortableId={`coll-${group.id}`}
       dragData={{ kind: "collection", id: group.id }}
       dropKind="note"
@@ -169,7 +128,7 @@ function NoteCollectionRow(props: {
       onSelect={props.onSelect}
       onRename={props.onRename}
       onDelete={props.onDelete}
-      onSetColor={props.onSetColor}
+      onSetIcon={props.onSetIcon}
     />
   );
 }
@@ -181,13 +140,13 @@ function PdfCollectionRow(props: {
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
-  onSetColor: (color: string) => void;
+  onSetIcon: (icon: string) => void;
 }) {
   const { group } = props;
   return (
     <CollectionNavRow
       name={group.name}
-      color={group.color}
+      icon={group.icon}
       sortableId={`pdfcoll-${group.id}`}
       dragData={{ kind: "pdf-collection", id: group.id }}
       dropKind="pdf-doc"
@@ -197,7 +156,7 @@ function PdfCollectionRow(props: {
       onSelect={props.onSelect}
       onRename={props.onRename}
       onDelete={props.onDelete}
-      onSetColor={props.onSetColor}
+      onSetIcon={props.onSetIcon}
     />
   );
 }
@@ -230,28 +189,10 @@ export default function LibrarySidebar({
   onOpenCollections,
 }: Props) {
   const { t } = useT();
-  const showToast = useToast();
-  const { onContextMenu } = useContextMenu();
   const vaultLock = useVaultLock();
-  const [librariesOpen, toggleLibraries] = useSidebarSection(SECTION_KEY, "libraries");
-  const [collectionsOpen, toggleCollections] = useSidebarSection(SECTION_KEY, "collections");
-  const [iconTarget, setIconTarget] = useState<VaultEntry | null>(null);
   const pdfMode = library.kind === "pdf";
   const resourcesMode = library.kind === "resources";
   const { canvas, resourceLib } = useLibraryData();
-
-  const applyVaultIcon = async (vaultPath: string, icon: string) => {
-    const updated = vaults.map((vault) =>
-      normalizePath(vault.path) === normalizePath(vaultPath) ? { ...vault, icon } : vault,
-    );
-    try {
-      await window.prism.setSetting("vault_paths", JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent("vaults-changed"));
-      setIconTarget(null);
-    } catch {
-      showToast(t["library.vaultIconFailed"], "error");
-    }
-  };
 
   const noteGroups = useMemo(
     () => toNoteCollectionGroups(note.collections),
@@ -269,10 +210,23 @@ export default function LibrarySidebar({
     () => pdfGroups.map((group) => `pdfcoll-${group.id}`),
     [pdfGroups],
   );
-  const vaultIds = useMemo(
-    () => vaults.map((vault) => `vault-${vault.path}`),
+
+  // The selected note vault; PDF/resources modes still keep the note vault in
+  // the selector so collections remain scoped to it.
+  const activeVaultPath = library.kind === "note" || library.kind === "canvas"
+    ? library.vaultPath
+    : (note.shownVaultPath || note.vaultPath);
+  const vaultOptions = useMemo(
+    () => vaults.map((vault) => ({ value: vault.path, label: vault.name })),
     [vaults],
   );
+  const currentVault = vaults.find(
+    (vault) => normalizePath(vault.path) === normalizePath(activeVaultPath),
+  );
+  const currentPrivate = currentVault ? vaultLock.isPrivate(currentVault.path) : false;
+  const currentLocked = currentPrivate && currentVault
+    ? vaultLock.isLocked(currentVault.path)
+    : false;
 
   // Restore the vault's last view: whiteboards or a collection.
   const openVault = async (vault: VaultEntry) => {
@@ -326,188 +280,126 @@ export default function LibrarySidebar({
         </div>
       }
     >
-      <SidebarSection
-        label={t[LIBRARY_SOURCES.note.sectionLabelKey]}
-        open={librariesOpen}
-        onToggle={toggleLibraries}
-      />
-      {librariesOpen && (
-        <div className="flex-shrink-0 max-h-[17rem] overflow-y-auto pr-0.5">
-          {vaults.length === 0 && <EmptyState size="card" text={t["library.emptyVaults"]} />}
-          <div className="sidebar-group">
-            <SortableContext items={vaultIds} strategy={verticalListSortingStrategy}>
-              {vaults.map((vault) => {
-                const privateVault = vaultLock.isPrivate(vault.path);
-                const locked = vaultLock.isLocked(vault.path);
-                const menuItems: MenuItem[] = [];
-                if (privateVault) {
-                  menuItems.push(locked
-                    ? {
-                        label: t["private.unlock"],
-                        icon: <LockOpen size={14} />,
-                        onClick: () => { void openVault(vault); },
-                      }
-                    : {
-                        label: t["private.lockNow"],
-                        icon: <Lock size={14} />,
-                        onClick: () => { void vaultLock.lock(vault.path); },
-                      });
-                }
-                menuItems.push({
-                  label: t["library.vaultIcon"],
-                  icon: <Palette size={14} />,
-                  onClick: () => setIconTarget(vault),
-                });
-                return (
-                  <SortableVaultRow
-                    key={vault.path}
-                    vault={vault}
-                    icon={<VaultIcon name={vault.icon} size={14} />}
-                    active={(library.kind === "note" || library.kind === "canvas")
-                      && normalizePath(library.vaultPath) === normalizePath(vault.path)}
-                    trailing={privateVault
-                      ? (
-                        <span title={locked ? t["private.lockedBadge"] : t["private.unlock"]}>
-                          {locked ? <Lock size={11} /> : <LockOpen size={11} />}
-                        </span>
-                      )
-                      : undefined}
-                    // Locked vaults still open here — the content pane renders
-                    // the unlock card.
-                    onClick={() => { void openVault(vault); }}
-                    onContextMenu={(event) => onContextMenu(event, menuItems)}
-                  />
-                );
-              })}
-            </SortableContext>
-          </div>
-        </div>
-      )}
+      <div className="flex items-center gap-1 pb-2">
+        <SelectButton
+          className="min-w-0 flex-1"
+          value={currentVault?.path ?? activeVaultPath}
+          options={vaultOptions}
+          onChange={(path) => {
+            const vault = vaults.find((entry) => normalizePath(entry.path) === normalizePath(path));
+            if (vault) void openVault(vault);
+          }}
+          ariaLabel={t["library.vaultSelect"]}
+          placeholder={t["library.vaultSelect"]}
+        />
+        {currentVault && currentPrivate && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={currentLocked ? t["private.unlock"] : t["private.lockNow"]}
+            onClick={() => {
+              if (currentLocked) {
+                vaultLock.requestUnlock(currentVault.path);
+              } else {
+                void vaultLock.lock(currentVault.path);
+              }
+            }}
+          >
+            {currentLocked ? <Lock size={14} /> : <LockOpen size={14} />}
+          </Button>
+        )}
+      </div>
+      {vaults.length === 0 && <EmptyState size="card" text={t["library.emptyVaults"]} />}
 
-      <SidebarSection
-        label={t[resourcesMode ? LIBRARY_SOURCES.resources.groupLabelKey : LIBRARY_SOURCES.note.groupLabelKey]}
-        open={collectionsOpen}
-        onToggle={toggleCollections}
-      />
-      {collectionsOpen && (
-        <div
-          key={pdfMode
-            ? `pdf:${library.kind === "pdf" ? library.repoPath : ""}`
-            : resourcesMode
-              ? "resources"
-              : `note:${note.shownVaultPath || note.vaultPath}`}
-          className="flex-shrink min-h-0 overflow-y-auto pr-0.5 anim-fade-in"
-        >
-          {!pdfMode && !resourcesMode && (
-            <>
+      <div
+        key={pdfMode
+          ? `pdf:${library.kind === "pdf" ? library.repoPath : ""}`
+          : resourcesMode
+            ? "resources"
+            : `note:${note.shownVaultPath || note.vaultPath}`}
+        className="-ml-2 flex-shrink min-h-0 overflow-y-auto pl-2 pr-0.5 anim-fade-in"
+      >
+        {!pdfMode && !resourcesMode && (
+          <>
+            <NavItem
+              onClick={() => {
+                onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
+                note.selectCollection(null);
+                onOpenCollections?.();
+              }}
+              active={library.kind === "note" && note.selectedCollectionId === null}
+              className="mb-1 font-medium"
+              leading={<Layers size={14} />}
+              label={t[LIBRARY_SOURCES.note.allLabelKey]}
+              trailing={note.sortedNotes.length}
+            />
+            {note.vaultPath && (
               <NavItem
                 onClick={() => {
-                  onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
-                  note.selectCollection(null);
+                  note.selectCanvasView();
+                  onSelectLibrary({ kind: "canvas", vaultPath: note.vaultPath });
                   onOpenCollections?.();
                 }}
-                active={library.kind === "note" && note.selectedCollectionId === null}
+                active={library.kind === "canvas"}
                 className="mb-1 font-medium"
-                leading={<Layers size={14} />}
-                label={t[LIBRARY_SOURCES.note.allLabelKey]}
-                trailing={note.sortedNotes.length}
+                leading={<Frame size={14} />}
+                label={t[LIBRARY_SOURCES.canvas.labelKey]}
+                trailing={canvas.files.length}
               />
-              {note.vaultPath && (
-                <NavItem
-                  onClick={() => {
-                    note.selectCanvasView();
-                    onSelectLibrary({ kind: "canvas", vaultPath: note.vaultPath });
+            )}
+            <CollectionSection ids={noteIds} emptyText={t["collections.emptyHint"]}>
+              {noteGroups.map((group, index) => (
+                <NoteCollectionRow
+                  key={group.id}
+                  group={group}
+                  selected={library.kind === "note" && note.selectedCollectionId === group.id}
+                  index={index}
+                  onSelect={() => {
+                    onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
+                    note.selectCollection(group.id);
+                    note.setSearchQuery("");
                     onOpenCollections?.();
                   }}
-                  active={library.kind === "canvas"}
-                  className="mb-1 font-medium"
-                  leading={<Frame size={14} />}
-                  label={t[LIBRARY_SOURCES.canvas.labelKey]}
-                  trailing={canvas.files.length}
+                  onRename={() => onRenameNoteCollection(group.source)}
+                  onDelete={() => onDeleteNoteCollection(group.source)}
+                  onSetIcon={(icon) => note.handleSetCollectionIcon(group.id, icon)}
                 />
-              )}
-              <CollectionSection ids={noteIds} emptyText={t["collections.emptyHint"]}>
-                {noteGroups.map((group, index) => (
-                  <NoteCollectionRow
-                    key={group.id}
-                    group={group}
-                    selected={library.kind === "note" && note.selectedCollectionId === group.id}
-                    index={index}
-                    onSelect={() => {
-                      onSelectLibrary({ kind: "note", vaultPath: note.vaultPath });
-                      note.selectCollection(group.id);
-                      note.setSearchQuery("");
-                      onOpenCollections?.();
-                    }}
-                    onRename={() => onRenameNoteCollection(group.source)}
-                    onDelete={() => onDeleteNoteCollection(group.source)}
-                    onSetColor={(color) => note.handleSetCollectionColor(group.id, color)}
-                  />
-                ))}
-              </CollectionSection>
-            </>
-          )}
+              ))}
+            </CollectionSection>
+          </>
+        )}
 
-          {resourcesMode && (
-            <ResourceCollectionList resourceLib={resourceLib} onSelectCollection={selectResourceCollection} />
-          )}
+        {resourcesMode && (
+          <ResourceCollectionList resourceLib={resourceLib} onSelectCollection={selectResourceCollection} />
+        )}
 
-          {pdfMode && (
-            <>
-              <NavItem
-                onClick={() => { pdfCols.selectCollection(null); onOpenCollections?.(); }}
-                active={pdfCols.selectedId === null}
-                className="mb-1 font-medium"
-                leading={<Layers size={14} />}
-                label={t[LIBRARY_SOURCES.pdf.allLabelKey]}
-                trailing={pdfAllCount}
-              />
-              <CollectionSection ids={pdfIds} emptyText={t["collections.emptyHint"]}>
-                {pdfGroups.map((group, index) => (
-                  <PdfCollectionRow
-                    key={group.id}
-                    group={group}
-                    selected={pdfCols.selectedId === group.id}
-                    index={index}
-                    onSelect={() => { pdfCols.selectCollection(group.id); onOpenCollections?.(); }}
-                    onRename={() => onRenamePdfCollection(group.source)}
-                    onDelete={() => onDeletePdfCollection(group.source)}
-                    onSetColor={(color) => pdfCols.setCollectionColor(group.id, color)}
-                  />
-                ))}
-              </CollectionSection>
-            </>
-          )}
-        </div>
-      )}
-
-      <Modal
-        open={iconTarget !== null}
-        onClose={() => setIconTarget(null)}
-        title={t["library.vaultIcon"]}
-        icon={Palette}
-        size="sm"
-      >
-        <div className="grid grid-cols-6 gap-2">
-          {VAULT_ICON_PRESETS.map(({ id, Icon }) => {
-            const current = (iconTarget?.icon ?? "library") === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => { if (iconTarget) void applyVaultIcon(iconTarget.path, id); }}
-                className={`w-10 h-10 flex items-center justify-center rounded-control border transition-colors cursor-pointer ${
-                  current
-                    ? "accent-ring border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent-text)]"
-                    : "border-line text-secondary hover:bg-elevated/60 hover:text-primary"
-                }`}
-              >
-                <Icon size={18} />
-              </button>
-            );
-          })}
-        </div>
-      </Modal>
+        {pdfMode && (
+          <>
+            <NavItem
+              onClick={() => { pdfCols.selectCollection(null); onOpenCollections?.(); }}
+              active={pdfCols.selectedId === null}
+              className="mb-1 font-medium"
+              leading={<Layers size={14} />}
+              label={t[LIBRARY_SOURCES.pdf.allLabelKey]}
+              trailing={pdfAllCount}
+            />
+            <CollectionSection ids={pdfIds} emptyText={t["collections.emptyHint"]}>
+              {pdfGroups.map((group, index) => (
+                <PdfCollectionRow
+                  key={group.id}
+                  group={group}
+                  selected={pdfCols.selectedId === group.id}
+                  index={index}
+                  onSelect={() => { pdfCols.selectCollection(group.id); onOpenCollections?.(); }}
+                  onRename={() => onRenamePdfCollection(group.source)}
+                  onDelete={() => onDeletePdfCollection(group.source)}
+                  onSetIcon={(icon) => pdfCols.setCollectionIcon(group.id, icon)}
+                />
+              ))}
+            </CollectionSection>
+          </>
+        )}
+      </div>
     </Sidebar>
   );
 }

@@ -13,7 +13,7 @@
 
 | 表 | 用途 | 关键约束 |
 |---|---|---|
-| `resource_collections` | 网页资源收藏集 | `name` UNIQUE；`color` 可空串；`sort_order` 控制侧栏顺序 |
+| `resource_collections` | 网页资源收藏集 | `name` UNIQUE；`icon` 预设图标 id（空 = 默认文件夹）；`sort_order` 控制侧栏顺序 |
 | `resources` | 网页资源 | `url` UNIQUE；`sort_order` 控制手动排序；`collection_id` 单列归属（`ON DELETE SET NULL` → 未分组） |
 | `notes` | 笔记索引（可重建） | `path` UNIQUE（原生分隔符）；`vault_path` 归属；`tags` 空格分隔；`modified_at` ISO |
 | `settings` | 键值设置 | `key` 主键；值一律字符串 |
@@ -58,7 +58,7 @@
 
 | 键 | 值 | 用途 |
 |---|---|---|
-| `vault_paths` | JSON `VaultEntry[]`（`path`/`name`/`icon`/`private` 提示） | 笔记库列表及侧栏顺序；主进程缓存并在写入时失效 |
+| `vault_paths` | JSON `VaultEntry[]`（`path`/`name`/`private` 提示） | 笔记库列表；主进程缓存并在写入时失效 |
 | `window_bounds` | JSON `{x,y,width,height,maximized}` | 窗口位置/大小恢复 |
 | `workspace_v1` | JSON `PersistedWorkspace` | 完整工作区快照（标签/激活文档/分屏/模块/资料库）；冷启动只取标签与资料库，托盘重建窗口恢复全部 |
 | `note_tabs_<vault>` | JSON | 旧版按库保存的标签，hydrate 时迁移并入 `workspace_v1` |

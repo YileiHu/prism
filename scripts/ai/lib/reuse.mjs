@@ -17,7 +17,7 @@ import { read, walk } from "./reference.mjs";
 // Files that are the source of color data, not consumers of the palette.
 // Keep this list short and always document why a file is exempt.
 const COLOR_DATA_FILES = new Map([
-  ["src/theme/themes.ts", "theme surface/accent data"],
+  ["src/shared/themes.ts", "theme surface/accent data"],
   ["src/shared/settings.ts", "default markdown heading/bold colors"],
   ["src/lib/colors.ts", "tag/resource color palette"],
   ["src/components/pdf/pdfjs.ts", "PDF canvas white background"],

@@ -6,8 +6,8 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 
 ## 总览
 
-- Renderer 方法：**131**（invoke 123 / event 8）
-- main 处理器：**123**
+- Renderer 方法：**130**（invoke 122 / event 8）
+- main 处理器：**122**
 - main 推送事件：**8**
 
 源码：[preload.ts](../../electron/preload.ts) · [main.ts](../../electron/main.ts)
@@ -26,9 +26,9 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 | `searchResources` | `resources:search` | renderer → main | query: string | ✓ |
 | `reorderResources` | `resources:reorder` | renderer → main | orderedIds: number[] | ✓ |
 | `getResourceCollections` | `resource-collections:list` | renderer → main | — | ✓ |
-| `createResourceCollection` | `resource-collections:create` | renderer → main | name: string, color = "" | ✓ |
+| `createResourceCollection` | `resource-collections:create` | renderer → main | name: string, icon = "" | ✓ |
 | `renameResourceCollection` | `resource-collections:rename` | renderer → main | id: number, name: string | ✓ |
-| `setResourceCollectionColor` | `resource-collections:set-color` | renderer → main | id: number, color: string | ✓ |
+| `setResourceCollectionIcon` | `resource-collections:set-icon` | renderer → main | id: number, icon: string | ✓ |
 | `reorderResourceCollections` | `resource-collections:reorder` | renderer → main | orderedIds: number[] | ✓ |
 | `deleteResourceCollection` | `resource-collections:delete` | renderer → main | id: number | ✓ |
 | `fetchPageTitle` | `fetch:title` | renderer → main | url: string | ✓ |
@@ -222,7 +222,6 @@ Renderer 只能通过 `window.prism` 访问主进程；本文件由源码生成�
 | `maximizeWindow` | `window:maximize` | renderer → main | — | ✓ |
 | `closeWindow` | `window:close` | renderer → main | — | ✓ |
 | `isMaximized` | `window:is-maximized` | renderer → main | — | ✓ |
-| `setColorMode` | `app:set-color-mode` | renderer → main | mode: string | ✓ |
 | `onMaximizeChange` | `window:maximize-change` | main → renderer | callback: (maximized: boolean) => void | — |
 
 ## main 推送事件

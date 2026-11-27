@@ -161,7 +161,7 @@ export default function GrowthErrorChart({ predictions }: Props) {
             x2={chartWidth - PAD.right}
             y1={y(animatedMean)}
             y2={y(animatedMean)}
-            stroke="var(--accent)"
+            stroke="var(--emphasis-line)"
             strokeWidth={1.2}
             strokeDasharray="5 3"
             opacity={0.9}
@@ -170,7 +170,7 @@ export default function GrowthErrorChart({ predictions }: Props) {
             x={chartWidth - PAD.right}
             y={y(animatedMean) - 5}
             textAnchor="end"
-            style={{ fontSize: 9, fill: "var(--accent-text)" }}
+            style={{ fontSize: 9, fill: "var(--emphasis-line)" }}
           >
             {t["growth.errorChart.mean"].replace("{value}", String(Math.round(mean * 100)))}
           </text>

@@ -83,15 +83,15 @@ export default function ResourceCollectionList({ resourceLib, onSelectCollection
               return (
                 <GroupNavRow
                   name={group.name}
-                  color={group.color}
+                  icon={group.icon}
                   count={group.count}
                   active={isActive}
                   index={index}
                   onSelect={() => onSelectCollection(isActive ? null : group.source.id)}
                   onRename={() => collectionDialogs.openRename({ id: group.id, name: group.name, data: group.source })}
                   onDelete={() => collectionDialogs.openDelete({ id: group.id, name: group.name, data: group.source })}
-                  onSetColor={(color) => {
-                    void resourceLib.setCollectionColor(group.source.id, color).catch(() => {
+                  onSetIcon={(icon) => {
+                    void resourceLib.setCollectionIcon(group.source.id, icon).catch(() => {
                       showToast(t["common.actionFailed"], "error");
                     });
                   }}
@@ -99,7 +99,7 @@ export default function ResourceCollectionList({ resourceLib, onSelectCollection
               );
             }}
             renderOverlay={(group) => (
-              <CollectionDragPreview name={group.name} color={group.color} count={group.count} />
+              <CollectionDragPreview name={group.name} icon={group.icon} count={group.count} />
             )}
           />
         </CollectionSection>

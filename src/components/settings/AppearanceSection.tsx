@@ -1,23 +1,31 @@
 import { useT } from "../../i18n";
 import { useSettings } from "../../lib/settings";
 import { useTheme } from "../../theme/ThemeProvider";
-import { themes } from "../../theme/themes";
+import { themes } from "../../shared/themes";
+import { themeAccentFill } from "../../lib/themePreview";
 import { SectionHeader, Select, SettingRow, Slider, Toggle } from "./controls";
 import NoteColors from "./NoteColors";
+import { Check } from "lucide-react";
 
 export default function AppearanceSection() {
   const { t } = useT();
   const { values, set } = useSettings();
-  const { themeId, setTheme, mode, setMode, resolvedMode } = useTheme();
+  const { themeId, setTheme, mode, setMode, resolvedMode, pinned } = useTheme();
+
+  const pinnedHint = t[resolvedMode === "dark" ? "settings.themeLockedDark" : "settings.themeLockedLight"];
 
   return (
     <section>
       <SectionHeader title={t["settings.appearance"]} description={t["settings.appearanceDesc"]} />
 
       <div className="space-y-3 mb-6">
-        <SettingRow label={t["settings.colorMode"]} description={t["settings.colorModeDesc"]}>
+        <SettingRow
+          label={t["settings.colorMode"]}
+          description={pinned ? pinnedHint : t["settings.colorModeDesc"]}
+        >
           <Select
-            value={mode}
+            value={pinned ? resolvedMode : mode}
+            disabled={pinned}
             options={[
               { value: "dark", label: t["settings.modeDark"] },
               { value: "light", label: t["settings.modeLight"] },
@@ -29,37 +37,34 @@ export default function AppearanceSection() {
       </div>
 
       <p className="text-caption text-tertiary font-medium mb-2">{t["settings.themeGrid"]}</p>
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="mb-6 grid grid-cols-3 gap-2">
         {themes.map((th) => {
-          const variant = resolvedMode === "dark" ? th.dark : th.light;
-          const swatches = [variant.primaryHover, th.primary, variant.primaryText, variant.primaryBorder];
+          const onlyMode = th.modes.length === 1 ? th.modes[0] : null;
+          const active = themeId === th.id;
+          const hint = onlyMode
+            ? ` · ${t[onlyMode === "dark" ? "settings.themeDarkOnly" : "settings.themeLightOnly"]}`
+            : "";
           return (
             <button
               key={th.id}
               onClick={() => setTheme(th.id)}
-              className={`p-4 rounded-card border transition-all text-left ${
-                themeId === th.id
+              title={`${th.name} · ${th.nameEn}${hint}`}
+              aria-label={`${th.name} · ${th.nameEn}${hint}`}
+              className={`rounded-card border p-2 text-left transition-all ${
+                active
                   ? "accent-ring border-[var(--accent)] bg-[var(--accent-muted)]"
                   : "border-line bg-surface hover:border-strong"
               }`}
             >
-              <div className="flex items-center gap-3 mb-3">
-                <div
-                  className="w-8 h-8 rounded-full border-2 border-strong flex-shrink-0"
-                  style={{ backgroundColor: th.primary }}
-                />
-                <div>
-                  <div className="text-body font-medium text-primary">{th.name}</div>
-                  <div className="text-caption text-muted">{th.nameEn}</div>
-                </div>
-                {themeId === th.id && (
-                  <div className="ml-auto w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: th.primary }} />
-                )}
-              </div>
-              <div className="flex gap-1">
-                {swatches.map((c, i) => (
-                  <div key={i} className="flex-1 h-2 rounded-chip" style={{ backgroundColor: c }} />
-                ))}
+              <div
+                className="h-6 w-full rounded-chip border border-strong/50"
+                style={{ background: themeAccentFill(th) }}
+              />
+              <div className="mt-1.5 flex items-center gap-1">
+                <span className="min-w-0 flex-1 truncate text-caption font-medium text-primary">
+                  {th.name}
+                </span>
+                {active && <Check size={12} className="flex-shrink-0 text-[var(--accent-text)]" />}
               </div>
             </button>
           );

@@ -3,7 +3,7 @@ import { TAG_COLORS, type TagColorKey } from "../../lib/colors";
 interface Props {
   value: TagColorKey;
   onChange: (key: TagColorKey) => void;
-  /** 24px in the season form, 20px in the domain list. */
+  /** 24px in the season and domain forms; 20px for a compact strip. */
   size?: "sm" | "md";
 }
 
@@ -20,7 +20,7 @@ export default function GrowthThemeSwatches({ value, onChange, size = "md" }: Pr
             aria-pressed={active}
             aria-label={color.key}
             onClick={() => onChange(color.key)}
-            className={`${size === "md" ? "h-6 w-6" : "h-5 w-5"} rounded-full transition-transform ${
+            className={`${size === "md" ? "h-6 w-6" : "h-5 w-5"} flex-shrink-0 rounded-full transition-transform focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
               active
                 ? "ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-surface"
                 : "ring-1 ring-strong/40 hover:scale-110"

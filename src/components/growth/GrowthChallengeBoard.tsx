@@ -15,7 +15,6 @@ import SegmentedToggle from "../SegmentedToggle";
 import SelectButton from "../SelectButton";
 import { useToolbarContribution } from "../toolbar/ToolbarProvider";
 import ConfirmDialog from "../ConfirmDialog";
-import { useContextMenu } from "../../lib/useContextMenu";
 import GrowthEmptyGuide from "./GrowthEmptyGuide";
 import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
@@ -105,7 +104,6 @@ export default function GrowthChallengeBoard({
 }: Props) {
   const { t } = useT();
   const showToast = useToast();
-  const { onContextMenu } = useContextMenu();
   const [challengeModal, setChallengeModal] = useState<{ open: boolean; challenge: GrowthChallenge | null }>({
     open: false,
     challenge: null,
@@ -117,7 +115,6 @@ export default function GrowthChallengeBoard({
     season: null,
   });
   const [seasonCloseTarget, setSeasonCloseTarget] = useState<GrowthSeason | null>(null);
-  const [deletingSeason, setDeletingSeason] = useState<GrowthSeason | null>(null);
   const [deletingChallenge, setDeletingChallenge] = useState<GrowthChallenge | null>(null);
   const [filter, setFilter] = useState<"open" | "all">("all");
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(focusSeasonId);
@@ -278,20 +275,6 @@ export default function GrowthChallengeBoard({
     }
   };
 
-  const removeSeason = async () => {
-    if (!deletingSeason) return;
-    const target = deletingSeason;
-    try {
-      await window.prism.deleteGrowthSeason(target.id);
-      if (selectedSeasonId === target.id) setSelectedSeasonId(null);
-      setDeletingSeason(null);
-      onChanged();
-    } catch {
-      showToast(t["common.deleteFailed"], "error");
-      throw new Error("delete failed");
-    }
-  };
-
   const openEdit = (challenge: GrowthChallenge) => {
     setChallengeModal({ open: true, challenge });
   };
@@ -307,26 +290,13 @@ export default function GrowthChallengeBoard({
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
       {activeSeason ? (
-        <div
-          onContextMenu={(event) =>
-            onContextMenu(event, [
-              {
-                label: t["growth.deleteSeason"],
-                icon: <Trash2 size={14} />,
-                danger: true,
-                onClick: () => setDeletingSeason(activeSeason),
-              },
-            ])
-          }
-        >
-          <GrowthSeasonPoster
-            season={activeSeason}
-            ordinal={seasonOrdinal}
-            challenges={challenges}
-            onNewChallenge={() => setChallengeModal({ open: true, challenge: null })}
-            onOpenChallenge={(challenge) => setDetail(challenge)}
-          />
-        </div>
+        <GrowthSeasonPoster
+          season={activeSeason}
+          ordinal={seasonOrdinal}
+          challenges={challenges}
+          onNewChallenge={() => setChallengeModal({ open: true, challenge: null })}
+          onOpenChallenge={(challenge) => setDetail(challenge)}
+        />
       ) : (
         <GrowthEmptyGuide
           className="py-6"
@@ -590,14 +560,6 @@ export default function GrowthChallengeBoard({
         season={seasonCloseTarget}
         onClose={() => setSeasonCloseTarget(null)}
         onSaved={onChanged}
-      />
-
-      <ConfirmDialog
-        open={deletingSeason !== null}
-        message={t["growth.deleteSeasonConfirm"]}
-        confirmLabel={t["growth.delete"]}
-        onConfirm={removeSeason}
-        onClose={() => setDeletingSeason(null)}
       />
 
       <ConfirmDialog

@@ -3,6 +3,7 @@ import {
   ArrowRightLeft,
   FileText,
   FolderOpen,
+  FolderPlus,
   FolderX,
   ListPlus,
   Maximize2,
@@ -18,7 +19,7 @@ import { useToast } from "../../lib/toast";
 import { useContextMenu } from "../../lib/useContextMenu";
 import { useSetToggle } from "../../lib/useToggleSet";
 import { useDragClickGuard } from "../../lib/useDragClickGuard";
-import { hashColor, resolveTagColor } from "../../lib/colors";
+import { hashColor } from "../../lib/colors";
 import { noteBaseMenuItems } from "../../lib/noteMenu";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
 import { makeNoteDoc, noteDocId, noteKey } from "../../lib/workspace/types";
@@ -26,6 +27,7 @@ import { buildColorMenuItem } from "../ColorPicker";
 import { SHORTCUT_EVENT, type ShortcutEventDetail } from "../../shared/shortcuts";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import LibraryTitle from "./LibraryTitle";
+import { DEFAULT_COLLECTION_ICON } from "../../lib/collectionIcons";
 import SearchLimitHint from "./SearchLimitHint";
 import Badge from "../Badge";
 import GlowBadge from "../GlowBadge";
@@ -142,7 +144,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     handleRenameCollection,
     handleDeleteCollection,
     restoreCollections,
-    handleSetCollectionColor,
+    handleSetCollectionIcon,
     handleReorderCollections,
     handleMoveNotesToCollection,
     handleDropNoteDirect,
@@ -394,13 +396,13 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     searchScope === "content" && searchQuery.trim() !== "" && !selectedCollectionId;
 
   const title = selectedCollection ? selectedCollection.name : vaultName;
-  const titleColor = selectedCollection
-    ? resolveTagColor(selectedCollection.name, selectedCollection.color)
+  const titleIcon = selectedCollection
+    ? selectedCollection.icon || DEFAULT_COLLECTION_ICON
     : null;
   const count = selectedCollection ? totalCollectionNotes : sortedNotes.length;
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
-    title: <LibraryTitle title={title} color={titleColor} count={count} />,
+    title: <LibraryTitle title={title} icon={titleIcon} count={count} />,
     // Searching inside a collection has no defined semantics (search replaces
     // the note list the collection resolves against), and private vaults are
     // not indexed — hide the controls in both cases.
@@ -469,7 +471,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
           onClick={() => setShowCreateModal(true)}
           title={t["collections.new"]}
         >
-          <FolderOpen size={15} />
+          <FolderPlus size={15} />
         </Button>
         <Button
           variant="ghost"
@@ -477,7 +479,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
           onClick={() => setShowNewNoteModal(true)}
           title={t["vault.newNote"]}
         >
-          <Plus size={16} />
+          <Plus size={15} />
         </Button>
       </>
     ),
@@ -485,7 +487,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     allExpanded, changeSearchScope, collectionSelection.active, collectionSelection.enter,
     collectionSelection.exit, contentResultsVisible, count, flatSelection.active, flatSelection.enter,
     flatSelection.exit, handleToggleAll, privateVault, searchQuery, searchScope, selectedCollection, t,
-    title, titleColor,
+    title, titleIcon,
   ]);
 
   useToolbarContribution("module:library", toolbar);
@@ -625,7 +627,7 @@ export default function NoteLibraryContent({ lib, vaultName }: Props) {
     <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden relative" aria-busy={switching}>
       {switching && (
         <div className="absolute inset-0 z-20 flex items-start justify-center pt-10 bg-base/30">
-          <div className="flex items-center gap-2 rounded-full bg-surface border border-line px-3 py-1.5 text-caption text-secondary">
+          <div className="flex items-center gap-2 rounded-pill bg-surface border border-line px-3 py-1.5 text-caption text-secondary">
             <Spinner size={12} />
             {t["vault.switching"]}
           </div>

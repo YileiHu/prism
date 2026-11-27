@@ -43,7 +43,7 @@
 | 关闭行为、托盘、开机启动 | [main-process](architecture/main-process.md) | `electron/main.ts`、`src/components/settings/GeneralSection.tsx` |
 | IPC 通道、数据库、跨进程模型 | [main-process](architecture/main-process.md)、[data-model](architecture/data-model.md) | `electron/main.ts`、`electron/preload.ts`、`electron/database.ts`、`src/shared/models.ts` |
 | 私密仓库、解锁、加密迁移 | [main-process](architecture/main-process.md) | `electron/privateVault.ts`、`src/lib/vaultLock.tsx` |
-| 主题、颜色、字号、视觉效果 | [ui-kit](guides/ui-kit.md) | `src/theme/themes.ts`、`src/index.css`、`tailwind.config.js` |
+| 主题、颜色、字号、视觉效果 | [ui-kit](guides/ui-kit.md)、[主题作者模型](design/theme-authoring.md) | `src/shared/themes.ts`、`src/index.css`、`tailwind.config.js` |
 | 构建、打包、版本、发布 | [verify-and-release](guides/verify-and-release.md) | `package.json`、`vite.config.ts`、`src/data/changelog.ts` |
 | 中文术语对应哪个代码名 | [glossary](ai/glossary.md) | — |
 

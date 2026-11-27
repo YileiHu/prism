@@ -3,6 +3,7 @@
 // validation and string codecs so both sides agree on the shape.
 
 import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutMap } from "./shortcuts";
+import { DEFAULT_THEME_ID, THEME_IDS } from "./themes";
 import {
   DEFAULT_FONT_SIZE,
   MAX_FONT_SIZE,
@@ -52,6 +53,10 @@ export const MAX_CANVAS_PRESETS = 8;
 
 export interface AppSettings {
   color_mode: ColorMode;
+  // Selected theme id. Registered here (not only in localStorage) so the main
+  // process can paint the native window in the theme's base color before the
+  // renderer mounts.
+  theme: string;
   restore_note_tabs: boolean;
   close_behavior: CloseBehavior;
   auto_launch: boolean;
@@ -97,6 +102,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   color_mode: "dark",
+  theme: DEFAULT_THEME_ID,
   restore_note_tabs: true,
   close_behavior: "quit",
   auto_launch: false,
@@ -158,6 +164,7 @@ function isHexColor(value: string): boolean {
 
 export const SETTING_META: Record<SettingKey, SettingMeta> = {
   color_mode: { kind: "enum", options: ["dark", "light", "system"] },
+  theme: { kind: "enum", options: THEME_IDS },
   restore_note_tabs: { kind: "boolean" },
   close_behavior: { kind: "enum", options: ["quit", "tray"] },
   auto_launch: { kind: "boolean" },

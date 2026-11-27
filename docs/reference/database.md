@@ -13,7 +13,7 @@ SQLite 文件位于 Electron `userData/prism.db`，WAL 模式。本文件直接�
 ```sql
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 name TEXT NOT NULL UNIQUE,
-color TEXT NOT NULL DEFAULT '',
+icon TEXT NOT NULL DEFAULT '',
 sort_order INTEGER NOT NULL DEFAULT 0
 ```
 
@@ -308,4 +308,6 @@ UNIQUE (owner_type, owner_id, file)
 - `notes | ADD COLUMN vault_path TEXT NOT NULL DEFAULT ''`
 - `resources | ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")`
 - `resources | ADD COLUMN notes TEXT NOT NULL DEFAULT ''")`
+- `resource_collections | ADD COLUMN icon TEXT NOT NULL DEFAULT ''")`
 - `resources | ADD COLUMN collection_id INTEGER REFERENCES resource_collections(id) ON DELETE SET NULL")`
+- `resource_collections | DROP COLUMN color")`

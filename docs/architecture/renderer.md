@@ -41,17 +41,16 @@ LibraryDataProvider
 <AppSidebarSlotProvider>
   <AppToolbar />
   <main class="app-main">
-    模块页 ×4（常驻，按 module 切换可见性）
+    模块页 ×4（growth / library / settings / changelog，常驻，按 module 切换可见性）
     DocumentWorkspace（工作区激活时可见）
   </main>
 </AppSidebarSlotProvider>
-<ChangelogModal />
 <SplashScreen />
 ```
 
 - 模块导航与文档标签互斥：有激活文档时显示工作区，否则显示当前模块。
 - 默认模块是 `growth`（养成），默认落到能力页的「总览」；所有模块共用左侧栏槽位，没有例外。
-- `paneStyle(active)` 用 `position:absolute` + `visibility:hidden` 隐藏非活动页；**不要改成条件渲染**，否则编辑器/PDF/画布状态会丢。
+- `paneStyle(active)` 用 `position:absolute` + `visibility:hidden` + `opacity:0` + `pointer-events:none` 隐藏非活动页；`opacity:0` 让带 transition/transform 的卡片层彻底退出合成，避免切换时残留一帧。**不要改成条件渲染**，否则编辑器/PDF/画布状态会丢；每个 pane 固定 `key`，防止插入模块时 React 复用错 DOM。
 - 当前工具栏作用域：`module:<id>` 或 `doc:single` / `doc:<focusedSide>`。
 
 ## 覆盖层

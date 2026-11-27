@@ -25,11 +25,9 @@ const en: Translation = {
   "library.globalLibraries": "Global libraries",
   "library.resourcesLibrary": "Web Resources",
   "library.allResources": "All resources",
-  "library.groupColor": "Group color",
   "library.collections": "Collections",
   "library.emptyVaults": "No Markdown libraries yet. Add one in Settings.",
-  "library.vaultIcon": "Choose icon",
-  "library.vaultIconFailed": "Failed to save icon",
+  "library.vaultSelect": "Note vault",
   "toolbar.more": "More actions",
 
   "resources.addUrl": "Enter URL to save...",
@@ -164,6 +162,10 @@ const en: Translation = {
   "settings.modeLight": "Light",
   "settings.modeSystem": "Follow system",
   "settings.themeGrid": "Accent theme",
+  "settings.themeDarkOnly": "Dark only",
+  "settings.themeLightOnly": "Light only",
+  "settings.themeLockedDark": "This theme only supports dark mode, so the color mode is locked.",
+  "settings.themeLockedLight": "This theme only supports light mode, so the color mode is locked.",
   "settings.fontSize": "Body font size",
   "settings.fontSizeDesc": "Text size in both the editor and reading view.",
   "settings.lineHeight": "Line height",
@@ -216,6 +218,8 @@ const en: Translation = {
   "settings.removeVault": "Remove Markdown library",
   "settings.vaultsDesc": "Add folders containing Markdown files, then switch between them in the sidebar.",
   "settings.addVault": "Add Markdown Library Path",
+  "settings.vaultMoveUp": "Move up",
+  "settings.vaultMoveDown": "Move down",
   "settings.vaultPath": "Path",
   "settings.vaultNamePlaceholder": "Name your Markdown library...",
   "settings.vaultExists": "This path is already added",
@@ -275,6 +279,7 @@ const en: Translation = {
   "collections.addGroup": "Add Group",
   "collections.groupNamePlaceholder": "Group name...",
   "collections.groupColor": "Group Color",
+  "collections.chooseIcon": "Choose icon",
   "collections.ungrouped": "Ungrouped",
   "collections.dropNotesHere": "Drop notes here",
   "collections.expandAll": "Expand All",
@@ -403,11 +408,9 @@ const en: Translation = {
 
   // Changelog
   "changelog.title": "Changelog",
-  "changelog.jumpToVersion": "Jump to version",
   "changelog.showDetails": "Show {count} changes",
   "changelog.hideDetails": "Hide changes",
   "changelog.latest": "Latest",
-  "changelog.history": "Previous releases",
   "changelog.itemCount": "{count} details",
 
   // Private vaults

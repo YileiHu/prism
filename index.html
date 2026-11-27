@@ -5,22 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prism</title>
     <script>
-      // First-paint color scheme: localStorage mirrors SQLite color_mode so the
-      // window paints in the right palette before React mounts.
+      // First-paint appearance: ThemeProvider mirrors {resolvedMode, base} into
+      // localStorage so the window paints the active theme (including themes
+      // that only support dark) before React mounts. Falls back to the raw mode
+      // mirror on first run after the upgrade.
       (function () {
-        var mode = "dark";
+        var mode = null;
+        var base = null;
         try {
-          var stored = localStorage.getItem("prism_mode");
-          if (stored === "light" || stored === "dark" || stored === "system") mode = stored;
+          var snap = JSON.parse(localStorage.getItem("prism_appearance") || "null");
+          if (snap) {
+            if (snap.resolvedMode === "dark" || snap.resolvedMode === "light") mode = snap.resolvedMode;
+            if (typeof snap.base === "string" && snap.base) base = snap.base;
+          }
         } catch (e) {}
-        var resolved =
-          mode === "system"
-            ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light"
-            : mode;
-        document.documentElement.dataset.mode = resolved;
-        document.documentElement.style.colorScheme = resolved;
+        if (!mode) {
+          try {
+            var stored = localStorage.getItem("prism_mode");
+            if (stored === "light" || stored === "dark" || stored === "system") {
+              mode =
+                stored === "system"
+                  ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                    ? "dark"
+                    : "light"
+                  : stored;
+            }
+          } catch (e) {}
+        }
+        if (!mode) mode = "dark";
+        document.documentElement.dataset.mode = mode;
+        document.documentElement.style.colorScheme = mode;
+        if (base) document.documentElement.style.setProperty("--c-base", base);
       })();
     </script>
   </head>

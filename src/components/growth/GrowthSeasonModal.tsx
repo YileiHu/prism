@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Modal from "../Modal";
 import Button from "../Button";
+import ConfirmDialog from "../ConfirmDialog";
 import Input, { Textarea } from "../Input";
 import DateField from "../DateField";
 import GrowthImageField from "./GrowthImageField";
@@ -37,6 +38,8 @@ export default function GrowthSeasonModal({ open, season, onClose, onSaved }: Pr
   const [theme, setTheme] = useState<TagColorKey>("violet");
   const [coverTransform, setCoverTransform] = useState<GrowthCoverTransform | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const {
     cover,
     setCover,
@@ -52,6 +55,8 @@ export default function GrowthSeasonModal({ open, season, onClose, onSaved }: Pr
   useEffect(() => {
     if (!open) return;
     setCoverTransform(season?.coverTransform ?? null);
+    setConfirmDelete(false);
+    setDeleting(false);
     if (season) {
       setTitle(season.title);
       setFocus(season.focus);
@@ -110,7 +115,24 @@ export default function GrowthSeasonModal({ open, season, onClose, onSaved }: Pr
     }
   };
 
+  const deleteSeason = async () => {
+    if (!season || deleting) return;
+    setDeleting(true);
+    try {
+      await window.prism.deleteGrowthSeason(season.id);
+      setConfirmDelete(false);
+      onSaved();
+      close();
+    } catch {
+      showToast(t["common.deleteFailed"], "error");
+      throw new Error("delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
+    <>
     <Modal
       open={open}
       onClose={close}
@@ -119,6 +141,17 @@ export default function GrowthSeasonModal({ open, season, onClose, onSaved }: Pr
       position="center"
       footer={
         <>
+          {season && (
+            <Button
+              variant="ghost-danger"
+              size="sm"
+              className="mr-auto"
+              disabled={busy || deleting}
+              onClick={() => setConfirmDelete(true)}
+            >
+              {t["growth.deleteSeason"]}
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={close}>
             {t["growth.cancel"]}
           </Button>
@@ -185,6 +218,14 @@ export default function GrowthSeasonModal({ open, season, onClose, onSaved }: Pr
         </label>
       </div>
     </Modal>
+    <ConfirmDialog
+      open={confirmDelete}
+      message={t["growth.deleteSeasonConfirm"]}
+      confirmLabel={t["growth.delete"]}
+      onConfirm={deleteSeason}
+      onClose={() => setConfirmDelete(false)}
+    />
+    </>
   );
 }
 

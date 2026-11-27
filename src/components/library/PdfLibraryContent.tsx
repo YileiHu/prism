@@ -13,9 +13,9 @@ import { useT } from "../../i18n";
 import { useToast } from "../../lib/toast";
 import { useWorkspace } from "../../lib/workspace/WorkspaceProvider";
 import { makePdfDoc, pdfDocId } from "../../lib/workspace/types";
-import { resolveTagColor } from "../../lib/colors";
 import { useToolbarContribution, type ToolbarContribution } from "../toolbar/ToolbarProvider";
 import LibraryTitle from "./LibraryTitle";
+import { DEFAULT_COLLECTION_ICON } from "../../lib/collectionIcons";
 import SearchLimitHint from "./SearchLimitHint";
 import Button from "../Button";
 import BatchActionBar, { type BatchAction } from "../BatchActionBar";
@@ -175,13 +175,13 @@ export default function PdfLibraryContent({
   };
 
   const title = selectedCollection ? selectedCollection.name : t["pdf.all"];
-  const titleColor = selectedCollection
-    ? resolveTagColor(selectedCollection.name, selectedCollection.color)
+  const titleIcon = selectedCollection
+    ? selectedCollection.icon || DEFAULT_COLLECTION_ICON
     : null;
   const count = selectedCollection ? selectedCollection.pdfPaths.length : pdf.documents.length;
 
   const toolbar = useMemo<ToolbarContribution>(() => ({
-    title: <LibraryTitle title={title} color={titleColor} count={count} />,
+    title: <LibraryTitle title={title} icon={titleIcon} count={count} />,
     controls: (
       <>
         <SearchInput
@@ -268,7 +268,7 @@ export default function PdfLibraryContent({
     ),
   }), [
     count, onNewCollection, pdf, pdfSelection.active, pdfSelection.enter, pdfSelection.exit,
-    searchColor(titleColor), sortOpen, t, title,
+    titleIcon, sortOpen, t, title,
   ]);
 
   useToolbarContribution("module:library", toolbar);
@@ -388,9 +388,4 @@ export default function PdfLibraryContent({
       />
     </div>
   );
-}
-
-// Element identity for a palette color keeps the toolbar memo honest.
-function searchColor(color: { bar: string } | null): string {
-  return color?.bar ?? "";
 }

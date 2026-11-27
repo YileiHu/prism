@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
-import { hashColor, resolveTagColor, type PaletteColor } from "../../lib/colors";
+import { hashColor, type PaletteColor } from "../../lib/colors";
 import { librarySelectionKey, readLibrarySelection, writeLibrarySelection } from "../../lib/librarySelection";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import type { Resource, ResourceCollection } from "../../shared/models";
@@ -112,15 +112,9 @@ export function useResourceLibrary() {
     void writeLibrarySelection(selectionKey, id === null ? "" : String(id));
   }, [selectionKey]);
 
-  const collectionColorMap = useMemo(() => {
-    const map = new Map<number, PaletteColor>();
-    for (const collection of collections) map.set(collection.id, resolveTagColor(collection.name, collection.color));
-    return map;
-  }, [collections]);
-
   const colorForCollection = useCallback(
-    (collection: ResourceCollection) => collectionColorMap.get(collection.id) ?? hashColor(collection.name),
-    [collectionColorMap],
+    (collection: ResourceCollection) => hashColor(collection.name),
+    [],
   );
 
   // Card view groups follow the sidebar's collection order; a selected collection
@@ -208,8 +202,8 @@ export function useResourceLibrary() {
     await loadCollections();
   }, [loadCollections]);
 
-  const setCollectionColor = useCallback(async (id: number, color: string) => {
-    await window.prism.setResourceCollectionColor(id, color);
+  const setCollectionIcon = useCallback(async (id: number, icon: string) => {
+    await window.prism.setResourceCollectionIcon(id, icon);
     await loadCollections();
   }, [loadCollections]);
 
@@ -276,7 +270,7 @@ export function useResourceLibrary() {
     createCollection,
     renameCollection,
     deleteCollection,
-    setCollectionColor,
+    setCollectionIcon,
     reorderCollections,
     reorderResources,
   };

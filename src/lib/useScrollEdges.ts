@@ -31,8 +31,16 @@ export function useScrollEdges<T extends HTMLElement>(): [(el: T | null) => void
   const measure = useCallback(() => {
     const el = elementRef.current;
     if (!el) return;
-    const top = el.scrollTop > 2;
-    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+    // A hidden/zero-height body is not scrollable; never show a fade for it.
+    if (el.clientHeight === 0) {
+      setEdges((previous) =>
+        previous.top || previous.bottom ? { top: false, bottom: false } : previous,
+      );
+      return;
+    }
+    const overflowing = el.scrollHeight > el.clientHeight + 2;
+    const top = overflowing && el.scrollTop > 2;
+    const bottom = overflowing && el.scrollTop + el.clientHeight < el.scrollHeight - 2;
     setEdges((previous) =>
       previous.top === top && previous.bottom === bottom ? previous : { top, bottom },
     );

@@ -3,12 +3,53 @@
 @tailwind utilities;
 
 :root {
-  --accent: #8b5cf6;
-  --accent-hover: #7c3aed;
-  --accent-muted: rgba(139, 92, 246, 0.15);
-  --accent-text: #c4b5fd;
-  --accent-border: rgba(139, 92, 246, 0.3);
-  --accent-rgb: 139 92 246;
+  --accent: #71717a;
+  --accent-hover: #52525b;
+  --accent-muted: rgba(113, 113, 122, 0.15);
+  --accent-text: #d4d4d8;
+  --primary-button-text: var(--accent-text);
+  --primary-button-hover-text: var(--primary-button-text);
+  --accent-border: rgba(113, 113, 122, 0.3);
+  --accent-rgb: 113 113 122;
+  /* Optional decorative second accent. Themes without one inherit the main
+     accent (ThemeProvider overwrites both whenever accent2 is defined). */
+  --accent-2: #71717a;
+  --accent-2-rgb: 113 113 122;
+  /* Selected-row / data-viz emphasis colour; defaults to the accent. */
+  --emphasis: #38bdf8;
+  --emphasis-rgb: 56 189 248;
+  /* Readable version of the emphasis colour for chart strokes/labels. */
+  --emphasis-line: color-mix(in srgb, var(--emphasis) 65%, rgb(var(--c-primary)));
+
+  /* Corner-shape tokens (Tailwind rounded-chip/control/card/pill).
+     ThemeProvider overwrites these inline for themes with a different shape. */
+  --radius-chip: 4px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 9999px;
+  --radius-segment: 5px;
+
+
+  /* Decoration layer (theme fx). Every token is a no-op by default, so a theme
+     without effects renders exactly like before; ThemeProvider clears these
+     inline styles before applying the next theme. */
+  --fx-image: none;
+  --fx-size: auto;
+  --fx-repeat: repeat;
+  --fx-highlight: none;
+  --fx-highlight-size: 4px 4px;
+  --fx-highlight-opacity: 0;
+  --fx-fountain: none;
+  --fx-fountain-size: 4px 4px;
+  --fx-fountain-opacity: 0;
+  --fx-fountain-mask: none;
+  --fx-fountain-bleed: 32px;
+  --fx-fountain-rgb: 0 0 0;
+  --fx-fountain-selected: none;
+  --fx-fountain-selected-rgb: 0 0 0;
+  --fx-fountain-flow: 0.8s;
+  --fx-glow: 0px;
+  --fx-blur: 0px;
 
   /* Semantic status colors (dark defaults) */
   --danger: 239 68 68;
@@ -19,19 +60,33 @@
   --on-danger: 255 255 255;
 
   /* Surface defaults (= darkSurfaces) — required so first paint isn't unstyled */
-  --c-base: 3 7 18;
-  --c-surface: 17 24 39;
-  --c-elevated: 31 41 55;
-  --c-hover: 55 65 81;
+  --c-base: 8 8 10;
+  --c-surface: 20 20 24;
+  --c-elevated: 32 32 38;
+  --c-hover: 50 50 58;
   --c-tint: 255 255 255;
   --c-overlay: 0 0 0;
-  --c-primary: 229 231 235;
-  --c-secondary: 209 213 219;
-  --c-tertiary: 156 163 175;
-  --c-muted: 107 114 128;
-  --c-faint: 75 85 99;
-  --c-line: 31 41 55;
-  --c-strong: 55 65 81;
+  --c-primary: 232 232 235;
+  --c-secondary: 208 208 212;
+  --c-tertiary: 160 160 166;
+  --c-muted: 114 114 120;
+  --c-faint: 80 80 86;
+  --c-line: 31 31 36;
+  --c-strong: 50 50 57;
+  /* Chrome palette: old per-theme colours, scoped to header/sidebar/toolbar. */
+  --c-chrome-base: var(--c-base);
+  --c-chrome-surface: var(--c-surface);
+  --c-chrome-elevated: var(--c-elevated);
+  --c-chrome-hover: var(--c-hover);
+  --c-chrome-tint: var(--c-tint);
+  --c-chrome-overlay: var(--c-overlay);
+  --c-chrome-primary: var(--c-primary);
+  --c-chrome-secondary: var(--c-secondary);
+  --c-chrome-tertiary: var(--c-tertiary);
+  --c-chrome-muted: var(--c-muted);
+  --c-chrome-faint: var(--c-faint);
+  --c-chrome-line: var(--c-line);
+  --c-chrome-strong: var(--c-strong);
 
   --window-ring: rgba(255, 255, 255, 0.08);
   --ring-subtle: rgba(0, 0, 0, 0.2);
@@ -59,24 +114,23 @@
   --field-bg: rgb(var(--c-overlay) / 0.28);
   --field-border: rgb(var(--c-strong) / 0.55);
   --field-border-width: 1px;
-  --field-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.25);
   --field-focus-border: var(--accent);
-  --field-focus-ring: var(--accent);
   /* Flat chrome ladder (dark): header is the lifted step, toolbar sits one
-     step lower with a faint accent tint. */
-  --header-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-tint)));
-  --chrome-bg: color-mix(in srgb, rgb(var(--c-surface)) 46%, rgb(var(--c-base)));
-  --chrome-flat: color-mix(in srgb, var(--accent) 5%, var(--chrome-bg));
-  /* Sidebar dock: lifted toward the surface, with the accent wash starting
+     step lower with a faint tint. `--chrome-tint` defaults to the accent;
+     themes that want neutral large surfaces point it at the text tone. */
+  --chrome-tint: var(--accent);
+  --header-bg: color-mix(in srgb, rgb(var(--c-chrome-surface)) 94%, rgb(var(--c-chrome-tint)));
+  --chrome-bg: color-mix(in srgb, rgb(var(--c-chrome-surface)) 46%, rgb(var(--c-chrome-base)));
+  --chrome-flat: color-mix(in srgb, var(--chrome-tint) 5%, var(--chrome-bg));
+  /* Sidebar dock: lifted toward the surface, with the tint wash starting
      faint at the top and deepening toward the bottom. */
-  --sidebar-base: rgb(var(--c-surface));
-  --sidebar-bg-top: color-mix(in srgb, var(--accent) 2%, var(--sidebar-base));
-  --sidebar-bg: color-mix(in srgb, var(--accent) 9%, var(--sidebar-base));
+  --sidebar-base: rgb(var(--c-chrome-surface));
+  --sidebar-bg-top: color-mix(in srgb, var(--chrome-tint) 2%, var(--sidebar-base));
+  --sidebar-bg: color-mix(in srgb, var(--chrome-tint) 9%, var(--sidebar-base));
   /* Sidebar rows: the dock's accent wash reaches the elevated tone at its
      foot, so rows need the stronger hover tone to separate themselves. */
-  --sidebar-item-hover: rgb(var(--c-hover) / 0.5);
-  --sidebar-item-active: rgb(var(--c-hover));
-  --chrome-sheen: rgb(var(--c-tint) / 0.05);
+  --sidebar-item-hover: rgb(var(--c-chrome-hover) / 0.5);
+  --sidebar-item-active: rgb(var(--c-chrome-hover));
   --header-fade: color-mix(in srgb, var(--header-bg) 85%, transparent);
 
   /* Content typography — kept in sync by SettingsProvider */
@@ -89,7 +143,7 @@
   /* Light surface defaults (= lightSurfaces) so the very first paint is
      already light, before ThemeProvider applies the theme variant */
   --c-base: 246 246 247;
-  --c-surface: 252 250 255;
+  --c-surface: 252 252 253;
   --c-elevated: 255 255 255;
   --c-hover: 240 240 241;
   --c-tint: 24 24 27;
@@ -114,20 +168,17 @@
   /* Light chrome ladder: header is paper-white; the toolbar stays a touch
      brighter than the page but carries a stronger accent wash, so it reads as
      its own band against the neutral main canvas. */
-  --header-bg: rgb(var(--c-surface));
-  --chrome-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-base)));
-  --chrome-flat: color-mix(in srgb, var(--accent) 12%, var(--chrome-bg));
+  --header-bg: rgb(var(--c-chrome-surface));
+  --chrome-bg: color-mix(in srgb, rgb(var(--c-chrome-surface)) 94%, rgb(var(--c-chrome-base)));
+  --chrome-flat: color-mix(in srgb, var(--chrome-tint) 12%, var(--chrome-bg));
   /* In light mode the sidebar recesses below the page tone, then the accent
      wash fades from the top down. */
-  --sidebar-base: color-mix(in srgb, rgb(var(--c-base)) 96%, rgb(var(--c-overlay)));
-  --sidebar-bg-top: color-mix(in srgb, var(--accent) 8%, var(--sidebar-base));
-  --sidebar-bg: color-mix(in srgb, var(--accent) 2%, var(--sidebar-base));
+  --sidebar-base: color-mix(in srgb, rgb(var(--c-chrome-base)) 96%, rgb(var(--c-chrome-overlay)));
+  --sidebar-bg-top: color-mix(in srgb, var(--chrome-tint) 8%, var(--sidebar-base));
+  --sidebar-bg: color-mix(in srgb, var(--chrome-tint) 2%, var(--sidebar-base));
   /* In light mode the dock is near-white, so rows lift with the elevated tone. */
-  --sidebar-item-hover: rgb(var(--c-elevated) / 0.5);
-  --sidebar-item-active: rgb(var(--c-elevated) / 0.7);
-  /* No top highlight in light mode: on a near-white chrome it reads as a
-     stray white hairline under the header border. */
-  --chrome-sheen: transparent;
+  --sidebar-item-hover: rgb(var(--c-chrome-elevated) / 0.5);
+  --sidebar-item-active: rgb(var(--c-chrome-elevated) / 0.7);
   --header-fade: color-mix(in srgb, var(--header-bg) 92%, transparent);
   --scrollbar-thumb: rgb(var(--c-overlay) / 0.18);
   --scrollbar-thumb-hover: rgb(var(--c-overlay) / 0.32);
@@ -136,23 +187,15 @@
 
   --raised-bg: rgb(var(--c-elevated));
   --raised-highlight: transparent;
-  --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.14);
-  --inset-bg: rgb(var(--c-tint) / 0.05);
+  /* Same depth ladder as dark mode, just expressed on light surfaces. */
+  --raised-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.35);
+  --inset-bg: color-mix(in srgb, rgb(var(--c-surface)) 94%, rgb(var(--c-overlay)));
   --inset-border: rgb(var(--c-strong) / 0.6);
-  --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.05);
-  /* Mirror of the dark recipe: dark recesses with an inner shadow under a 1px
-     edge, light bulges with an outer shadow over a 1px edge. Depth therefore
-     comes from the shadow on both sides and the border stays thin. */
+  --inset-shadow: inset 0 1px 2px rgb(var(--c-overlay) / 0.22);
   --field-bg: rgb(var(--c-elevated));
   --field-border: color-mix(in srgb, rgb(var(--c-strong)) 55%, rgb(var(--c-elevated)));
   --field-border-width: 1px;
-  --field-shadow:
-    0 1px 1px rgb(var(--c-overlay) / 0.06),
-    0 2px 4px -1px rgb(var(--c-overlay) / 0.08),
-    0 4px 10px -3px rgb(var(--c-overlay) / 0.10),
-    inset 0 -1px 0 rgb(var(--c-strong) / 0.28);
   --field-focus-border: color-mix(in srgb, var(--accent) 60%, rgb(var(--c-strong)));
-  --field-focus-ring: var(--field-focus-border);
 }
 
 body {
@@ -194,25 +237,38 @@ body {
 }
 
 /* Edge fades for a scroll area whose scrollbar is hidden (see ScrollFade.tsx).
-   Both are sticky and height-neutral (the negative margin cancels the box), so
-   they overlay the first/last rows without adding scroll length. Visibility is
+   Both are zero-height sticky anchors; the 56px gradient lives on ::before, so
+   a short dialog can never overflow just because a fade exists. Visibility is
    driven by useScrollEdges. */
 .scroll-fade-top,
 .scroll-fade-bottom {
   position: sticky;
   z-index: 1;
-  height: 56px;
+  height: 0;
   pointer-events: none;
   transition: opacity 150ms ease-out;
 }
 .scroll-fade-top {
   top: 0;
-  margin-bottom: -56px;
-  background: linear-gradient(to bottom, rgb(var(--c-surface)) 28%, transparent);
 }
 .scroll-fade-bottom {
   bottom: 0;
-  margin-top: -56px;
+}
+.scroll-fade-top::before,
+.scroll-fade-bottom::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 56px;
+  pointer-events: none;
+}
+.scroll-fade-top::before {
+  top: 0;
+  background: linear-gradient(to bottom, rgb(var(--c-surface)) 28%, transparent);
+}
+.scroll-fade-bottom::before {
+  bottom: 0;
   background: linear-gradient(to bottom, transparent, rgb(var(--c-surface)) 72%);
 }
 .scroll-fade-left,
@@ -256,17 +312,46 @@ body {
   background-color: rgb(var(--c-base));
 }
 
+/* Theme decoration: the pattern paints over the base color and under every
+   panel, so it only shows in the page canvas and gutters. Gated by data-fx so
+   a flat theme never pays for fixed-attachment repaints. */
+[data-fx="pattern"] body,
+[data-fx="pattern"] .app-main {
+  background-image: var(--fx-image);
+  background-size: var(--fx-size);
+  background-repeat: var(--fx-repeat);
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* Chrome surfaces keep the pre-neutral palette; main content stays neutral. */
+.app-header,
+.chrome-bg,
+.toolbar-band {
+  --c-base: var(--c-chrome-base);
+  --c-surface: var(--c-chrome-surface);
+  --c-elevated: var(--c-chrome-elevated);
+  --c-hover: var(--c-chrome-hover);
+  --c-tint: var(--c-chrome-tint);
+  --c-overlay: var(--c-chrome-overlay);
+  --c-primary: var(--c-chrome-primary);
+  --c-secondary: var(--c-chrome-secondary);
+  --c-tertiary: var(--c-chrome-tertiary);
+  --c-muted: var(--c-chrome-muted);
+  --c-faint: var(--c-chrome-faint);
+  --c-line: var(--c-chrome-line);
+  --c-strong: var(--c-chrome-strong);
+}
+
 /* App header — the lifted chrome step. Flat fill, no gradient. */
 .app-header {
   background-color: var(--header-bg);
-  box-shadow: inset 0 1px 0 var(--chrome-sheen);
 }
 
 /* Chrome toolbar band — flat mid tone, a touch of accent to tie it to the
    theme without any gradient. */
 .toolbar-band {
   background-color: var(--chrome-flat);
-  box-shadow: inset 0 1px 0 var(--chrome-sheen);
 }
 
 /* Main canvas — the deepest flat tone. */
@@ -274,13 +359,193 @@ body {
   background-color: rgb(var(--c-base));
 }
 
-/* Selected pill for the active tab or module button in the header. */
-.chrome-pill-active {
-  color: var(--accent-text);
+/* Shared selected/active state. Specialised controls (ChipTabs, Segmented,
+   NavItem) override the fill/ring with their own selected language. */
+.theme-active {
   background-color: var(--accent-muted);
-  box-shadow:
-    var(--raised-shadow),
-    inset 0 0 0 1px var(--accent-border);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+.theme-active.theme-hover-accent:hover:not(:disabled) {
+  background-color: var(--accent-muted);
+  color: var(--accent-text);
+}
+[data-theme-hover] .theme-active.theme-hover-accent:hover:not(:disabled) {
+  box-shadow: none;
+}
+
+/* Danger is an action, not a persistent state: no active layer. Its texture
+   and border exist only in GENESIS. */
+[data-theme-hover] .theme-hover-danger {
+  --fx-hover-image: radial-gradient(circle, rgb(var(--danger) / 0.45) 1px, transparent 1.1px);
+  --fx-hover-size: 3px 3px;
+  --fx-hover-opacity: 1;
+  --fx-hover-border: rgb(var(--danger));
+}
+[data-theme-hover] .theme-hover-danger::after {
+  border-color: color-mix(in srgb, rgb(var(--danger)) 70%, rgb(var(--c-overlay)));
+}
+
+/* Shared theme hover layer. Buttons, inactive tabs and menu items opt in with
+   `.theme-hover`; GENESIS supplies the cyan square matrix + edge. */
+.theme-hover {
+  position: relative;
+  isolation: isolate;
+}
+.theme-hover::before,
+.theme-hover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-out);
+}
+.theme-hover::before {
+  z-index: -1;
+  background-image: var(--fx-hover-image, none);
+  background-size: var(--fx-hover-size, 4px 4px);
+  background-repeat: repeat;
+}
+.theme-hover::after {
+  border: 1.5px solid var(--fx-hover-border, transparent);
+}
+[data-theme-hover] .theme-hover::after {
+  border-color: color-mix(in srgb, var(--fx-hover-border) 70%, rgb(var(--c-overlay)));
+}
+.theme-hover:hover:not(:disabled)::before {
+  opacity: var(--fx-hover-opacity, 0);
+}
+.theme-hover:hover:not(:disabled)::after {
+  opacity: 1;
+}
+[data-theme-hover] .theme-hover:not(.theme-hover-danger):hover:not(:disabled) {
+  background-color: rgb(var(--accent-2-rgb) / 0.05);
+}
+
+/* Selected controls reuse the hover layer with the accent matrix instead of
+   the interaction cyan; they keep their own fill and ring. */
+.theme-hover-accent {
+  --fx-hover-image: var(--fx-selected-hover-image);
+  --fx-hover-size: var(--fx-selected-hover-size);
+  --fx-hover-opacity: var(--fx-selected-hover-opacity);
+  --fx-hover-border: var(--fx-selected-hover-border);
+}
+[data-theme-hover] .theme-hover-accent:hover:not(:disabled) {
+  background-color: var(--accent-muted);
+}
+[data-theme-hover] .theme-hover-accent::after {
+  border-color: color-mix(in srgb, var(--fx-selected-hover-border) 70%, rgb(var(--c-overlay)));
+}
+
+
+/* Tab close: a bare icon in every theme. No chip, tint, texture or border —
+   only the X brightens on hover. */
+.tab-close,
+.tab-close:hover,
+.tab-close:active,
+[data-theme-hover] .tab-close:hover {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.tab-close::before,
+.tab-close::after {
+  display: none !important;
+}
+.tab-close {
+  opacity: 0.55;
+  color: var(--c-muted) !important;
+  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+[data-tab-active="true"] .tab-close {
+  opacity: 0.75;
+}
+.tab-close:hover {
+  opacity: 1;
+  color: var(--c-primary) !important;
+}
+
+
+
+
+/* Sidebar fountain: on hover a cyan matrix sprays in from the dock edge with a
+   rotated-Gaussian falloff; pressing the row brightens it. */
+.fx-fountain {
+  position: relative;
+  isolation: isolate;
+}
+/* Sidebar rows keep their selected tone/fountain, not the button active fill. */
+.fx-fountain[data-active="true"] {
+  background-color: var(--sidebar-item-active);
+  color: var(--c-primary);
+  box-shadow: none;
+}
+.fx-fountain::before {
+  content: "";
+  position: absolute;
+  /* Full-bleed to the dock edge: the row sits inside the sidebar's gutter, and
+     the mask starts slightly outside it, so the glow reads as entering from the
+     window edge. The sidebar clips the overflow. */
+  inset: 0 0 0 calc(-1 * var(--fx-fountain-bleed, 32px));
+  z-index: -1;
+  border-radius: inherit;
+  background-image: var(--fx-fountain);
+  background-size: var(--fx-fountain-size);
+  opacity: 0;
+  transition: opacity 160ms var(--ease-out);
+  pointer-events: none;
+  -webkit-mask-image: var(--fx-fountain-mask);
+  mask-image: var(--fx-fountain-mask);
+}
+.fx-fountain:hover::before {
+  /* Hover is brighter than the selected rest state. */
+  opacity: calc(var(--fx-fountain-opacity) * 1.35);
+}
+.fx-fountain:active::before {
+  /* Press is the brightest step. */
+  opacity: calc(var(--fx-fountain-opacity) * 1.7);
+}
+/* Flat sidebar rows: no gray hover/selected chip, the fountain is the feedback.
+   Selected rows keep a dim fountain so the current item still reads. */
+[data-flat-rows] .fx-fountain:hover {
+  background-color: transparent;
+}
+[data-flat-rows] .fx-fountain[aria-current="page"] {
+  background-color: transparent;
+}
+[data-flat-rows] .fx-fountain[aria-current="page"]:not(:hover):not(:active)::before {
+  /* Selected rest: emphasis wash, dimmer than hover and press. */
+  background-image: var(--fx-fountain-selected);
+  opacity: calc(var(--fx-fountain-opacity) * 1.15);
+}
+
+/* Breathing: the matrix (and only the matrix) pulses in place. Hover rows
+   breathe around the hover brightness; the selected row breathes around its
+   gold rest brightness so "current" keeps a visible pulse. */
+@keyframes fx-fountain-breathe {
+  from { opacity: calc(var(--fx-fountain-opacity) * 1.35); }
+  to { opacity: calc(var(--fx-fountain-opacity) * 0.85); }
+}
+@keyframes fx-fountain-breathe-selected {
+  from { opacity: calc(var(--fx-fountain-opacity) * 1.15); }
+  to { opacity: calc(var(--fx-fountain-opacity) * 0.8); }
+}
+[data-fx-flow="breathe"] .fx-fountain:hover::before {
+  animation: fx-fountain-breathe var(--fx-fountain-flow, 0.8s) ease-in-out infinite alternate;
+}
+[data-fx-flow="breathe"] .fx-fountain[aria-current="page"]:not(:hover)::before {
+  animation: fx-fountain-breathe-selected var(--fx-fountain-flow, 0.8s) ease-in-out infinite alternate;
+}
+[data-fx-flow="breathe"] .fx-fountain:active::before {
+  /* Press wins over the pulse so the click still reads as a step brighter. */
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fx-flow="breathe"] .fx-fountain:hover::before,
+  [data-fx-flow="breathe"] .fx-fountain[aria-current="page"]:not(:hover)::before {
+    animation: none;
+  }
 }
 
 /* Edge fades for the horizontally scrolling tab rail. */
@@ -329,12 +594,31 @@ body {
   background-color: rgb(var(--c-primary) / 0.65);
 }
 
-/* Multi-select rows: the left indicator spans the full row height so a run of
-   adjacent selected rows reads as one continuous rail (`.active-bar` is a
-   centered tick per item, which leaves gaps when rows are stacked). Radius is
-   owned by the run: ItemRow only rounds the first/last row of a run. */
-.selection-bar {
-  box-shadow: inset 3px 0 0 var(--accent);
+/* Multi-select rows: the selected run is wrapped on all four sides. Adjacent
+   rows only draw their shared outer edges (no internal separators); ItemRow
+   rounds the first/last row so the run reads as one block. */
+.selection-bar[data-selection-edge="only"] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.selection-bar[data-selection-edge="first"] {
+  box-shadow:
+    inset 1px 0 0 var(--accent),
+    inset -1px 0 0 var(--accent),
+    inset 0 1px 0 var(--accent);
+}
+
+.selection-bar[data-selection-edge="middle"] {
+  box-shadow:
+    inset 1px 0 0 var(--accent),
+    inset -1px 0 0 var(--accent);
+}
+
+.selection-bar[data-selection-edge="last"] {
+  box-shadow:
+    inset 1px 0 0 var(--accent),
+    inset -1px 0 0 var(--accent),
+    inset 0 -1px 0 var(--accent);
 }
 
 /* Raised/inset surfaces. Inset hosts a control (switch track, segmented track);
@@ -349,12 +633,13 @@ body {
   background-color: var(--field-bg);
   border-width: var(--field-border-width);
   border-color: var(--field-border);
-  box-shadow: var(--field-shadow);
+  box-shadow: none;
 }
 .surface-raised {
   background-color: var(--raised-bg);
   box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
 }
+
 @layer components {
   /* Floating detail panel used by the canvas inspectors. */
   .panel-floating {
@@ -367,7 +652,7 @@ body {
     display: flex;
     flex-direction: column;
     border: 1px solid rgb(var(--c-line) / 0.5);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background-color: rgb(var(--c-surface));
     box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.45);
     overflow: hidden;
@@ -382,6 +667,13 @@ body {
     color: rgb(var(--c-muted));
   }
 }
+
+/* Glass option: only floating canvas panels for now. Menus/modals stay opaque
+   until a theme needs them, because their backgrounds differ per surface. */
+[data-fx-blur] .panel-floating {
+  background-color: color-mix(in srgb, rgb(var(--c-surface)) 88%, transparent);
+  backdrop-filter: blur(var(--fx-blur));
+}
 /* Raised depth for colored fills (danger buttons, checked boxes) where the
    background is owned by a utility and only the sheen/shadow is needed. */
 .surface-raised-fill {
@@ -395,7 +687,7 @@ body {
 .sidebar-group {
   padding: 4px;
   border: 1px solid var(--inset-border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background-color: var(--inset-bg);
   box-shadow: var(--inset-shadow);
 }
@@ -406,65 +698,148 @@ body {
 }
 .field-inset:focus {
   border-color: var(--field-focus-border);
-  box-shadow: inset 0 0 0 1px var(--field-focus-ring), var(--field-shadow);
+  box-shadow: inset 0 0 0 1px var(--field-focus-border);
+}
+/* GENESIS focus: 2px visual cyan border + the 3px/1px matrix from active buttons.
+   Variables default to transparent/0, so other themes are untouched. */
+[data-focus-fx] .field-inset:not([aria-invalid="true"]):focus {
+  border-color: color-mix(in srgb, var(--focus-border-color) 70%, rgb(var(--c-overlay)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--focus-border-color) 70%, rgb(var(--c-overlay)));
+  background-image: radial-gradient(circle, rgb(var(--accent-2-rgb) / var(--focus-texture-opacity, 0)) 1px, transparent 1.2px);
+  background-size: 3px 3px;
+  background-position: 0 0;
+  background-repeat: repeat;
 }
 .accent-focus:focus {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
-/* Invalid fields keep the inset depth but read as danger, including while
+/* Invalid fields keep the flat visual 2px danger edge, including while
    focused, where the accent border would otherwise take over. Keyed off the
    aria-invalid attribute so the error state and its semantics stay together. */
 .field-inset[aria-invalid="true"],
 .field-inset[aria-invalid="true"]:focus {
   border-color: rgb(var(--danger) / 0.75);
-  box-shadow: inset 0 0 0 1px rgb(var(--danger) / 0.45), var(--field-shadow);
+  box-shadow: inset 0 0 0 1px rgb(var(--danger) / 0.45);
 }
 /* Same thickening for selected framed states (cards, swatches) that carry a
    1px accent border. */
 .accent-ring {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 0 var(--fx-glow) rgb(var(--accent-2-rgb) / 0.3);
 }
 /* Sidebar chrome — a distinct dock tone: brighter than the toolbar in dark
    mode, deeper than the page in light mode. The accent wash runs top→bottom;
    dark mode deepens toward the bottom, light mode fades from the top down. */
 .chrome-bg {
   background: linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg) 100%);
-  box-shadow: inset 0 1px 0 var(--chrome-sheen);
 }
-/* Segmented control: recessed track, raised chip for the active segment.
-   Without its own fill the control disappears into the tinted toolbar in
-   light mode, where a 12% accent wash is nearly white. */
+/* Segmented control: transparent tray with one continuous flat glow rail
+   behind the buttons; the selected button is typographic (no capsule). */
 .segmented-toggle {
-  background-color: var(--inset-bg);
-  border-color: var(--inset-border);
-  box-shadow: var(--inset-shadow);
+  position: relative;
+  isolation: isolate;
+  background-color: transparent;
+}
+.segmented-toggle::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  z-index: 0;
+  border-radius: var(--radius-pill);
+  background-image: var(--chip-glow-image, none);
+  background-size: 100% 100%;
+  opacity: calc(var(--chip-glow-opacity, 0.6) * 0.55);
+  filter: blur(var(--chip-glow-blur, 3px));
+  pointer-events: none;
+  transition: opacity 160ms var(--ease-out);
+}
+.segmented-toggle:hover::before {
+  opacity: calc(var(--chip-glow-opacity, 0.6) * 0.85);
+}
+.segmented-toggle:active::before {
+  opacity: calc(var(--chip-glow-opacity, 0.6) * 1.15);
+}
+.segmented-option {
+  z-index: 1;
 }
 .segmented-toggle .segmented-option[aria-pressed="true"] {
+  /* No capsule: selection is typographic. */
   background-color: transparent;
   color: var(--accent-text);
+  font-weight: 600;
+  letter-spacing: 0.01em;
   box-shadow: none;
 }
-/* Sliding chip: one shared element moves under the active segment so the
-   selection reads as a physical toggle instead of a repaint. */
-.segmented-thumb {
-  background-color: var(--raised-bg);
-  box-shadow: var(--raised-shadow), inset 0 1px 0 var(--raised-highlight);
+/* ChipTabs selection is a glow behind the label, not a filled pill. The theme
+   supplies the image: an accent-tinted radial gradient, or (GENESIS) the
+   square-matrix highlight texture in cyan. */
+.chip-tabs-thumb {
+  background-color: transparent;
+  background-image: var(--chip-glow-image, none);
+  background-size: var(--chip-glow-size, 100% 100%);
+  background-repeat: repeat;
+  box-shadow: none;
+  opacity: var(--chip-glow-opacity, 0.55);
+  filter: blur(var(--chip-glow-blur, 0px));
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, rgba(0, 0, 0, 0.55) 55%, transparent 80%);
+  mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, rgba(0, 0, 0, 0.55) 55%, transparent 80%);
+}
+
+/* Every chip gets a hover/press glow of its own colour; the selected tab keeps
+   the sliding thumb, so hovering it reads as an extra step brighter. */
+.chip-tabs-option {
+  isolation: isolate;
+}
+/* The chip keeps its own glow instead of the base active fill/ring. */
+.chip-tabs-option[data-active="true"] {
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--c-primary);
+}
+.chip-tabs-option::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image: radial-gradient(
+    ellipse at 50% 52%,
+    color-mix(in srgb, var(--chip-item-glow, var(--accent)) 75%, transparent) 0%,
+    transparent 76%
+  );
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+  pointer-events: none;
+}
+.chip-tabs-option:hover::before {
+  opacity: 0.35;
+}
+.chip-tabs-option:active::before {
+  opacity: 0.65;
 }
 
 /* Setting switch: recessed pill track with a raised knob. The 1px edge is an
    inset shadow rather than a border so it doesn't shift the knob's centering. */
 .switch-track {
-  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--inset-border);
+  border: 1px solid var(--inset-border);
+  box-shadow: none;
 }
 .switch-track[data-on="true"] {
-  box-shadow: var(--inset-shadow), inset 0 0 0 1px var(--accent-border);
+  border-color: var(--accent);
+  box-shadow: none;
 }
 .switch-thumb {
-  background-color: #fff;
-  box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background-color: rgb(var(--c-tint));
+  box-shadow: none;
 }
 [data-mode="light"] .switch-thumb {
-  box-shadow: 0 1px 2px rgb(var(--c-overlay) / 0.18), inset 0 1px 0 #fff;
+  background-color: rgb(var(--c-elevated));
+  box-shadow: none;
 }
 
 /* Keyboard focus ring */

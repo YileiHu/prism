@@ -62,7 +62,7 @@ export default function ContentSearchView({ vaultPath, collections, query, onOpe
     };
     for (const c of collections) {
       // Group membership uses the collection's own color, never the group's
-      const color = resolveTagColor(c.name, c.color);
+      const color = resolveTagColor(c.name);
       for (const np of c.notePaths) add(np, { collection: c.name, group: null, color });
       for (const g of c.groups ?? []) {
         for (const np of g.notePaths) add(np, { collection: c.name, group: g.name, color });

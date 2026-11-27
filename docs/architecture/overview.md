@@ -106,7 +106,7 @@ prism/
 │   ├── components/    # library/ pdf/ canvas/ editor/ growth/ settings/ workspace/ toolbar/ …
 │   ├── lib/           # settings、workspace、canvas、vaultLock、toast、hooks、paths、colors
 │   ├── shared/        # models.ts、settings.ts、shortcuts.ts（与主进程共用）
-│   ├── theme/         # ThemeProvider + 8 套主题
+│   ├── theme/         # ThemeProvider（主题数据在 src/shared/themes.ts）
 │   ├── i18n/          # zh.ts（类型源）、en.ts、useT
 │   ├── data/          # changelog.ts
 │   ├── App.tsx        # 外壳

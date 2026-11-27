@@ -137,11 +137,11 @@ export default function GrowthCurveChart({ points, seasons }: Props) {
               x2={chartWidth - PAD.right}
               y1={y(TARGET)}
               y2={y(TARGET)}
-              stroke="rgb(var(--c-line) / 0.9)"
+              stroke="var(--emphasis-line)"
               strokeDasharray="4 4"
               strokeWidth={1}
             />
-            <text x={PAD.left - 6} y={y(TARGET) + 3} textAnchor="end" className="fill-current text-faint" style={{ fontSize: 9 }}>
+            <text x={PAD.left - 6} y={y(TARGET) + 3} textAnchor="end" style={{ fontSize: 9, fill: "var(--emphasis-line)" }}>
               {TARGET}
             </text>
           </>

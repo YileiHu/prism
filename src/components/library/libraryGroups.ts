@@ -8,7 +8,7 @@ import type { ResourceCollection } from "../../shared/models";
 export interface LibraryGroup<T = unknown> {
   id: string;
   name: string;
-  color?: string;
+  icon?: string;
   count: number;
   source: T;
 }
@@ -17,7 +17,7 @@ export function toNoteCollectionGroups(collections: CollectionData[]): LibraryGr
   return collections.map((collection) => ({
     id: collection.id,
     name: collection.name,
-    color: collection.color,
+    icon: collection.icon,
     count: collection.notePaths.length
       + (collection.groups?.reduce((sum, group) => sum + group.notePaths.length, 0) ?? 0),
     source: collection,
@@ -28,7 +28,7 @@ export function toPdfCollectionGroups(collections: PdfCollectionData[]): Library
   return collections.map((collection) => ({
     id: collection.id,
     name: collection.name,
-    color: collection.color,
+    icon: collection.icon,
     count: collection.pdfPaths.length,
     source: collection,
   }));
@@ -38,7 +38,7 @@ export function toResourceCollectionGroups(collections: ResourceCollection[]): L
   return collections.map((collection) => ({
     id: String(collection.id),
     name: collection.name,
-    color: collection.color,
+    icon: collection.icon,
     count: collection.count,
     source: collection,
   }));

@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { LangProvider, useT } from "../i18n";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
-import { themes } from "../theme/themes";
+import { themes } from "../shared/themes";
 import { ContextMenuProvider, useContextMenu } from "../lib/useContextMenu";
 import { ToastProvider, useToast } from "../lib/toast";
 import { TAG_COLORS, resolveTagColor } from "../lib/colors";
@@ -312,9 +312,10 @@ function InputGallery() {
   const [emptyCount, setEmptyCount] = useState<number | null>(null);
   const [badCount, setBadCount] = useState<number | null>(9);
   const [tags, setTags] = useState(["设计", "复用"]);
+  const [focusSelect, setFocusSelect] = useState("");
 
   return (
-    <Section title="Input" note="Input / Textarea / SearchInput / NumericInput / NumberInput / TagInput。">
+    <Section title="Input" note="Input / Textarea / SearchInput / NumericInput / NumberInput / TagInput；软件输入框已统一为 flat 样式。">
       <Sample name="Input · 默认 / 已填 / 禁用 / placeholder">
         <div className="grid max-w-xl gap-3">
           <Input placeholder="placeholder" value={text} onChange={(e) => setText(e.target.value)} />
@@ -322,6 +323,18 @@ function InputGallery() {
           <Input value="禁用状态" disabled readOnly />
         </div>
       </Sample>
+
+      <Sample name="GENESIS focus · 青色外框 + 方阵纹理">
+        <div className="grid max-w-xl gap-3">
+          <Input placeholder="点击聚焦 Input" value={text} onChange={(e) => setText(e.target.value)} />
+          <SearchInput value={search} onChange={setSearch} wrapperClassName="w-72" placeholder="点击聚焦搜索…" />
+          <SelectButton value={focusSelect} options={[{ value: "a", label: "选项 A" }, { value: "b", label: "选项 B" }]} onChange={setFocusSelect} placeholder="点击聚焦选择器" />
+        </div>
+        <p className="mt-2 text-caption text-muted">
+          切到 GENESIS 主题后点击输入框；其他主题保持原 focus。
+        </p>
+      </Sample>
+
 
       <Sample name="Textarea">
         <Textarea
@@ -1020,10 +1033,10 @@ function OverlayGallery() {
 function ShellNote() {
   return (
     <Section title="外壳专用控件（未渲染）" note="这些控件依赖工作区/标签状态，不放进独立预览。">
-      <Sample name="TabStrip / ThemeQuickMenu / ChangelogModal / SplashScreen / ErrorBoundary">
+      <Sample name="TabStrip / ThemeQuickMenu / ChangelogView / SplashScreen / ErrorBoundary">
         <p className="text-body text-secondary">
           外壳件只在 App 内出现：<code>TabStrip</code>、<code>ThemeQuickMenu</code>、
-          <code>ChangelogModal</code>、<code>SplashScreen</code>、<code>ErrorBoundary</code>。
+          <code>ChangelogView</code>、<code>SplashScreen</code>、<code>ErrorBoundary</code>。
           它们不面向功能页复用，若要看真实效果请在应用外壳中查看。
         </p>
       </Sample>
